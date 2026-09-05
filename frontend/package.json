@@ -11,6 +11,7 @@
     "test": "vitest run --passWithNoTests",
     "lint": "eslint .",
     "typecheck": "vue-tsc --noEmit",
+    "e2e": "playwright test",
     "openapi": "openapi-typescript ../openapi/openapi.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {

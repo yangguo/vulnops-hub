@@ -1,9 +1,10 @@
 # VulnOps Hub
 
 > **Status: MVP implemented and verified.** FastAPI modular monolith with a
-> stable REST API — no web frontend yet; the API and its Swagger UI are the
-> interface. CI runs lint, tests, OpenAPI validation, fresh-database migration
-> checks, and a Docker image smoke test on every push.
+> stable REST API — A Vue 3 ops console ships in `frontend/` (dashboard, case
+> lifecycle, SBOM submission). OIDC is not enforced yet — deploy only behind
+> your intranet. CI runs lint, tests, OpenAPI validation, fresh-database
+> migration checks, and a Docker image smoke test on every push.
 
 VulnOps Hub is an open-source vulnerability-operations control plane. It
 correlates public vulnerability intelligence, asset and software inventories,
@@ -18,9 +19,10 @@ worker；暂无独立前端界面，通过 REST API 交互。运行方式见下�
 
 ## Quick start
 
-Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/). No external
-services are needed for local evaluation — the API falls back to a SQLite file
-(`vulnops.db`).
+Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/). No external services are needed for local evaluation — the API falls back to a
+SQLite file (`vulnops.db`). A web console is available: run `make
+frontend-install` once, then `make frontend-dev` in a second terminal and open
+`http://localhost:5173` (the Vite dev server proxies `/api` to `:8000`).
 
 ~~~bash
 # 1. Install dependencies
@@ -319,10 +321,11 @@ The MVP is implemented as a modular monolith (FastAPI + SQLAlchemy + Alembic):
 SBOM ingestion (CycloneDX/SPDX) with content hashing and idempotency, the
 remediation-case lifecycle with SLA clocks, state-machine transitions, and
 optimistic locking (`If-Match`), evidence-adapter contracts for DefectDojo and
-Wazuh, and an ingestion worker. There is no web frontend yet — the REST API and
-its Swagger UI at `/docs` are the interface. See the
-[MVP roadmap](docs/mvp-roadmap.md) before proposing new scanners, feeds, or UI
-features.
+Wazuh, and an ingestion worker. The web console (`frontend/`, Vue 3 + Element
+Plus) covers the remediation workflow: dashboard, case list/detail with
+state-machine actions, risk decisions, verification, and SBOM submission. See
+the [MVP roadmap](docs/mvp-roadmap.md) before proposing new scanners, feeds, or
+UI features.
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md)
 before opening an issue or pull request.
