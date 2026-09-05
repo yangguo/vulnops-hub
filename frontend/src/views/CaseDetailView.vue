@@ -19,6 +19,8 @@
 
     <StatusStepper :status="store.detail.status" />
 
+    <CaseActionBar @verify="verifyVisible = true" />
+
     <el-row
       :gutter="20"
       class="detail-body"
@@ -159,6 +161,8 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <VerificationDrawer v-model="verifyVisible" />
   </div>
 </template>
 
@@ -167,6 +171,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCaseDetailStore } from '../stores/caseDetail'
 import StatusStepper from '../components/StatusStepper.vue'
+import CaseActionBar from '../components/CaseActionBar.vue'
+import VerificationDrawer from '../components/VerificationDrawer.vue'
 import PriorityTag from '../components/PriorityTag.vue'
 import SlaBadge from '../components/SlaBadge.vue'
 
@@ -174,6 +180,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useCaseDetailStore()
 const tab = ref('exposures')
+const verifyVisible = ref(false)
 
 const exposureRows = computed(() =>
   (store.detail?.exposures ?? []).map((id: string) => ({ id })),

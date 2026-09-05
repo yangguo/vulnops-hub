@@ -33,5 +33,24 @@ export const useCaseDetailStore = defineStore('caseDetail', {
     async refresh() {
       if (this.detail) await this.fetchAll(this.detail.id)
     },
+    async transition(target: string, actor: string, reason?: string) {
+      const org = useOrgStore().org
+      const detail = this.detail
+      if (!detail) return
+      await apiClient.transition(org, detail.id, detail.version, target, actor, reason)
+      await this.fetchAll(detail.id)
+    },
+    async decide(payload: Record<string, unknown>) {
+      const org = useOrgStore().org
+      if (!this.detail) return
+      await apiClient.createRiskDecision(org, this.detail.id, payload)
+      await this.fetchAll(this.detail.id)
+    },
+    async verify(payload: Record<string, unknown>) {
+      const org = useOrgStore().org
+      if (!this.detail) return
+      await apiClient.submitVerification(org, this.detail.id, payload)
+      await this.fetchAll(this.detail.id)
+    },
   },
 })
