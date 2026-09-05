@@ -153,7 +153,7 @@ class CaseService:
         stmt = (
             select(RiskDecision)
             .where(RiskDecision.case_id == case_id)
-            .order_by(RiskDecision.created_at.desc())
+            .order_by(RiskDecision.created_at.desc(), RiskDecision.id.desc())
         )
         return list(self.session.scalars(stmt).all())
 
