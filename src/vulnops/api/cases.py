@@ -52,6 +52,19 @@ def _serialize_risk_decision(d) -> dict:
     }
 
 
+def _serialize_verification(v) -> dict:
+    return {
+        "id": v.id,
+        "case_id": v.case_id,
+        "method": v.method,
+        "asserted_result": v.asserted_result,
+        "evidence_ids": v.evidence_ids or [],
+        "coverage": v.coverage or {},
+        "status": v.status,
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+    }
+
+
 def _parse_if_match(if_match: str | None) -> int | None:
     if not if_match:
         return None
@@ -337,6 +350,19 @@ async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Case not found")
     decisions = svc.list_risk_decisions(case_id)
     return {"items": [_serialize_risk_decision(d) for d in decisions]}
+
+
+@router.get("/organizations/{org_id}/cases/{case_id}/verifications")
+async def list_verifications(org_id: str, case_id: str, db: Session = Depends(get_db)):
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if case.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    verifications = svc.list_verifications(case_id)
+    return {"items": [_serialize_verification(v) for v in verifications]}
 
 
 @router.post("/organizations/{org_id}/cases/{case_id}/verifications")

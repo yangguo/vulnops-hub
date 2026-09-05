@@ -60,3 +60,39 @@ def test_list_risk_decisions_cross_org_404():
     case = _create_case(client, org_a, "mine")
     resp = client.get(f"/api/v1/organizations/{org_b}/cases/{case['id']}/risk-decisions")
     assert resp.status_code == 404
+
+
+def test_list_verifications_returns_history():
+    client = TestClient(create_app())
+    org = f"ver-org-{uuid4().hex[:8]}"
+    case = _create_case(client, org, "prove it")
+    cid = case["id"]
+    for target in ["triage", "assigned", "in_progress", "awaiting_verification"]:
+        client.post(
+            f"/api/v1/organizations/{org}/cases/{cid}/transitions",
+            json={"target": target, "actor": "t"},
+        )
+    resp = client.post(
+        f"/api/v1/organizations/{org}/cases/{cid}/verifications",
+        json={
+            "method": "scanner",
+            "evidence_ids": ["ev1"],
+            "coverage": {"status": "complete", "scope_version": "v2"},
+        },
+    )
+    assert resp.status_code in (200, 201), resp.text
+
+    resp = client.get(f"/api/v1/organizations/{org}/cases/{cid}/verifications")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["method"] == "scanner"
+    assert items[0]["status"] == "closed"
+    assert items[0]["coverage"] == {"status": "complete", "scope_version": "v2"}
+    assert items[0]["created_at"]
+
+
+def test_list_verifications_unknown_case_404():
+    client = TestClient(create_app())
+    resp = client.get("/api/v1/organizations/ver-org/cases/case_nope/verifications")
+    assert resp.status_code == 404

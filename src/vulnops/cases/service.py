@@ -157,6 +157,14 @@ class CaseService:
         )
         return list(self.session.scalars(stmt).all())
 
+    def list_verifications(self, case_id: str) -> list[Verification]:
+        stmt = (
+            select(Verification)
+            .where(Verification.case_id == case_id)
+            .order_by(Verification.created_at.desc(), Verification.id.desc())
+        )
+        return list(self.session.scalars(stmt).all())
+
     def transition(
         self,
         case_id: str,
