@@ -126,7 +126,9 @@ async function submit() {
   }
   submitting.value = true
   try {
-    const key = crypto.randomUUID()
+    const key =
+      globalThis.crypto?.randomUUID?.() ??
+      `sbom-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const resp = await apiClient.submitSbom(useOrgStore().org, payload, key)
     result.value = {
       sbom_id: String(resp.sbom_id ?? ''),

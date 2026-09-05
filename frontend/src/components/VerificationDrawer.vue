@@ -102,12 +102,18 @@ async function submit() {
     if (form.method === 'scanner' && form.coverage.scope_version) {
       coverage.scope_version = form.coverage.scope_version
     }
-    await store.verify({
+    const resp = await store.verify({
       method: form.method,
       coverage,
       evidence_ids: evidenceText.value.split(',').map((s) => s.trim()).filter(Boolean),
     })
-    ElMessage.success('复测证据已提交')
+    if (resp?.status === 'closed') {
+      ElMessage.success('复测通过，工单已关闭')
+    } else if (resp?.status === 'insufficient_evidence') {
+      ElMessage.warning('证据不足，工单未关闭（partial/failed/过期证据不能证明整改）')
+    } else {
+      ElMessage.warning('复测已记录，需人工审批后关闭')
+    }
     visible.value = false
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '提交失败')

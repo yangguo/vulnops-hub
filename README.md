@@ -15,7 +15,8 @@ SBOMs, and scanner evidence into explainable **exposures** and auditable
 公开漏洞情报、本地资产和 SBOM、各类漏扫结果，以及整改工单串成一个可追溯的
 生命周期闭环：发现 → 匹配 → 分派 → SLA → 风险接受 → 整改 → 复测 → 关闭或重开。
 MVP 已可运行：后端为 FastAPI 服务（含 Swagger UI），另有后台 ingestion
-worker；暂无独立前端界面，通过 REST API 交互。运行方式见下文 Quick start。
+worker，并附带 Vue 3 整改运营控制台（frontend/），单容器随 API 一同部署。
+运行方式见下文 Quick start。
 
 ## Quick start
 
@@ -74,6 +75,9 @@ docker compose up --build
 This starts the API (`:8000`), the ingestion worker, PostgreSQL, Valkey, and
 MinIO (`:9001` console). `make health` smoke-tests the probes.
 
+The API image also serves the web console — after `make frontend-build`, the
+built SPA is baked in and available at `http://localhost:8000`.
+
 ### Tests
 
 ~~~bash
@@ -81,16 +85,20 @@ make test                   # unit + integration + contract + e2e
 make lint                   # ruff
 ~~~
 
-## Using VulnOps Hub without a frontend
+## Using VulnOps Hub: console + API
 
-VulnOps Hub is API-first: there is no bundled web UI. Three ways to drive it:
+VulnOps Hub ships a built-in web console (整改运营控制台) for the daily
+remediation workflow, plus a full REST API. Four ways to drive it:
 
-1. **Swagger UI** — open `http://localhost:8000/docs` and use *Try it out* on
+1. **Web console** — served by the same process at `/` (dashboard, case
+   lifecycle, SBOM submission). Run `make frontend-build` once so
+   `frontend/dist` exists; without it the API falls back to JSON responses.
+2. **Swagger UI** — open `http://localhost:8000/docs` and use *Try it out* on
    any endpoint. Zero setup; the interactive way to explore.
-2. **Any HTTP client** — every operation is plain REST. The machine-readable
+3. **Any HTTP client** — every operation is plain REST. The machine-readable
    spec is served at `/openapi.json` and checked in at `openapi/openapi.yaml`,
    so you can generate clients for any language.
-3. **Automation** — CI pipelines POST SBOMs; the worker consumes DefectDojo
+4. **Automation** — CI pipelines POST SBOMs; the worker consumes DefectDojo
    findings and Wazuh inventory events from the queue.
 
 ### A complete workflow

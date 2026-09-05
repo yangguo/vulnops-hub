@@ -133,7 +133,7 @@ async function submit() {
   }
   submitting.value = true
   try {
-    await store.decide({
+    const resp = await store.decide({
       type: form.type,
       reason: form.reason,
       evidence_ids: evidenceText.value.split(',').map((s) => s.trim()).filter(Boolean),
@@ -142,7 +142,11 @@ async function submit() {
       approver_role: form.approver_role,
       expires_at: form.expires_at || undefined,
     })
-    ElMessage.success('决策已提交')
+    if (resp?.status === 'approved') {
+      ElMessage.success('决策已批准并生效')
+    } else {
+      ElMessage.warning('决策已提交，等待审批（需区别于申请人的审批人 + 审批角色 + 证据）')
+    }
     visible.value = false
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '提交失败')

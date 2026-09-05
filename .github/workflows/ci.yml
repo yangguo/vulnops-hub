@@ -59,6 +59,7 @@ jobs:
           sleep 5
           curl -f http://localhost:8000/health/live
           curl -f http://localhost:8000/health/ready
+          curl -f http://localhost:8000/ | grep -q 'id="app"'
           docker rm -f hub
 
   frontend:

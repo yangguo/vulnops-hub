@@ -3,7 +3,7 @@
     class="sla-badge"
     :class="{ 'sla-breached': breached }"
   >
-    {{ breached ? '⚠ 已超时' : `⏱ 剩 ${remaining}` }}
+    {{ label }}
   </span>
 </template>
 
@@ -19,6 +19,11 @@ const remaining = computed(() => {
   const hours = Math.floor(ms / 3600000)
   if (hours < 48) return `${hours}h`
   return `${Math.floor(hours / 24)}d${hours % 24}h`
+})
+
+const label = computed(() => {
+  if (props.breached || remaining.value === '已超时') return '⚠ 已超时'
+  return `⏱ 剩 ${remaining.value}`
 })
 </script>
 

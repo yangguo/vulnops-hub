@@ -46,6 +46,7 @@ describe('caseDetailStore actions', () => {
     await store.fetchAll('c1')
     await store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'], requested_by: 'a', approver: 'b', approver_role: 'security_lead' })
     expect(apiClient.createRiskDecision).toHaveBeenCalledWith('acme', 'c1', expect.objectContaining({ type: 'risk_accepted' }))
+    await expect(store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'], requested_by: 'a', approver: 'b', approver_role: 'security_lead' })).resolves.toMatchObject({ id: 'rd1' })
   })
 
   it('submits verification payload', async () => {
@@ -55,5 +56,6 @@ describe('caseDetailStore actions', () => {
     await store.fetchAll('c1')
     await store.verify({ method: 'scanner', coverage: { status: 'complete', scope_version: 'v2' }, evidence_ids: [] })
     expect(apiClient.submitVerification).toHaveBeenCalledWith('acme', 'c1', expect.objectContaining({ method: 'scanner' }))
+    await expect(store.verify({ method: 'scanner', coverage: { status: 'complete', scope_version: 'v2' }, evidence_ids: [] })).resolves.toMatchObject({ id: 'v1', status: 'closed' })
   })
 })

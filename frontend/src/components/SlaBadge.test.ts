@@ -15,4 +15,11 @@ describe('SlaBadge', () => {
     expect(w.text()).toContain('已超时')
     expect(w.classes()).toContain('sla-breached')
   })
+
+  it('renders overdue state even when breached flag has not caught up', () => {
+    const past = new Date(Date.now() - 3600 * 1000).toISOString()
+    const w = mount(SlaBadge, { props: { dueAt: past, breached: false } })
+    expect(w.text()).toContain('已超时')
+    expect(w.text()).not.toContain('剩 ')
+  })
 })
