@@ -149,6 +149,14 @@ class CaseService:
         items = list(self.session.scalars(stmt).all())
         return items, total
 
+    def list_risk_decisions(self, case_id: str) -> list[RiskDecision]:
+        stmt = (
+            select(RiskDecision)
+            .where(RiskDecision.case_id == case_id)
+            .order_by(RiskDecision.created_at.desc())
+        )
+        return list(self.session.scalars(stmt).all())
+
     def transition(
         self,
         case_id: str,

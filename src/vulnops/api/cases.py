@@ -34,6 +34,24 @@ def _serialize_case(case: RemediationCase) -> dict:
     }
 
 
+def _serialize_risk_decision(d) -> dict:
+    return {
+        "id": d.id,
+        "case_id": d.case_id,
+        "type": d.type,
+        "status": d.status,
+        "scope_exposure_ids": d.scope_exposure_ids or [],
+        "reason": d.reason,
+        "compensating_controls": d.compensating_controls or [],
+        "evidence_ids": d.evidence_ids or [],
+        "requested_by": d.requested_by,
+        "approver": d.approver,
+        "approver_role": d.approver_role,
+        "expires_at": d.expires_at.isoformat() if d.expires_at else None,
+        "created_at": d.created_at.isoformat() if d.created_at else None,
+    }
+
+
 def _parse_if_match(if_match: str | None) -> int | None:
     if not if_match:
         return None
@@ -306,6 +324,19 @@ async def create_risk_decision(
         "expires_at": decision.expires_at.isoformat() if decision.expires_at else None,
         "case_status": svc.get_case(case_id).status,
     }
+
+
+@router.get("/organizations/{org_id}/cases/{case_id}/risk-decisions")
+async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(get_db)):
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Case not found")
+    if case.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="Case not found")
+    decisions = svc.list_risk_decisions(case_id)
+    return {"items": [_serialize_risk_decision(d) for d in decisions]}
 
 
 @router.post("/organizations/{org_id}/cases/{case_id}/verifications")
