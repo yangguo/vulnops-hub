@@ -142,7 +142,9 @@ class CaseService:
 
         desc = sort.startswith("-")
         order_col = getattr(RemediationCase, sort.lstrip("-"))
-        stmt = stmt.order_by(order_col.desc() if desc else order_col.asc(), RemediationCase.id.desc())
+        stmt = stmt.order_by(
+            order_col.desc() if desc else order_col.asc(), RemediationCase.id.desc()
+        )
         stmt = stmt.offset((page - 1) * page_size).limit(page_size)
         items = list(self.session.scalars(stmt).all())
         return items, total
