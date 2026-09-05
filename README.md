@@ -1,8 +1,11 @@
 # VulnOps Hub
 
-> **Status: design repository — no production application code yet.**
+> **Status: MVP implemented and verified.** FastAPI modular monolith with a
+> stable REST API — no web frontend yet; the API and its Swagger UI are the
+> interface. CI runs lint, tests, OpenAPI validation, fresh-database migration
+> checks, and a Docker image smoke test on every push.
 
-VulnOps Hub is a proposed open-source vulnerability-operations control plane. It
+VulnOps Hub is an open-source vulnerability-operations control plane. It
 correlates public vulnerability intelligence, asset and software inventories,
 SBOMs, and scanner evidence into explainable **exposures** and auditable
 **remediation cases**.
@@ -10,6 +13,172 @@ SBOMs, and scanner evidence into explainable **exposures** and auditable
 中文简介：VulnOps Hub 不是另一个扫描器，也不复制一份 CVE 数据库。它把
 公开漏洞情报、本地资产和 SBOM、各类漏扫结果，以及整改工单串成一个可追溯的
 生命周期闭环：发现 → 匹配 → 分派 → SLA → 风险接受 → 整改 → 复测 → 关闭或重开。
+MVP 已可运行：后端为 FastAPI 服务（含 Swagger UI），另有后台 ingestion
+worker；暂无独立前端界面，通过 REST API 交互。运行方式见下文 Quick start。
+
+## Quick start
+
+Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/). No external
+services are needed for local evaluation — the API falls back to a SQLite file
+(`vulnops.db`).
+
+~~~bash
+# 1. Install dependencies
+make install                # uv sync --extra dev
+
+# 2. Apply database migrations (creates ./vulnops.db)
+make migrate                # uv run alembic upgrade head
+
+# 3. Start the API
+make dev                    # uvicorn vulnops.main:app --port 8000 --reload
+~~~
+
+Once it is running:
+
+| URL | Purpose |
+| --- | --- |
+| `http://localhost:8000/docs` | Swagger UI — interactive API console |
+| `http://localhost:8000/health/live` | Liveness probe |
+| `http://localhost:8000/health/ready` | Readiness probe (checks database) |
+
+Drive it end to end:
+
+~~~bash
+# Create a remediation case (SLA clock starts; P1 due in 3 days)
+curl -s -X POST http://localhost:8000/api/v1/organizations/org-demo/cases \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Patch openssl on demo host", "owner_team": "platform", "priority": "P1"}'
+
+# Submit a CycloneDX SBOM
+curl -s -X POST http://localhost:8000/api/v1/organizations/org-demo/sboms \
+  -H "Content-Type: application/json" -H "Idempotency-Key: demo-001" \
+  -d '{"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}'
+
+# Move the case through its state machine (If-Match enforces optimistic locking)
+curl -s -X POST http://localhost:8000/api/v1/organizations/org-demo/cases/<case_id>/transitions \
+  -H "Content-Type: application/json" -H 'If-Match: "1"' \
+  -d '{"target": "triage", "actor": "me"}'
+~~~
+
+Reset the local database with `make clean`.
+
+### Run the full stack with Docker
+
+~~~bash
+cp .env.example .env        # adjust defaults if needed
+docker compose up --build
+~~~
+
+This starts the API (`:8000`), the ingestion worker, PostgreSQL, Valkey, and
+MinIO (`:9001` console). `make health` smoke-tests the probes.
+
+### Tests
+
+~~~bash
+make test                   # unit + integration + contract + e2e
+make lint                   # ruff
+~~~
+
+## Using VulnOps Hub without a frontend
+
+VulnOps Hub is API-first: there is no bundled web UI. Three ways to drive it:
+
+1. **Swagger UI** — open `http://localhost:8000/docs` and use *Try it out* on
+   any endpoint. Zero setup; the interactive way to explore.
+2. **Any HTTP client** — every operation is plain REST. The machine-readable
+   spec is served at `/openapi.json` and checked in at `openapi/openapi.yaml`,
+   so you can generate clients for any language.
+3. **Automation** — CI pipelines POST SBOMs; the worker consumes DefectDojo
+   findings and Wazuh inventory events from the queue.
+
+### A complete workflow
+
+Every endpoint is under `/api/v1` and scoped by organization. The case state
+machine (transitions are enforced server-side and audited):
+
+~~~mermaid
+stateDiagram-v2
+  [*] --> new
+  new --> triage
+  triage --> assigned
+  triage --> risk_accepted
+  triage --> not_applicable
+  assigned --> in_progress
+  in_progress --> awaiting_verification
+  awaiting_verification --> closed
+  awaiting_verification --> in_progress
+  closed --> reopened
+  reopened --> triage
+~~~
+
+Step by step, tested with curl against a fresh database:
+
+~~~bash
+ORG=http://localhost:8000/api/v1/organizations/org-demo
+
+# 1. Submit a CycloneDX SBOM (idempotent via Idempotency-Key)
+curl -s -X POST $ORG/sboms -H "Content-Type: application/json" \
+  -H "Idempotency-Key: demo-001" \
+  -d '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[{"type":"library","name":"openssl","version":"3.0.2"}]}'
+
+# 2. Create a case — priority starts the SLA clock (P0=1d P1=3d P2=7d P3=30d P4=90d)
+curl -s -X POST $ORG/cases -H "Content-Type: application/json" \
+  -d '{"title":"Patch openssl on demo host","owner_team":"platform","priority":"P1"}'
+# -> {"id":"case_...","status":"new","due_at":"<created + 3 days>","etag":"\"1\""}
+
+# 3. Walk the lifecycle. Ask what is legal, then transition with If-Match
+#    (optimistic locking on the case version).
+curl -s $ORG/cases/<case_id>/allowed-transitions
+curl -s -X POST $ORG/cases/<case_id>/transitions -H 'If-Match: "1"' \
+  -H "Content-Type: application/json" -d '{"target":"triage","actor":"alice"}'
+# repeat with the new etag: triage -> assigned -> in_progress -> awaiting_verification
+
+# 4. Or accept the risk instead of patching. An *approved* decision requires a
+#    distinct approver holding an approver role (risk_approver / security_lead /
+#    policy_admin), evidence ids, and a reason — otherwise it stays pending.
+curl -s -X POST $ORG/cases/<case_id>/risk-decisions -H "Content-Type: application/json" \
+  -d '{"type":"risk_accepted","reason":"compensating WAF rule","evidence_ids":["ev-1"],
+       "requested_by":"alice","approver":"bob","approver_role":"security_lead",
+       "expires_at":"2026-12-31T00:00:00Z"}'
+
+# 5. Prove remediation. status=complete coverage with a valid method closes the
+#    case; failed/partial/stale evidence never does ("never close on missing data").
+curl -s -X POST $ORG/cases/<case_id>/verifications -H "Content-Type: application/json" \
+  -d '{"method":"scanner","coverage":{"status":"complete","scope_version":"v2"}}'
+~~~
+
+DefectDojo and Wazuh evidence is ingested asynchronously by the worker
+(`python -m vulnops.workers.ingestion`), which consumes jobs from the
+Redis/Valkey queue — in the Docker stack it runs as its own service; with a
+bare `make dev` and no Redis it simply idles. Every transition, risk decision,
+and verification also writes an audit event and an outbox record inside the
+transaction.
+
+## Deployment
+
+Three supported modes (full design: [docs/deployment.md](docs/deployment.md)):
+
+| Mode | Intended use | Stack |
+| --- | --- | --- |
+| Local evaluation | development, demo | `make dev` — API on SQLite, no external services |
+| Docker Compose | single-host evaluation, small teams | API + worker + PostgreSQL + Valkey + MinIO |
+| Production | internal enterprise service | Containers on Kubernetes, managed PostgreSQL / object store / queue, OIDC, OpenTelemetry |
+
+Configuration is environment-driven — copy `.env.example` to `.env` and adjust.
+Key variables (full list in `.env.example`, parsed in `src/vulnops/config.py`):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | `sqlite:///./vulnops.db` | SQLAlchemy DSN — use `postgresql+psycopg2://...` for anything shared |
+| `REDIS_URL` | – | Ingestion queue; the worker idles when unset |
+| `OBJECT_STORAGE_ENDPOINT` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | – | S3/MinIO for raw source snapshots |
+| `PUBLIC_URL`, `ENVIRONMENT`, `LOG_LEVEL` | `http://localhost:8000`, `development`, `INFO` | Core posture |
+| `OIDC_ISSUER_URL` / `OIDC_AUDIENCE` | – | Reserved for production identity (token enforcement is not wired in the MVP yet — do not expose the API unauthenticated) |
+| `DEFECTDOJO_BASE_URL` / `WAZUH_BASE_URL` / `VULNERABILITY_LOOKUP_BASE_URL` | – | Adapter endpoints; disabled while unset |
+
+Production hardening requirements (identity, secrets, network isolation,
+observability, backups) are specified in
+[docs/deployment.md](docs/deployment.md) §3 and §8.
 
 ## Why this project
 
@@ -146,16 +315,20 @@ affected-range evaluation.
 
 ## Repository status and contribution
 
-This repository starts with an evidence-backed reference design. The first code
-milestone is intentionally small: a modular monolith with a stable API and
-adapter contracts. See the [MVP roadmap](docs/mvp-roadmap.md) before proposing
-new scanners, feeds, or UI features.
+The MVP is implemented as a modular monolith (FastAPI + SQLAlchemy + Alembic):
+SBOM ingestion (CycloneDX/SPDX) with content hashing and idempotency, the
+remediation-case lifecycle with SLA clocks, state-machine transitions, and
+optimistic locking (`If-Match`), evidence-adapter contracts for DefectDojo and
+Wazuh, and an ingestion worker. There is no web frontend yet — the REST API and
+its Swagger UI at `/docs` are the interface. See the
+[MVP roadmap](docs/mvp-roadmap.md) before proposing new scanners, feeds, or UI
+features.
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md)
 before opening an issue or pull request.
 
 ## License
 
-The documentation and future project code are licensed under
+The documentation and project code are licensed under
 [Apache-2.0](LICENSE). Names and marks of integrated projects belong to their
 respective owners; this project is not affiliated with or endorsed by them.
