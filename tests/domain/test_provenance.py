@@ -1,13 +1,12 @@
 import hashlib
 import uuid
 
-import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from vulnops.db import Base, get_engine
-from vulnops.domain.provenance import persist_snapshot_with_event
+from vulnops.db import Base
 from vulnops.db.models.source_snapshot import SourceSnapshot
+from vulnops.domain.provenance import persist_snapshot_with_event
 
 
 def _test_engine():

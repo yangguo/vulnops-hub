@@ -20,12 +20,10 @@ def evaluate_coverage(method: str, coverage: dict[str, Any] | None) -> tuple[boo
         return False, f"unknown coverage status {status}"
 
     # For scanner verification, need scope_version and freshness?
-    if method == "scanner":
-        # If status is complete, allow close only if scope_version present
-        if not coverage.get("scope_version") and not coverage.get("scope"):
-            # But per spec, complete scanner result can close if same target/service etc.
-            # For MVP, require scope_version
-            return False, "missing scope_version for scanner verification"
+    if method == "scanner" and not coverage.get("scope_version") and not coverage.get("scope"):
+        # Per spec, complete scanner result can close if same target/service etc.
+        # For MVP, require scope_version
+        return False, "missing scope_version for scanner verification"
 
     if method == "wazuh_inventory":
         # Require deterministic version mapping and recent observation

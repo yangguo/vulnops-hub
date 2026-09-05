@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,10 +12,12 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "intelligence" / "osv_resp
 def test_osv_batch_match_keeps_source_timestamp():
     data = json.loads(FIXTURE.read_text())
     adapter = OSVAdapter()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     url = "https://api.osv.dev/v1/querybatch"
     component_fixture = [{"purl": "pkg:pypi/urllib3@1.26.18", "version": "1.26.18"}]
-    record = adapter.lookup_batch(component_fixture, retrieved_at=now, source_url=url, raw_fixture=data)[0]
+    record = adapter.lookup_batch(
+        component_fixture, retrieved_at=now, source_url=url, raw_fixture=data
+    )[0]
     assert record.source == "osv"
     assert record.retrieved_at is not None
     assert record.retrieved_at == now
@@ -53,10 +55,10 @@ def test_osv_rate_limit_retries_and_marks_stale():
     # Simulate HTTP failure via mock client that raises
     class FailingClient:
         def post(self, *a, **kw):
-            raise Exception("429 Too Many Requests")
+            raise ConnectionError("429 Too Many Requests")
 
     adapter = OSVAdapter(http_client=FailingClient())
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectionError):
         adapter.lookup_batch([{"purl": "pkg:pypi/urllib3@1.26.18"}])
     health = adapter.get_health()
     assert health.freshness == "stale"

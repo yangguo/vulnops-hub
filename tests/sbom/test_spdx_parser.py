@@ -23,9 +23,9 @@ def test_spdx_component_preserves_purl_and_raw_version():
                     {
                         "referenceCategory": "PACKAGE-MANAGER",
                         "referenceType": "purl",
-                        "referenceLocator": "pkg:pypi/urllib3@1.26.18"
+                        "referenceLocator": "pkg:pypi/urllib3@1.26.18",
                     }
-                ]
+                ],
             },
             {
                 "name": "openssl",
@@ -38,11 +38,11 @@ def test_spdx_component_preserves_purl_and_raw_version():
                     {
                         "referenceCategory": "PACKAGE-MANAGER",
                         "referenceType": "purl",
-                        "referenceLocator": "pkg:deb/debian/openssl@3.0.2"
+                        "referenceLocator": "pkg:deb/debian/openssl@3.0.2",
                     }
-                ]
-            }
-        ]
+                ],
+            },
+        ],
     }
     parser = SBOMParser()
     parsed = parser.parse(bom)
@@ -72,9 +72,9 @@ def test_spdx_without_purl_still_captured():
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": False,
                 "verificationCode": "NOASSERTION",
-                "versionInfo": "1.3.0"
+                "versionInfo": "1.3.0",
             }
-        ]
+        ],
     }
     parser = SBOMParser()
     parsed = parser.parse(bom)
@@ -85,5 +85,5 @@ def test_spdx_without_purl_still_captured():
 
 def test_spdx_malformed_raises():
     parser = SBOMParser()
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         parser.parse({"spdxVersion": "SPDX-2.3"})  # missing required fields

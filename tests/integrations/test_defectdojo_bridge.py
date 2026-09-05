@@ -1,14 +1,11 @@
 import json
-import hashlib
 from pathlib import Path
 
-import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from vulnops.db import Base
 from vulnops.integrations.defectdojo import DefectDojoBridge
-from vulnops.integrations.mapping import MappingResult
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "defectdojo" / "finding.json"
 
@@ -16,10 +13,11 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "defectdojo" / "finding.js
 def _engine():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     import vulnops.db.models.source_snapshot  # noqa
-    import vulnops.db.models.audit_event  # noqa
-    import vulnops.db.models.outbox_event  # noqa
-    import vulnops.assets.models  # noqa
+    import vulnops.db.models.audit_event
+    import vulnops.db.models.outbox_event
+    import vulnops.assets.models
     import vulnops.cases.models  # noqa
+
     Base.metadata.create_all(bind=eng)
     return eng
 
@@ -37,7 +35,10 @@ def test_defectdojo_import_creates_evidence_and_exposure():
     assert result.source_snapshot is not None
     assert result.source_snapshot.source == "defectdojo"
     assert result.source_snapshot.source_record_id == "123456"
-    assert "dojo.example" in result.source_snapshot.object_uri or "123456" in result.source_snapshot.source_record_id
+    assert (
+        "dojo.example" in result.source_snapshot.object_uri
+        or "123456" in result.source_snapshot.source_record_id
+    )
     # Evidence should be created
     assert result.evidence_ref is not None
     # Should produce exposure or evidence mapping, not directly case via scanner evidence
@@ -63,7 +64,9 @@ def test_defectdojo_replay_is_idempotent():
     # Count rows: should be 1 source_snapshot, 1 exposure
     from sqlalchemy import text
 
-    cnt_snap = session.execute(text("SELECT COUNT(*) FROM source_snapshots WHERE source='defectdojo'")).scalar()
+    cnt_snap = session.execute(
+        text("SELECT COUNT(*) FROM source_snapshots WHERE source='defectdojo'")
+    ).scalar()
     assert cnt_snap == 1
     session.close()
 
@@ -76,14 +79,38 @@ def test_defectdojo_conflicting_asset_hints_creates_reconciliation_work():
     # Create two assets with same hostname to cause collision
     from vulnops.assets.models import Asset, AssetAlias
 
-    a1 = Asset(id="ast_01", name="api-01-a", type="host", status="active", criticality="high", organization_id="org1")
-    a2 = Asset(id="ast_02", name="api-01-b", type="host", status="active", criticality="high", organization_id="org1")
+    a1 = Asset(
+        id="ast_01",
+        name="api-01-a",
+        type="host",
+        status="active",
+        criticality="high",
+        organization_id="org1",
+    )
+    a2 = Asset(
+        id="ast_02",
+        name="api-01-b",
+        type="host",
+        status="active",
+        criticality="high",
+        organization_id="org1",
+    )
     session.add_all([a1, a2])
     session.commit()
     session.add_all(
         [
-            AssetAlias(asset_id="ast_01", namespace="hostname", value="payments-api-3", organization_id="org1"),
-            AssetAlias(asset_id="ast_02", namespace="hostname", value="payments-api-3", organization_id="org1"),
+            AssetAlias(
+                asset_id="ast_01",
+                namespace="hostname",
+                value="payments-api-3",
+                organization_id="org1",
+            ),
+            AssetAlias(
+                asset_id="ast_02",
+                namespace="hostname",
+                value="payments-api-3",
+                organization_id="org1",
+            ),
         ]
     )
     session.commit()

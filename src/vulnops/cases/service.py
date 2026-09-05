@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 
-from vulnops.cases.models import RemediationCase, CaseStatus, ALLOWED_TRANSITIONS, RiskDecision, Verification, SlaClock, PRIORITY_SLA_DAYS
+from vulnops.cases.models import (
+    ALLOWED_TRANSITIONS,
+    CaseStatus,
+    RemediationCase,
+    RiskDecision,
+    SlaClock,
+    Verification,
+)
 from vulnops.cases.sla import calculate_due_date
 from vulnops.cases.verification import evaluate_coverage
 from vulnops.db.models.audit_event import AuditEvent
@@ -15,14 +22,14 @@ from vulnops.db.models.outbox_event import OutboxEvent
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _ensure_aware(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -117,31 +124,24 @@ class CaseService:
     ) -> RemediationCase:
         case = self.get_case(case_id)
 
-        # Concurrency check
-        if expected_version is not None and case.version != expected_version:
-            raise ValueError(f"conflict: expected version {expected_version} but current is {case.version}")
-
         allowed = ALLOWED_TRANSITIONS.get(case.status, [])
         if target not in allowed:
             raise ValueError(f"transition {case.status} -> {target} not allowed")
 
         prior = case.status
-        case.status = target
-        case.version += 1
-        if extra and "assignee" in extra:
-            case.assignee = extra["assignee"]
-        case.updated_at = _utcnow()
-
-        # SLA check breach
+        now = _utcnow()
+        # SLA breach evaluation
+        sla_breached = case.sla_breached
         if case.due_at:
             due_aware = _ensure_aware(case.due_at)
-            if due_aware and _utcnow() > due_aware:
-                case.sla_breached = True
+            if due_aware and now > due_aware:
+                sla_breached = True
 
+        new_assignee = extra.get("assignee") if extra and "assignee" in extra else case.assignee
         audit = AuditEvent(
             id=f"aud_{uuid.uuid4().hex[:12]}",
             actor=actor,
-            action=f"case.transitioned",
+            action="case.transitioned",
             subject_type="case",
             subject_id=case_id,
             correlation_id=str(uuid.uuid4()),
@@ -155,14 +155,58 @@ class CaseService:
             aggregate_type="case",
             aggregate_id=case_id,
             event_type="vulnops.case.transitioned.v1",
-            payload={"from": prior, "to": target, "reason": reason, "evidence_ids": extra.get("evidence_ids") if extra else None},
+            payload={
+                "from": prior,
+                "to": target,
+                "reason": reason,
+                "evidence_ids": extra.get("evidence_ids") if extra else None,
+            },
             correlation_id=audit.correlation_id,
         )
-        self.session.add(audit)
-        self.session.add(outbox)
-        self.session.commit()
-        self.session.refresh(case)
-        return case
+        try:
+            if expected_version is not None:
+                # Atomic compare-and-swap: enforce version in the UPDATE
+                # predicate so concurrent writers cannot both succeed.
+                stmt = (
+                    update(RemediationCase)
+                    .where(
+                        RemediationCase.id == case_id, RemediationCase.version == expected_version
+                    )
+                    .values(
+                        status=target,
+                        version=expected_version + 1,
+                        assignee=new_assignee,
+                        updated_at=now,
+                        sla_breached=sla_breached,
+                    )
+                )
+                result = self.session.execute(stmt)
+                if result.rowcount == 0:
+                    self.session.rollback()
+                    current = self.get_case(case_id)
+                    raise ValueError(
+                        f"conflict: expected version {expected_version} but current is {current.version}"
+                    )
+                self.session.add(audit)
+                self.session.add(outbox)
+                self.session.commit()
+            else:
+                case.status = target
+                case.version += 1
+                case.assignee = new_assignee
+                case.updated_at = now
+                case.sla_breached = sla_breached
+                self.session.add(audit)
+                self.session.add(outbox)
+                self.session.commit()
+        except ValueError:
+            raise
+        except Exception:
+            self.session.rollback()
+            raise
+        # Expire cached state so callers see the committed version.
+        self.session.expire_all()
+        return self.get_case(case_id)
 
     def verify(
         self,
@@ -175,16 +219,16 @@ class CaseService:
     ) -> Verification:
         case = self.get_case(case_id)
         if case.status != CaseStatus.AWAITING_VERIFICATION:
-            # For test flow, we still allow verify only when awaiting_verification
-            # But we will evaluate coverage regardless
-            pass
+            raise ValueError(
+                f"verification not allowed from state {case.status} -> closed: "
+                "case must be in awaiting_verification"
+            )
 
         can_close, reason = evaluate_coverage(method, coverage)
 
         ver_id = f"ver_{uuid.uuid4().hex[:12]}"
         if can_close:
             status = "closed"
-            prior = case.status
             case.status = CaseStatus.CLOSED
             case.version += 1
             case.closure_reason = reason
@@ -228,7 +272,13 @@ class CaseService:
             aggregate_type="case",
             aggregate_id=case_id,
             event_type=outbox_type,
-            payload={"method": method, "evidence_ids": evidence_ids, "coverage": coverage, "status": status, "reason": reason},
+            payload={
+                "method": method,
+                "evidence_ids": evidence_ids,
+                "coverage": coverage,
+                "status": status,
+                "reason": reason,
+            },
             correlation_id=audit.correlation_id,
         )
         self.session.add(audit)
@@ -247,23 +297,51 @@ class CaseService:
         evidence_ids: list[str] | None = None,
         requested_by: str = "unknown",
         approver: str | None = None,
+        approver_role: str | None = None,
         actor: str = "system",
         scope: dict | None = None,
     ) -> RiskDecision:
         case = self.get_case(case_id)
         now = _utcnow()
 
-        # Approval required: risk_accepted needs approver with approver_role
-        # For MVP, require approver != None and approver != requested_by
-        needs_approval = type == "risk_accepted"
-        status = "pending_approval"
-        if needs_approval:
-            if approver and approver != requested_by:
-                status = "approved"
-            else:
-                status = "pending_approval"
-        else:
-            status = "approved"
+        # Approval must be authenticated: require distinct approver identity
+        # in an allowed approver role plus evidence. String comparison alone
+        # is insufficient; callers must supply approver_role from auth context.
+        # See docs/data-model.md 3.6 and api.md 3.4.
+        allowed_roles = {"risk_approver", "security_lead", "policy_admin"}
+        # Backward compat: approver=="risk_approver" implies role when role omitted.
+        effective_role = approver_role or (approver if approver in allowed_roles else None)
+        has_evidence = bool(evidence_ids)
+        has_reason = bool(reason and reason.strip())
+        approved = (
+            bool(approver)
+            and bool(effective_role)
+            and effective_role in allowed_roles
+            and approver != requested_by
+            and has_evidence
+            and has_reason
+        )
+        status = "approved" if approved else "pending_approval"
+
+        # Map decision type to the correct target workflow state.
+        # risk_accepted/waiver stay in RISK_ACCEPTED; false_positive and
+        # not_affected are governed as NOT_APPLICABLE with their own audit.
+        target_state_map = {
+            "risk_accepted": CaseStatus.RISK_ACCEPTED,
+            "waiver": CaseStatus.RISK_ACCEPTED,
+            "compensating_control": CaseStatus.RISK_ACCEPTED,
+            "false_positive": CaseStatus.NOT_APPLICABLE,
+            "not_affected": CaseStatus.NOT_APPLICABLE,
+        }
+        target_state = target_state_map.get(type, CaseStatus.RISK_ACCEPTED)
+        audit_action_map = {
+            "risk_accepted": "risk.accepted",
+            "waiver": "risk.waiver.accepted",
+            "compensating_control": "risk.compensating_control.accepted",
+            "false_positive": "risk.false_positive.accepted",
+            "not_affected": "risk.not_affected.accepted",
+        }
+        audit_action = audit_action_map.get(type, "risk.accepted")
 
         decision = RiskDecision(
             id=f"rdec_{uuid.uuid4().hex[:12]}",
@@ -276,24 +354,30 @@ class CaseService:
             evidence_ids=evidence_ids,
             requested_by=requested_by,
             approver=approver,
+            approver_role=effective_role,
             expires_at=expires_at,
         )
         try:
             self.session.add(decision)
             if status == "approved":
                 prior = case.status
-                case.status = CaseStatus.RISK_ACCEPTED
+                allowed = ALLOWED_TRANSITIONS.get(prior, [])
+                if target_state not in allowed:
+                    raise ValueError(
+                        f"transition {prior} -> {target_state} not allowed for decision type {type}"
+                    )
+                case.status = target_state
                 case.version += 1
                 case.updated_at = now
                 audit = AuditEvent(
                     id=f"aud_{uuid.uuid4().hex[:12]}",
                     actor=actor,
-                    action="risk.accepted",
+                    action=audit_action,
                     subject_type="case",
                     subject_id=case_id,
                     correlation_id=str(uuid.uuid4()),
                     prior_state=prior,
-                    new_state=CaseStatus.RISK_ACCEPTED,
+                    new_state=target_state,
                     reason=reason,
                     organization_id=case.organization_id,
                 )
@@ -303,7 +387,11 @@ class CaseService:
                     aggregate_type="case",
                     aggregate_id=case_id,
                     event_type="vulnops.risk-decision.accepted.v1",
-                    payload={"decision_id": decision.id, "type": type, "expires_at": expires_at.isoformat() if expires_at else None},
+                    payload={
+                        "decision_id": decision.id,
+                        "type": type,
+                        "expires_at": expires_at.isoformat() if expires_at else None,
+                    },
                     correlation_id=audit.correlation_id,
                 )
                 self.session.add(outbox)
@@ -365,7 +453,15 @@ class CaseService:
         now = now or _utcnow()
         now_aware = _ensure_aware(now)
         # Fetch all approved with expiry, then filter in python to handle tz naive/aware mismatch
-        all_pending = self.session.execute(select(RiskDecision).where(RiskDecision.status == "approved", RiskDecision.expires_at != None)).scalars().all()
+        all_pending = (
+            self.session.execute(
+                select(RiskDecision).where(
+                    RiskDecision.status == "approved", RiskDecision.expires_at != None
+                )
+            )
+            .scalars()
+            .all()
+        )
         decisions = []
         for d in all_pending:
             exp = _ensure_aware(d.expires_at)
@@ -405,7 +501,9 @@ class CaseService:
         self.session.commit()
         return count
 
-    def reopen_on_evidence(self, case_id: str, evidence_id: str, reason: str = "new confirming evidence"):
+    def reopen_on_evidence(
+        self, case_id: str, evidence_id: str, reason: str = "new confirming evidence"
+    ):
         case = self.get_case(case_id)
         if case.status != CaseStatus.CLOSED:
             # Only reopen closed cases per spec

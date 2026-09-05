@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
@@ -32,7 +32,11 @@ async def submit_sbom(
     # Basic content-type check but allow vendors to send application/json etc.
     # The service will validate format
 
-    correlation_id = request.headers.get("X-Request-ID") or request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
+    correlation_id = (
+        request.headers.get("X-Request-ID")
+        or request.headers.get("X-Correlation-ID")
+        or str(uuid.uuid4())
+    )
 
     svc = SBOMService(db)
     try:
@@ -45,7 +49,7 @@ async def submit_sbom(
     except ValueError as ve:
         # Validation failure -> 422 Problem Details compatible
         raise HTTPException(status_code=422, detail=str(ve))
-    except Exception as e:
+    except Exception:
         # Unexpected
         raise HTTPException(status_code=500, detail="Failed to process SBOM")
 
@@ -55,10 +59,19 @@ async def submit_sbom(
 
 @router.get("/organizations/{org_id}/sboms/{sbom_id}")
 async def get_sbom(org_id: str, sbom_id: str, db: Session = Depends(get_db)):
-    from vulnops.sbom.models import SbomDocument
     from sqlalchemy import select
 
-    doc = db.execute(select(SbomDocument).where(SbomDocument.id == sbom_id, SbomDocument.organization_id == org_id)).scalars().first()
+    from vulnops.sbom.models import SbomDocument
+
+    doc = (
+        db.execute(
+            select(SbomDocument).where(
+                SbomDocument.id == sbom_id, SbomDocument.organization_id == org_id
+            )
+        )
+        .scalars()
+        .first()
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="SBOM not found")
     return {

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Index, Text, Integer, ForeignKey, UniqueConstraint, JSON
+from datetime import UTC, datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vulnops.db import Base
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class SbomDocument(Base):
@@ -30,7 +31,9 @@ class SbomDocument(Base):
     object_uri: Mapped[str] = mapped_column(Text, nullable=False)
     parser_version: Mapped[str] = mapped_column(String(32), nullable=False)
     validation_state: Mapped[str] = mapped_column(String(32), nullable=False, default="valid")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class Component(Base):
@@ -47,7 +50,9 @@ class Component(Base):
     raw_name: Mapped[str] = mapped_column(String(512), nullable=False)
     raw_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
     cpe: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class ComponentOccurrence(Base):
@@ -60,8 +65,12 @@ class ComponentOccurrence(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    sbom_id: Mapped[str] = mapped_column(String(64), ForeignKey("sbom_documents.id"), nullable=False)
-    component_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("components.id"), nullable=True)
+    sbom_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("sbom_documents.id"), nullable=False
+    )
+    component_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("components.id"), nullable=True
+    )
     asset_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     purl: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -76,7 +85,9 @@ class ComponentOccurrence(Base):
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="sbom")
     evidence_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     dependency_path: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     sbom: Mapped[SbomDocument] = relationship()
     component: Mapped[Component | None] = relationship()

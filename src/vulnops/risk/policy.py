@@ -15,7 +15,9 @@ class PolicyInput:
     asset_criticality: str = "medium"  # critical|high|medium|low
     internet_exposure: str = "internal"  # external|internal|unknown
     match_confidence: float = 0.9
-    match_class: str = "deterministic"  # confirmed|deterministic|corroborated|candidate|not_affected
+    match_class: str = (
+        "deterministic"  # confirmed|deterministic|corroborated|candidate|not_affected
+    )
     age_days: int | None = None
     data_sensitivity: str | None = None
 
@@ -58,19 +60,24 @@ class RiskPolicyEngine:
 
         # Hard escalation rules first (per arch 3.4)
         # Example: applicable CISA KEV on internet-facing critical service
-        if inp.kev and inp.asset_criticality == "critical" and inp.internet_exposure == "external" and inp.match_class in ("deterministic", "confirmed"):
-            if inp.match_confidence >= 0.7:
-                explanation = f"Hard escalation: KEV {inp.vulnerability_id} on critical internet-facing asset with {inp.match_class} confidence {inp.match_confidence}"
-                factors["hard_escalation"] = "kev_critical_internet"
-                return PolicyResult(
-                    priority="P0",
-                    policy_version=self.policy_version,
-                    escalated=True,
-                    factors=factors,
-                    explanation=explanation,
-                    reasons=["kev_escalation"],
-                    score=100,
-                )
+        if (
+            inp.kev
+            and inp.asset_criticality == "critical"
+            and inp.internet_exposure == "external"
+            and inp.match_class in ("deterministic", "confirmed")
+            and inp.match_confidence >= 0.7
+        ):
+            explanation = f"Hard escalation: KEV {inp.vulnerability_id} on critical internet-facing asset with {inp.match_class} confidence {inp.match_confidence}"
+            factors["hard_escalation"] = "kev_critical_internet"
+            return PolicyResult(
+                priority="P0",
+                policy_version=self.policy_version,
+                escalated=True,
+                factors=factors,
+                explanation=explanation,
+                reasons=["kev_escalation"],
+                score=100,
+            )
 
         # Also escalate if confirmed + KEV + high EPSS
         if inp.kev and inp.match_class == "confirmed" and (inp.epss_score or 0) > 0.5:
@@ -128,7 +135,9 @@ class RiskPolicyEngine:
             # Downgrade one tier
             downgrade_map = {"P0": "P1", "P1": "P2"}
             new_priority = downgrade_map.get(priority, priority)
-            reasons.append(f"confidence_adjustment {inp.match_confidence} downgrades {priority}->{new_priority}")
+            reasons.append(
+                f"confidence_adjustment {inp.match_confidence} downgrades {priority}->{new_priority}"
+            )
             priority = new_priority  # type: ignore
 
         explanation = f"Score {score:.1f} -> {priority} (CVSS {inp.cvss_score}, EPSS {inp.epss_score}, criticality {inp.asset_criticality}, exposure {inp.internet_exposure}, confidence {inp.match_confidence})"
@@ -160,7 +169,9 @@ class RiskPolicyEngine:
         # Asset context
         criticality_weights = {"critical": 20, "high": 15, "medium": 10, "low": 5, "unknown": 5}
         exposure_weights = {"external": 10, "internal": 2, "unknown": 5}
-        weighted_asset = criticality_weights.get(inp.asset_criticality, 5) + exposure_weights.get(inp.internet_exposure, 2)
+        weighted_asset = criticality_weights.get(inp.asset_criticality, 5) + exposure_weights.get(
+            inp.internet_exposure, 2
+        )
 
         # Confidence adjustment
         confidence_adj = (inp.match_confidence - 0.5) * 10  # -5 to +5

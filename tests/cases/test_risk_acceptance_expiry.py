@@ -1,14 +1,16 @@
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vulnops.db import Base
 from vulnops.cases.service import CaseService
+from vulnops.db import Base
 
 
 def _engine():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     import vulnops.cases.models  # noqa
+
     Base.metadata.create_all(bind=eng)
     return eng
 
@@ -27,17 +29,18 @@ def test_expired_acceptance_reopens_case():
         type="risk_accepted",
         reason="Vendor patch requires window",
         compensating_controls=["WAF rule 314"],
-        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        expires_at=datetime.now(UTC) + timedelta(days=30),
         evidence_ids=["ev_change_459"],
         requested_by="user1",
-        approver="risk_approver",
+        approver="alice-approver",
+        approver_role="risk_approver",
         actor="requester",
     )
     assert decision.status == "approved"
     assert svc.get_case(case.id).status == "risk_accepted"
 
     # Advance clock 31 days and process expirations
-    future = datetime.now(timezone.utc) + timedelta(days=31)
+    future = datetime.now(UTC) + timedelta(days=31)
     count = svc.process_expirations(now=future)
     assert count >= 1
     assert svc.get_case(case.id).status == "triage"
@@ -58,7 +61,7 @@ def test_risk_acceptance_requires_approval():
         case.id,
         type="risk_accepted",
         reason="need window",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=10),
+        expires_at=datetime.now(UTC) + timedelta(days=10),
         evidence_ids=["ev1"],
         requested_by="user1",
         actor="user1",
@@ -83,10 +86,11 @@ def test_revoked_decision_does_not_auto_close():
         case.id,
         type="risk_accepted",
         reason="temp",
-        expires_at=datetime.now(timezone.utc) + timedelta(days=10),
+        expires_at=datetime.now(UTC) + timedelta(days=10),
         evidence_ids=["ev1"],
         requested_by="u1",
-        approver="approver",
+        approver="alice-approver",
+        approver_role="risk_approver",
         actor="a",
     )
     assert svc.get_case(case.id).status == "risk_accepted"

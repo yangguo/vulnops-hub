@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 import httpx
 
@@ -14,7 +13,9 @@ class EPSSAdapter(IntelligenceAdapter):
 
     def __init__(self, http_client=None):
         self.http_client = http_client
-        self._status = SourceHealth(source=self.source, last_success_at=None, last_checked_at=None, freshness="unknown")
+        self._status = SourceHealth(
+            source=self.source, last_success_at=None, last_checked_at=None, freshness="unknown"
+        )
 
     def discover(self, config: dict, cursor: str | None):
         return []
@@ -42,7 +43,7 @@ class EPSSAdapter(IntelligenceAdapter):
         retrieved_at: datetime | None = None,
         source_url: str | None = None,
     ) -> dict[str, AdvisoryRecord]:
-        now = retrieved_at or datetime.now(timezone.utc)
+        now = retrieved_at or datetime.now(UTC)
         url = source_url or f"{self.base_url}?cve={','.join(cve_ids)}"
         if raw_fixture is not None:
             raw = raw_fixture

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import uuid
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -17,7 +17,9 @@ logger = logging.getLogger("vulnops")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    logger.info("starting vulnops-hub version=%s env=%s", settings.app_version, settings.environment)
+    logger.info(
+        "starting vulnops-hub version=%s env=%s", settings.app_version, settings.environment
+    )
     yield
     logger.info("shutting down vulnops-hub")
 

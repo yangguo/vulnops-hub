@@ -1,14 +1,13 @@
 import hashlib
 import uuid
 
-import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from vulnops.db import Base
-from vulnops.domain.provenance import persist_snapshot_with_event
-from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.source_snapshot import SourceSnapshot
+from vulnops.domain.provenance import persist_snapshot_with_event
 
 
 def _engine_with_all():

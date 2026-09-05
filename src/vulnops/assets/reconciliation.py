@@ -17,7 +17,16 @@ class ReconciliationResult:
 
 
 # Namespaces considered strong identity - single alias should resolve
-STRONG_NAMESPACES = {"arn", "cloud_arn", "aws_arn", "resource_arn", "instance_id", "uuid", "cpe", "purl"}
+STRONG_NAMESPACES = {
+    "arn",
+    "cloud_arn",
+    "aws_arn",
+    "resource_arn",
+    "instance_id",
+    "uuid",
+    "cpe",
+    "purl",
+}
 
 
 class AssetService:

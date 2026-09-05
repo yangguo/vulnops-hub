@@ -1,17 +1,17 @@
-import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vulnops.db import Base
 from vulnops.assets.models import Asset, AssetAlias
-from vulnops.assets.reconciliation import AssetService, ReconciliationResult
+from vulnops.assets.reconciliation import AssetService
+from vulnops.db import Base
 
 
 def _engine():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     # Import models to register
-    import vulnops.assets.models  # noqa: F401
+    import vulnops.assets.models
     import vulnops.sbom.models  # noqa: F401
+
     Base.metadata.create_all(bind=eng)
     return eng
 
@@ -27,14 +27,32 @@ def test_same_hostname_from_two_live_assets_is_ambiguous():
     svc = AssetService(session)
 
     # Create two live assets with different IDs
-    a1 = Asset(id="ast_01", name="api-01-a", type="host", status="active", criticality="high", organization_id="org1")
-    a2 = Asset(id="ast_02", name="api-01-b", type="host", status="active", criticality="high", organization_id="org1")
+    a1 = Asset(
+        id="ast_01",
+        name="api-01-a",
+        type="host",
+        status="active",
+        criticality="high",
+        organization_id="org1",
+    )
+    a2 = Asset(
+        id="ast_02",
+        name="api-01-b",
+        type="host",
+        status="active",
+        criticality="high",
+        organization_id="org1",
+    )
     session.add_all([a1, a2])
     session.commit()
 
     # Add same hostname alias to both assets -> collision
-    alias1 = AssetAlias(asset_id="ast_01", namespace="hostname", value="api-01", organization_id="org1")
-    alias2 = AssetAlias(asset_id="ast_02", namespace="hostname", value="api-01", organization_id="org1")
+    alias1 = AssetAlias(
+        asset_id="ast_01", namespace="hostname", value="api-01", organization_id="org1"
+    )
+    alias2 = AssetAlias(
+        asset_id="ast_02", namespace="hostname", value="api-01", organization_id="org1"
+    )
     session.add_all([alias1, alias2])
     session.commit()
 
@@ -51,10 +69,19 @@ def test_unique_alias_resolves_to_single_asset():
     session = Session()
     svc = AssetService(session)
 
-    a1 = Asset(id="ast_10", name="web-01", type="host", status="active", criticality="medium", organization_id="org1")
+    a1 = Asset(
+        id="ast_10",
+        name="web-01",
+        type="host",
+        status="active",
+        criticality="medium",
+        organization_id="org1",
+    )
     session.add(a1)
     session.commit()
-    alias = AssetAlias(asset_id="ast_10", namespace="hostname", value="web-01", organization_id="org1")
+    alias = AssetAlias(
+        asset_id="ast_10", namespace="hostname", value="web-01", organization_id="org1"
+    )
     session.add(alias)
     session.commit()
 
@@ -84,10 +111,19 @@ def test_strong_identity_arn_resolves_uniquely():
     session = Session()
     svc = AssetService(session)
 
-    a1 = Asset(id="ast_arn1", name="my-bucket", type="cloud_resource", status="active", criticality="high", organization_id="org1")
+    a1 = Asset(
+        id="ast_arn1",
+        name="my-bucket",
+        type="cloud_resource",
+        status="active",
+        criticality="high",
+        organization_id="org1",
+    )
     session.add(a1)
     session.commit()
-    alias = AssetAlias(asset_id="ast_arn1", namespace="arn", value="arn:aws:s3:::my-bucket", organization_id="org1")
+    alias = AssetAlias(
+        asset_id="ast_arn1", namespace="arn", value="arn:aws:s3:::my-bucket", organization_id="org1"
+    )
     session.add(alias)
     session.commit()
 

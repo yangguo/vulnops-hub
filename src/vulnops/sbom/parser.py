@@ -191,7 +191,10 @@ class SBOMParser:
                     continue
                 if ref.get("referenceType") == "purl":
                     purl = ref.get("referenceLocator")
-                if ref.get("referenceType") == "cpe22Type" or ref.get("referenceType") == "cpe23Type":
+                if (
+                    ref.get("referenceType") == "cpe22Type"
+                    or ref.get("referenceType") == "cpe23Type"
+                ):
                     cpe = ref.get("referenceLocator")
 
             ecosystem, normalized = _parse_purl(purl) if purl else (None, None)

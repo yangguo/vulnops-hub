@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import String, DateTime, Index, Text, Float, JSON, Integer, ForeignKey, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from vulnops.db import Base
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class CaseStatus:
@@ -72,8 +72,12 @@ class RemediationCase(Base):
     closure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_ticket_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     exposures: Mapped[list | None] = mapped_column(JSON, nullable=True)  # list of exposure ids
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
 
 
 class CaseExposure(Base):
@@ -84,23 +88,27 @@ class CaseExposure(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    case_id: Mapped[str] = mapped_column(String(64), ForeignKey("remediation_cases.id"), nullable=False)
+    case_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("remediation_cases.id"), nullable=False
+    )
     exposure_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class SlaClock(Base):
     __tablename__ = "sla_clocks"
-    __table_args__ = (
-        Index("ix_sla_case", "case_id"),
-    )
+    __table_args__ = (Index("ix_sla_case", "case_id"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    case_id: Mapped[str] = mapped_column(String(64), ForeignKey("remediation_cases.id"), nullable=False)
+    case_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("remediation_cases.id"), nullable=False
+    )
     phase: Mapped[str] = mapped_column(String(32), nullable=False)
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     breached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class RiskDecision(Base):
@@ -112,9 +120,15 @@ class RiskDecision(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    case_id: Mapped[str] = mapped_column(String(64), ForeignKey("remediation_cases.id"), nullable=False)
-    type: Mapped[str] = mapped_column(String(32), nullable=False)  # risk_accepted, false_positive, not_affected etc.
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")  # pending, approved, revoked, expired
+    case_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("remediation_cases.id"), nullable=False
+    )
+    type: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # risk_accepted, false_positive, not_affected etc.
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending"
+    )  # pending, approved, revoked, expired
     scope_exposure_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     compensating_controls: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -123,21 +137,29 @@ class RiskDecision(Base):
     approver: Mapped[str | None] = mapped_column(String(128), nullable=True)
     approver_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
 
 
 class Verification(Base):
     __tablename__ = "verifications"
-    __table_args__ = (
-        Index("ix_verif_case", "case_id"),
-    )
+    __table_args__ = (Index("ix_verif_case", "case_id"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    case_id: Mapped[str] = mapped_column(String(64), ForeignKey("remediation_cases.id"), nullable=False)
+    case_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("remediation_cases.id"), nullable=False
+    )
     method: Mapped[str] = mapped_column(String(64), nullable=False)
     asserted_result: Mapped[str | None] = mapped_column(String(32), nullable=True)
     evidence_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     coverage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)  # closed|insufficient_evidence|requires_approval etc.
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # closed|insufficient_evidence|requires_approval etc.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )

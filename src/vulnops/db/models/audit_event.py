@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Text, Index, JSON
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, DateTime, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from vulnops.db import Base
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class AuditEvent(Base):
@@ -34,4 +35,6 @@ class AuditEvent(Base):
     evidence_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     organization_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )

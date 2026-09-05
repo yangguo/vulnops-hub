@@ -1,5 +1,5 @@
-import pytest
 from fastapi.testclient import TestClient
+
 from vulnops.main import create_app
 
 
@@ -10,7 +10,12 @@ def test_case_transition_api_flow():
     # Create case
     resp = client.post(
         "/api/v1/organizations/acme/cases",
-        json={"title": "Fix CVE-2026-12345", "owner_team": "secops", "priority": "P1", "exposures": ["exp_01"]},
+        json={
+            "title": "Fix CVE-2026-12345",
+            "owner_team": "secops",
+            "priority": "P1",
+            "exposures": ["exp_01"],
+        },
     )
     assert resp.status_code in (200, 201)
     case_id = resp.json()["id"]
@@ -82,7 +87,10 @@ def test_risk_decision_api_requires_approval():
         json={"title": "Risk accept test", "owner_team": "t1", "priority": "P2"},
     )
     case_id = resp.json()["id"]
-    client.post(f"/api/v1/organizations/acme/cases/{case_id}/transitions", json={"target": "triage", "reason": "triage", "actor": "analyst"})
+    client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage", "reason": "triage", "actor": "analyst"},
+    )
 
     # Create risk acceptance without approver should be pending
     resp = client.post(
@@ -98,4 +106,9 @@ def test_risk_decision_api_requires_approval():
         },
     )
     assert resp.status_code in (200, 201, 202)
-    assert resp.json().get("status") in ("pending_approval", "approval_required", "pending", "requires_approval")
+    assert resp.json().get("status") in (
+        "pending_approval",
+        "approval_required",
+        "pending",
+        "requires_approval",
+    )

@@ -1,5 +1,4 @@
-import pytest
-from vulnops.risk.policy import RiskPolicyEngine, PolicyInput
+from vulnops.risk.policy import PolicyInput, RiskPolicyEngine
 
 
 def test_kev_critical_internet_asset_selects_p0_policy():

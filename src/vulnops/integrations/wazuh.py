@@ -4,14 +4,13 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from vulnops.db.models.source_snapshot import SourceSnapshot
-from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.outbox_event import OutboxEvent
+from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.integrations.mapping import AssetMapper, MappingResult
 
 
@@ -51,7 +50,9 @@ class WazuhBridge:
         agent_id = str(agent.get("id") or agent.get("agent_id") or "unknown")
         cve = vulnerability.get("id") or raw.get("cve") or "unknown"
         # Determine source_record_id: combine agent + cve + package
-        source_record_id = f"{agent_id}:{cve}:{package.get('name', '')}:{package.get('version', '')}"
+        source_record_id = (
+            f"{agent_id}:{cve}:{package.get('name', '')}:{package.get('version', '')}"
+        )
         raw_bytes = json.dumps(raw, sort_keys=True, separators=(",", ":")).encode()
         digest = self._sha256(raw_bytes)
 
@@ -147,7 +148,10 @@ class WazuhBridge:
         scan = raw.get("scan", {})
         agent = raw.get("agent", {})
         return {
-            "scope_status": scan.get("scope_status") or scan.get("status") or raw.get("scan", {}).get("scope_status") or "unknown",
+            "scope_status": scan.get("scope_status")
+            or scan.get("status")
+            or raw.get("scan", {}).get("scope_status")
+            or "unknown",
             "scan_id": scan.get("id") or raw.get("scan", {}).get("id"),
             "agent": agent,
             "agent_id": agent.get("id"),

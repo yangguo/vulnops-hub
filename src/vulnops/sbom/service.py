@@ -3,27 +3,47 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from vulnops.db.models.source_snapshot import SourceSnapshot
-from vulnops.db.models.outbox_event import OutboxEvent
-from vulnops.db.models.audit_event import AuditEvent
-from vulnops.sbom.models import SbomDocument, Component, ComponentOccurrence
-from vulnops.sbom.parser import SBOMParser
-from vulnops.domain.provenance import persist_snapshot_with_event
 from vulnops.config import get_settings
+from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.outbox_event import OutboxEvent
+from vulnops.db.models.source_snapshot import SourceSnapshot
+from vulnops.sbom.models import Component, ComponentOccurrence, SbomDocument
+from vulnops.sbom.parser import SBOMParser
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _persist_raw_bytes(raw_bytes: bytes, bucket: str, organization_id: str, digest: str) -> str:
+    """Persist raw SBOM bytes to local storage and return the object URI.
+
+    Uses the configured bucket name instead of a hard-coded default so the
+    recorded URI always matches deployment configuration. Returns an
+    ``s3://`` logical URI; locally the bytes live under ``./storage`` for
+    replay and digest verification.
+    """
+    import os
+
+    object_uri = f"s3://{bucket}/sbom/{organization_id}/{digest}.json"
+    # Local backing store for MVP / dev (MinIO/S3 in production).
+    local_path = os.path.join("storage", "sbom", organization_id, f"{digest}.json")
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    # Idempotent write: only write when missing or digest differs.
+    if not os.path.exists(local_path):
+        with open(local_path, "wb") as f:
+            f.write(raw_bytes)
+    return object_uri
 
 
 class SBOMService:
@@ -51,12 +71,16 @@ class SBOMService:
         raw_bytes = json.dumps(raw_data, sort_keys=True, separators=(",", ":")).encode()
         digest = _sha256_bytes(raw_bytes)
         # Idempotency: check existing SBOM by digest + org
-        existing = self.session.execute(
-            select(SbomDocument).where(
-                SbomDocument.content_sha256 == digest,
-                SbomDocument.organization_id == organization_id,
+        existing = (
+            self.session.execute(
+                select(SbomDocument).where(
+                    SbomDocument.content_sha256 == digest,
+                    SbomDocument.organization_id == organization_id,
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if existing:
             return {
                 "id": existing.id,
@@ -75,10 +99,18 @@ class SBOMService:
         # Determine format and metadata
         sbom_id = f"sbom_{uuid.uuid4().hex[:12]}"
         # Use serialNumber or documentNamespace as source_record_id
-        serial = parsed.serial_number or parsed.raw.get("serialNumber") or parsed.raw.get("documentNamespace") or sbom_id
-        object_uri = f"s3://vulnops-snapshots/sbom/{organization_id}/{digest}.json"
-        # For local dev without S3, we can also store under ./storage if needed
-        # But keep URI as logical pointer per architecture
+        serial = (
+            parsed.serial_number
+            or parsed.raw.get("serialNumber")
+            or parsed.raw.get("documentNamespace")
+            or sbom_id
+        )
+        settings = get_settings()
+        # Persist raw bytes first so the recorded URI is retrievable and
+        # digest-verifiable; bucket comes from deployment configuration.
+        object_uri = _persist_raw_bytes(
+            raw_bytes, settings.object_storage_bucket, organization_id, digest
+        )
 
         # Create source snapshot for provenance
         snapshot = SourceSnapshot(
@@ -99,7 +131,9 @@ class SBOMService:
             id=sbom_id,
             organization_id=organization_id,
             serial_number=str(serial)[:256] if serial else None,
-            version=parsed.raw.get("version") if isinstance(parsed.raw.get("version"), int) else None,
+            version=parsed.raw.get("version")
+            if isinstance(parsed.raw.get("version"), int)
+            else None,
             format=parsed.format,
             spec_version=parsed.spec_version,
             content_sha256=digest,
@@ -159,9 +193,11 @@ class SBOMService:
                     # Find or create component by purl if present
                     comp_id = None
                     if pc.purl:
-                        existing_comp = self.session.execute(
-                            select(Component).where(Component.purl == pc.purl)
-                        ).scalars().first()
+                        existing_comp = (
+                            self.session.execute(select(Component).where(Component.purl == pc.purl))
+                            .scalars()
+                            .first()
+                        )
                         if existing_comp:
                             comp_id = existing_comp.id
                         else:
@@ -227,13 +263,14 @@ class SBOMService:
             self.session.rollback()
             raise
 
-    def replay_with_version(self, raw_data: dict[str, Any], parser_version: str, organization_id: str) -> dict:
+    def replay_with_version(
+        self, raw_data: dict[str, Any], parser_version: str, organization_id: str
+    ) -> dict:
         """
         Replay an older source snapshot under an explicit parser version
         without mutating raw evidence. Returns parsed result.
         """
         # This method proves that raw evidence is retained and re-parseable
-        old_parser = SBOMParser()
         # Temporarily override version
         svc = SBOMService(self.session, parser_version=parser_version)
         parsed = svc.parser.parse(raw_data)

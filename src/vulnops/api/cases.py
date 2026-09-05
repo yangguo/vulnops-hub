@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
-from vulnops.cases.service import CaseService
 from vulnops.cases.models import ALLOWED_TRANSITIONS
+from vulnops.cases.service import CaseService
 
 router = APIRouter(tags=["cases"])
 
@@ -149,7 +147,14 @@ async def transition_case(
         raise HTTPException(status_code=404, detail="Case not found")
 
     try:
-        updated = svc.transition(case_id, target, actor=actor, reason=reason, extra=extra, expected_version=expected_version)
+        updated = svc.transition(
+            case_id,
+            target,
+            actor=actor,
+            reason=reason,
+            extra=extra,
+            expected_version=expected_version,
+        )
     except ValueError as ve:
         msg = str(ve).lower()
         if "conflict" in msg or "version" in msg:
@@ -198,17 +203,17 @@ async def create_risk_decision(
     scope = data.get("scope")
     compensating = data.get("compensating_controls") or data.get("compensatingControls")
     evidence_ids = data.get("evidence_ids") or data.get("evidenceIds") or []
-    requested_by = data.get("requested_by") or data.get("requestedBy") or data.get("requester") or "unknown"
-    approver = data.get("approver") or data.get("approved_by") or data.get("approver_role")
-    # Sometimes approver is implied via separate field
-    if not approver and data.get("approver_role"):
-        approver = data.get("requested_by")  # fallback
+    requested_by = (
+        data.get("requested_by") or data.get("requestedBy") or data.get("requester") or "unknown"
+    )
+    approver = data.get("approver") or data.get("approved_by")
+    approver_role = data.get("approver_role") or data.get("approverRole")
     expires_at_str = data.get("expires_at") or data.get("expiresAt")
     expires_at = None
     if expires_at_str:
         try:
-            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-        except Exception:
+            expires_at = datetime.fromisoformat(expires_at_str)
+        except ValueError:
             expires_at = None
 
     svc = CaseService(db)
@@ -225,20 +230,32 @@ async def create_risk_decision(
         if expected is not None and case.version != expected:
             raise HTTPException(status_code=412, detail="Precondition Failed: version mismatch")
 
-    decision = svc.create_risk_decision(
-        case_id,
-        type=type_,
-        reason=reason,
-        expires_at=expires_at,
-        compensating_controls=compensating,
-        evidence_ids=evidence_ids,
-        requested_by=requested_by,
-        approver=approver,
-        actor=requested_by,
-        scope=scope,
-    )
+    try:
+        decision = svc.create_risk_decision(
+            case_id,
+            type=type_,
+            reason=reason,
+            expires_at=expires_at,
+            compensating_controls=compensating,
+            evidence_ids=evidence_ids,
+            requested_by=requested_by,
+            approver=approver,
+            approver_role=approver_role,
+            actor=requested_by,
+            scope=scope,
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "type": "https://hub.example/problems/invalid-transition",
+                "title": "Invalid Risk Decision",
+                "status": 422,
+                "code": "invalid_transition",
+                "detail": str(ve),
+            },
+        )
 
-    status_code = 201 if decision.status == "approved" else 202
     return {
         "id": decision.id,
         "type": decision.type,
@@ -258,10 +275,11 @@ async def submit_verification(
 ):
     data = await request.json()
     method = data.get("method") or data.get("type") or "unknown"
-    evidence_ids = data.get("evidence_ids") or data.get("evidenceIds") or data.get("evidence_ids") or []
+    evidence_ids = (
+        data.get("evidence_ids") or data.get("evidenceIds") or data.get("evidence_ids") or []
+    )
     coverage = data.get("coverage")
     asserted = data.get("asserted_result") or data.get("assertedResult")
-    asset_id = data.get("asset_id")
 
     svc = CaseService(db)
     try:
@@ -271,21 +289,49 @@ async def submit_verification(
     except ValueError:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    verification = svc.verify(
-        case_id,
-        method=method,
-        evidence_ids=evidence_ids,
-        coverage=coverage,
-        actor=data.get("actor") or "api",
-        asserted_result=asserted,
-    )
+    try:
+        verification = svc.verify(
+            case_id,
+            method=method,
+            evidence_ids=evidence_ids,
+            coverage=coverage,
+            actor=data.get("actor") or "api",
+            asserted_result=asserted,
+        )
+    except ValueError as ve:
+        msg = str(ve).lower()
+        if "not allowed" in msg:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "type": "https://hub.example/problems/invalid-transition",
+                    "title": "Invalid Transition",
+                    "status": 422,
+                    "code": "invalid_transition",
+                    "detail": str(ve),
+                },
+            )
+        raise HTTPException(status_code=422, detail=str(ve))
 
     # Map to problem details if insufficient
     if verification.status == "insufficient_evidence":
         # Return 200 with status, but also ensure case not closed
         # For stricter API, could be 422; we support both
-        return {"id": verification.id, "status": verification.status, "case_status": svc.get_case(case_id).status, "coverage": coverage}
+        return {
+            "id": verification.id,
+            "status": verification.status,
+            "case_status": svc.get_case(case_id).status,
+            "coverage": coverage,
+        }
     if verification.status == "requires_approval":
-        return {"id": verification.id, "status": verification.status, "case_status": svc.get_case(case_id).status}
+        return {
+            "id": verification.id,
+            "status": verification.status,
+            "case_status": svc.get_case(case_id).status,
+        }
 
-    return {"id": verification.id, "status": verification.status, "case_status": svc.get_case(case_id).status}
+    return {
+        "id": verification.id,
+        "status": verification.status,
+        "case_status": svc.get_case(case_id).status,
+    }

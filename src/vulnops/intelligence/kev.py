@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 import httpx
 
@@ -16,7 +14,9 @@ class KEVAdapter(IntelligenceAdapter):
     def __init__(self, http_client=None):
         self.http_client = http_client
         self._catalog: dict[str, dict] | None = None
-        self._status = SourceHealth(source=self.source, last_success_at=None, last_checked_at=None, freshness="unknown")
+        self._status = SourceHealth(
+            source=self.source, last_success_at=None, last_checked_at=None, freshness="unknown"
+        )
 
     def discover(self, config: dict, cursor: str | None):
         return []
@@ -36,7 +36,7 @@ class KEVAdapter(IntelligenceAdapter):
         return None, self._status
 
     def fetch_catalog(self, raw_fixture: dict | None = None, source_url: str | None = None) -> dict:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         url = source_url or self.base_url
         if raw_fixture is not None:
             raw = raw_fixture
@@ -71,11 +71,13 @@ class KEVAdapter(IntelligenceAdapter):
             return False
         return cve_id in self._catalog
 
-    def get_record(self, cve_id: str, retrieved_at: datetime | None = None, source_url: str | None = None) -> AdvisoryRecord | None:
+    def get_record(
+        self, cve_id: str, retrieved_at: datetime | None = None, source_url: str | None = None
+    ) -> AdvisoryRecord | None:
         if self._catalog is None or cve_id not in self._catalog:
             return None
         entry = self._catalog[cve_id]
-        now = retrieved_at or datetime.now(timezone.utc)
+        now = retrieved_at or datetime.now(UTC)
         return AdvisoryRecord(
             vulnerability_id=cve_id,
             source=self.source,

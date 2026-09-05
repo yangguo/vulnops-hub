@@ -1,18 +1,17 @@
 import pytest
-from datetime import datetime, timezone, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vulnops.db import Base
-from vulnops.cases.models import RemediationCase, CaseStatus
 from vulnops.cases.service import CaseService
+from vulnops.db import Base
 
 
 def _engine():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    import vulnops.cases.models  # noqa
-    import vulnops.db.models.audit_event  # noqa
+    import vulnops.cases.models
+    import vulnops.db.models.audit_event
     import vulnops.db.models.outbox_event  # noqa
+
     Base.metadata.create_all(bind=eng)
     return eng
 
@@ -88,14 +87,24 @@ def test_concurrent_update_with_stale_version_fails():
 
 def test_new_confirmed_evidence_reopens_closed_case():
     svc, session = _svc()
-    case = svc.create_case(organization_id="org1", title="test", owner_team="t1", priority="P1", exposures=["exp_1"])
+    case = svc.create_case(
+        organization_id="org1", title="test", owner_team="t1", priority="P1", exposures=["exp_1"]
+    )
     for s in ["triage", "assigned", "in_progress", "awaiting_verification"]:
         svc.transition(case.id, s, actor="a")
-    svc.verify(case.id, method="wazuh_inventory", evidence_ids=["ev1"], coverage={"status": "complete"}, actor="verifier")
+    svc.verify(
+        case.id,
+        method="wazuh_inventory",
+        evidence_ids=["ev1"],
+        coverage={"status": "complete"},
+        actor="verifier",
+    )
     assert svc.get_case(case.id).status == "closed"
 
     # New confirming evidence should reopen
-    svc.reopen_on_evidence(case.id, evidence_id="ev_new_confirm", reason="new scanner confirmed detection")
+    svc.reopen_on_evidence(
+        case.id, evidence_id="ev_new_confirm", reason="new scanner confirmed detection"
+    )
     assert svc.get_case(case.id).status == "reopened"
     # Reopened should go back to triage
     svc.transition(case.id, "triage", actor="analyst")

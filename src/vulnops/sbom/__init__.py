@@ -1,3 +1,3 @@
-from vulnops.sbom.models import SbomDocument, Component, ComponentOccurrence
+from vulnops.sbom.models import Component, ComponentOccurrence, SbomDocument
 
-__all__ = ["SbomDocument", "Component", "ComponentOccurrence"]
+__all__ = ["Component", "ComponentOccurrence", "SbomDocument"]

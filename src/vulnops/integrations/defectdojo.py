@@ -4,14 +4,13 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from vulnops.db.models.source_snapshot import SourceSnapshot
-from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.outbox_event import OutboxEvent
+from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.integrations.mapping import AssetMapper, MappingResult
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
@@ -49,8 +48,14 @@ class DefectDojoBridge:
         finding_id = str(raw.get("id") or raw.get("finding_id") or uuid.uuid4().hex[:8])
         raw_bytes = json.dumps(raw, sort_keys=True, separators=(",", ":")).encode()
         digest = self._sha256(raw_bytes)
-        object_uri = raw.get("url") or raw.get("file_path") or f"https://dojo.example/findings/{finding_id}"
-        cve = raw.get("cve") or (raw.get("vulnerability_aliases") or [None])[0] or (raw.get("cve") or raw.get("vuln_id"))
+        object_uri = (
+            raw.get("url") or raw.get("file_path") or f"https://dojo.example/findings/{finding_id}"
+        )
+        cve = (
+            raw.get("cve")
+            or (raw.get("vulnerability_aliases") or [None])[0]
+            or (raw.get("cve") or raw.get("vuln_id"))
+        )
 
         # Idempotency: check existing snapshot by natural key
         existing = (
@@ -122,12 +127,36 @@ class DefectDojoBridge:
             if mapping.status != "ambiguous":
                 # Simulate OSV check: if we had real advisory, we'd call matcher
                 # For test purposes, mark as deterministic
-                advisory = {"id": cve, "affected": [{"package": {"purl": purl}, "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "9999.0.0"}]}]}]}
-                scanner_evidence = {"scanner_confirmed": True, "finding_id": finding_id} if raw.get("verified") else None
+                advisory = {
+                    "id": cve,
+                    "affected": [
+                        {
+                            "package": {"purl": purl},
+                            "ranges": [
+                                {
+                                    "type": "ECOSYSTEM",
+                                    "events": [{"introduced": "0"}, {"fixed": "9999.0.0"}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+                scanner_evidence = (
+                    {"scanner_confirmed": True, "finding_id": finding_id}
+                    if raw.get("verified")
+                    else None
+                )
                 try:
-                    exp_result = self.matcher.evaluate(comp, advisory, asset_context={}, scanner_evidence=scanner_evidence)
-                    exposure = {"match_class": exp_result.match_class, "confidence": exp_result.confidence}
-                    should_create_case = exp_result.should_create_case and mapping.status != "ambiguous"
+                    exp_result = self.matcher.evaluate(
+                        comp, advisory, asset_context={}, scanner_evidence=scanner_evidence
+                    )
+                    exposure = {
+                        "match_class": exp_result.match_class,
+                        "confidence": exp_result.confidence,
+                    }
+                    should_create_case = (
+                        exp_result.should_create_case and mapping.status != "ambiguous"
+                    )
                     if should_create_case:
                         case_id = f"case_{uuid.uuid4().hex[:8]}"  # Would be created via case service, but for bridge we stub
                         should_create_case = False  # Bridge never creates case directly per spec
@@ -215,9 +244,15 @@ class DefectDojoBridge:
         # Also check reimport metadata
         reimport = raw.get("reimport") or {}
         return {
-            "scope_status": scan_run.get("scope_status") or scan_run.get("status") or raw.get("status") or "unknown",
+            "scope_status": scan_run.get("scope_status")
+            or scan_run.get("status")
+            or raw.get("status")
+            or "unknown",
             "credentials_status": scan_run.get("credentials_status") or "unknown",
-            "scan_id": scan_run.get("id") or raw.get("scan_run", {}).get("id") or reimport.get("test_id") or raw.get("test"),
+            "scan_id": scan_run.get("id")
+            or raw.get("scan_run", {}).get("id")
+            or reimport.get("test_id")
+            or raw.get("test"),
             "test_id": raw.get("test") or reimport.get("test_id"),
             "reimport_version": reimport.get("version"),
         }

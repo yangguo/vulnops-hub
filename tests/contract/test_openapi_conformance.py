@@ -1,6 +1,6 @@
 import pathlib
+
 import yaml
-import pytest
 from fastapi.testclient import TestClient
 
 from vulnops.main import create_app
@@ -33,7 +33,9 @@ def test_sbom_ingestion_conforms_to_openapi():
     bom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "components": [{"type": "library", "name": "test", "version": "1.0.0", "purl": "pkg:pypi/test@1.0.0"}],
+        "components": [
+            {"type": "library", "name": "test", "version": "1.0.0", "purl": "pkg:pypi/test@1.0.0"}
+        ],
     }
     resp = client.post("/api/v1/organizations/acme/sboms", json=bom)
     assert resp.status_code in (200, 201, 202)
@@ -46,17 +48,26 @@ def test_case_transition_conforms_to_openapi():
     app = create_app()
     client = TestClient(app)
     # Create case then transition
-    resp = client.post("/api/v1/organizations/acme/cases", json={"title": "test", "owner_team": "t1", "priority": "P2"})
+    resp = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "test", "owner_team": "t1", "priority": "P2"},
+    )
     case_id = resp.json()["id"]
     resp = client.get(f"/api/v1/organizations/acme/cases/{case_id}/allowed-transitions")
     assert resp.status_code == 200
     assert "allowed" in resp.json()
 
-    resp = client.post(f"/api/v1/organizations/acme/cases/{case_id}/transitions", json={"target": "triage", "reason": "triage", "actor": "analyst"})
+    resp = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage", "reason": "triage", "actor": "analyst"},
+    )
     assert resp.status_code == 200
     assert resp.json()["status"] == "triage"
 
     # Invalid transition should be 422 with problem details
-    resp = client.post(f"/api/v1/organizations/acme/cases/{case_id}/transitions", json={"target": "closed", "reason": "bad", "actor": "analyst"})
+    resp = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "closed", "reason": "bad", "actor": "analyst"},
+    )
     assert resp.status_code == 422
     assert "detail" in resp.json()

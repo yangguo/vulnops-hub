@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Index, Text, ForeignKey
+from datetime import UTC, datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from vulnops.db import Base
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _gen_id(prefix: str = "alias"):
@@ -38,10 +39,16 @@ class Asset(Base):
 
     first_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
 
-    aliases: Mapped[list["AssetAlias"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
+    aliases: Mapped[list[AssetAlias]] = relationship(
+        back_populates="asset", cascade="all, delete-orphan"
+    )
 
 
 class AssetAlias(Base):
@@ -53,11 +60,15 @@ class AssetAlias(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: _gen_id("alias"))
-    asset_id: Mapped[str] = mapped_column(String(64), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
+    asset_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
     namespace: Mapped[str] = mapped_column(String(64), nullable=False)
     value: Mapped[str] = mapped_column(String(512), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
     asset: Mapped[Asset] = relationship(back_populates="aliases")

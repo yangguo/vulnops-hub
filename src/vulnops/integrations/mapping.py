@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from vulnops.assets.reconciliation import AssetService, ReconciliationResult
+from vulnops.assets.reconciliation import AssetService
 
 
 @dataclass
@@ -40,7 +40,9 @@ class AssetMapper:
             if result.status == "ambiguous":
                 return MappingResult(status="ambiguous", asset_id=None, reason=result.reason)
             if result.status == "resolved":
-                return MappingResult(status="resolved", asset_id=result.asset_id, reason=result.reason)
+                return MappingResult(
+                    status="resolved", asset_id=result.asset_id, reason=result.reason
+                )
 
         # No resolved, check if any candidate/not_found?
         return MappingResult(status="not_found", asset_id=None, reason="no resolvable alias")

@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from vulnops.intelligence.contracts import AdvisoryRecord, IntelligenceAdapter, SourceHealth
-from vulnops.intelligence.models import SourceStatus
-from vulnops.config import get_settings
 
 
 class OSVAdapter(IntelligenceAdapter):
@@ -63,9 +59,8 @@ class OSVAdapter(IntelligenceAdapter):
         For tests, pass raw_fixture to bypass HTTP and directly parse.
         Returns normalized AdvisoryRecords with provenance.
         """
-        now = retrieved_at or datetime.now(timezone.utc)
+        now = retrieved_at or datetime.now(UTC)
         url = source_url or f"{self.base_url}/v1/querybatch"
-        settings = get_settings()
 
         if raw_fixture is not None:
             raw = raw_fixture
@@ -112,7 +107,11 @@ class OSVAdapter(IntelligenceAdapter):
         for idx, result in enumerate(raw.get("results", [])):
             vulns = result.get("vulns") or []
             for vuln in vulns:
-                vuln_id = vuln.get("id") or vuln.get("aliases", [None])[0] or f"OSV-{uuid.uuid4().hex[:8]}"
+                vuln_id = (
+                    vuln.get("id")
+                    or vuln.get("aliases", [None])[0]
+                    or f"OSV-{uuid.uuid4().hex[:8]}"
+                )
                 # Extract affected ranges
                 affected = []
                 for aff in vuln.get("affected", []):

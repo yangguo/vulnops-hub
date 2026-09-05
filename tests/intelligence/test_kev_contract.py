@@ -11,7 +11,9 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "intelligence" / "kev_cata
 def test_kev_parses_catalog_and_retains_source():
     data = json.loads(FIXTURE.read_text())
     adapter = KEVAdapter()
-    adapter.fetch_catalog(raw_fixture=data, source_url="https://www.cisa.gov/known_exploited_vulnerabilities.json")
+    adapter.fetch_catalog(
+        raw_fixture=data, source_url="https://www.cisa.gov/known_exploited_vulnerabilities.json"
+    )
     assert adapter.is_kev("CVE-2026-12345") is True
     assert adapter.is_kev("CVE-1999-0001") is False
     rec = adapter.get_record("CVE-2026-12345")
@@ -29,10 +31,10 @@ def test_kev_stale_does_not_delete():
 
     class FailingClient:
         def get(self, *a, **kw):
-            raise Exception("network error")
+            raise ConnectionError("network error")
 
     adapter.http_client = FailingClient()
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectionError):
         adapter.fetch_catalog()
 
     health = adapter.get_health()

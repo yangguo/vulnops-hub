@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from vulnops import __version__
@@ -49,7 +49,6 @@ async def readiness(request: Request) -> JSONResponse:
 
         url = settings.effective_database_url
         # For sqlite we need connect_args, for postgres timeout
-        connect_args = {}
         if url.startswith("sqlite"):
             # sqlite check: create engine and execute SELECT 1
             engine = create_engine(url, connect_args={"check_same_thread": False})

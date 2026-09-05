@@ -1,7 +1,6 @@
-import json
 import pytest
 
-from vulnops.sbom.parser import SBOMParser, ParsedSBOM
+from vulnops.sbom.parser import ParsedSBOM, SBOMParser
 
 
 def test_cyclonedx_component_preserves_purl_and_raw_version():
@@ -15,7 +14,7 @@ def test_cyclonedx_component_preserves_purl_and_raw_version():
                 "type": "application",
                 "name": "myapp",
                 "version": "1.0.0",
-                "bom-ref": "myapp@1.0.0"
+                "bom-ref": "myapp@1.0.0",
             }
         },
         "components": [
@@ -24,16 +23,16 @@ def test_cyclonedx_component_preserves_purl_and_raw_version():
                 "name": "urllib3",
                 "version": "1.26.18",
                 "purl": "pkg:pypi/urllib3@1.26.18",
-                "bom-ref": "urllib3@1.26.18"
+                "bom-ref": "urllib3@1.26.18",
             },
             {
                 "type": "library",
                 "name": "openssl",
                 "version": "3.0.2",
                 "purl": "pkg:deb/debian/openssl@3.0.2?arch=x86_64",
-                "cpe": "cpe:2.3:a:openssl:openssl:3.0.2:*:*:*:*:*:*:*"
-            }
-        ]
+                "cpe": "cpe:2.3:a:openssl:openssl:3.0.2:*:*:*:*:*:*:*",
+            },
+        ],
     }
     parser = SBOMParser()
     parsed: ParsedSBOM = parser.parse(bom)
@@ -62,9 +61,9 @@ def test_cyclonedx_parser_preserves_raw_and_normalized():
                 "name": "tomcat-catalina",
                 "version": "9.0.80",
                 "purl": "pkg:maven/org.apache.tomcat/tomcat-catalina@9.0.80",
-                "group": "org.apache.tomcat"
+                "group": "org.apache.tomcat",
             }
-        ]
+        ],
     }
     parser = SBOMParser()
     parsed = parser.parse(bom)
@@ -81,7 +80,7 @@ def test_cyclonedx_parser_preserves_raw_and_normalized():
 def test_cyclonedx_malformed_raises_validation_error():
     bom = {"not": "cyclonedx"}
     parser = SBOMParser()
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(ValueError) as exc:
         parser.parse(bom)
     # Should indicate validation issue, not silent success
     msg = str(exc.value).lower()
@@ -92,9 +91,7 @@ def test_cyclonedx_without_purl_still_preserves_raw():
     bom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "components": [
-            {"name": "left-pad", "version": "1.3.0"}
-        ]
+        "components": [{"name": "left-pad", "version": "1.3.0"}],
     }
     parser = SBOMParser()
     parsed = parser.parse(bom)

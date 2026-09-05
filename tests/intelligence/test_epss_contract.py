@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,9 +12,11 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "intelligence" / "epss_res
 def test_epss_keeps_source_provenance():
     data = json.loads(FIXTURE.read_text())
     adapter = EPSSAdapter()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     url = "https://api.first.org/data/v1/epss?cve=CVE-2026-12345"
-    result = adapter.get_scores(["CVE-2026-12345"], raw_fixture=data, retrieved_at=now, source_url=url)
+    result = adapter.get_scores(
+        ["CVE-2026-12345"], raw_fixture=data, retrieved_at=now, source_url=url
+    )
     assert "CVE-2026-12345" in result
     rec = result["CVE-2026-12345"]
     assert rec.source == "epss"
@@ -27,10 +29,10 @@ def test_epss_keeps_source_provenance():
 def test_epss_stale_on_failure():
     class FailingClient:
         def get(self, *a, **kw):
-            raise Exception("connection timeout")
+            raise ConnectionError("connection timeout")
 
     adapter = EPSSAdapter(http_client=FailingClient())
-    with pytest.raises(Exception):
+    with pytest.raises(ConnectionError):
         adapter.get_scores(["CVE-2026-12345"])
     health = adapter.get_health()
     assert health.freshness == "stale"
@@ -53,7 +55,7 @@ def test_epss_does_not_downgrade_existing_on_stale():
     # Now cause stale - existing data should remain logically (health stale but not delete)
     class FailingClient:
         def get(self, *a, **kw):
-            raise Exception("503 Service Unavailable")
+            raise ConnectionError("503 Service Unavailable")
 
     adapter.http_client = FailingClient()
     try:

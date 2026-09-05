@@ -1,4 +1,3 @@
-import pytest
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
 
@@ -20,7 +19,9 @@ def test_cpe_name_only_is_candidate_not_case():
         "affected": [
             {
                 "package": {"ecosystem": "CPE", "name": "openssl"},
-                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "3.0.5"}]}],
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "3.0.5"}]}
+                ],
             }
         ],
     }
@@ -49,7 +50,14 @@ def test_corroborated_cpe_with_second_signal_is_triaged():
     )
     advisory = {
         "id": "CVE-2026-99999",
-        "affected": [{"package": {"name": "openssl"}, "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "3.0.5"}]}]}],
+        "affected": [
+            {
+                "package": {"name": "openssl"},
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "3.0.5"}]}
+                ],
+            }
+        ],
     }
     # Second independent signal - e.g., Wazuh inventory confirms same package
     exposure = svc.evaluate(

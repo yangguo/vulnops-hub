@@ -13,9 +13,10 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "wazuh" / "event.json"
 def _engine():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     import vulnops.db.models.source_snapshot  # noqa
-    import vulnops.db.models.audit_event  # noqa
-    import vulnops.db.models.outbox_event  # noqa
+    import vulnops.db.models.audit_event
+    import vulnops.db.models.outbox_event
     import vulnops.assets.models  # noqa
+
     Base.metadata.create_all(bind=eng)
     return eng
 
@@ -30,7 +31,10 @@ def test_wazuh_import_preserves_agent_and_package_identity():
     result = bridge.ingest_event(raw, organization_id="org1")
 
     assert result.source_snapshot.source == "wazuh"
-    assert result.source_snapshot.source_record_id == "001" or "CVE-2026-12345" in result.source_snapshot.source_record_id
+    assert (
+        result.source_snapshot.source_record_id == "001"
+        or "CVE-2026-12345" in result.source_snapshot.source_record_id
+    )
     # Preserve Wazuh agent id
     assert result.agent_id == "001"
     # Preserve package purl and version
@@ -52,7 +56,9 @@ def test_wazuh_replay_is_idempotent():
     r2 = bridge.ingest_event(raw, organization_id="org1")
 
     assert r1.source_snapshot.id == r2.source_snapshot.id
-    cnt = session.execute(text("SELECT COUNT(*) FROM source_snapshots WHERE source='wazuh'")).scalar()
+    cnt = session.execute(
+        text("SELECT COUNT(*) FROM source_snapshots WHERE source='wazuh'")
+    ).scalar()
     assert cnt == 1
     session.close()
 

@@ -1,5 +1,5 @@
 from vulnops.integrations.defectdojo import DefectDojoBridge
-from vulnops.integrations.wazuh import WazuhBridge
 from vulnops.integrations.mapping import AssetMapper
+from vulnops.integrations.wazuh import WazuhBridge
 
-__all__ = ["DefectDojoBridge", "WazuhBridge", "AssetMapper"]
+__all__ = ["AssetMapper", "DefectDojoBridge", "WazuhBridge"]

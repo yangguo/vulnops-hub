@@ -1,6 +1,5 @@
-import pytest
-from vulnops.matching.versioning import is_version_in_range
 from vulnops.matching.service import MatchingService
+from vulnops.matching.versioning import is_version_in_range
 from vulnops.sbom.parser import ParsedComponent
 
 
@@ -21,7 +20,9 @@ def test_purl_in_osv_range_creates_deterministic_exposure():
         "affected": [
             {
                 "package": {"ecosystem": "PyPI", "purl": "pkg:pypi/urllib3"},
-                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.26.19"}]}],
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.26.19"}]}
+                ],
             }
         ],
     }
@@ -54,7 +55,9 @@ def test_purl_outside_range_not_vulnerable():
         "affected": [
             {
                 "package": {"ecosystem": "PyPI"},
-                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.26.19"}]}],
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1.26.19"}]}
+                ],
             }
         ],
     }
@@ -91,7 +94,9 @@ def test_unsupported_version_scheme_produces_candidate():
         "affected": [
             {
                 "package": {"ecosystem": "unknown"},
-                "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}],
+                "ranges": [
+                    {"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}
+                ],
             }
         ],
     }

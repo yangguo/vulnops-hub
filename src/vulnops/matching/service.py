@@ -1,11 +1,60 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
-from vulnops.matching.versioning import is_version_in_range, supports_ecosystem, normalize_ecosystem
+from vulnops.matching.versioning import is_version_in_range, normalize_ecosystem, supports_ecosystem
 from vulnops.sbom.parser import ParsedComponent
+
+
+def _strip_purl_identity(purl: str | None) -> str | None:
+    """Return canonical purl identity without version/qualifiers, lowercased.
+
+    e.g. pkg:pypi/urllib3@1.26.18 -> pkg:pypi/urllib3
+         pkg:deb/debian/openssl@3.0.2?arch=x86_64 -> pkg:deb/debian/openssl
+    """
+    if not purl:
+        return None
+    p = purl.split("?")[0].split("#")[0].split("@")[0]
+    return p.lower().rstrip("/")
+
+
+def _package_identity_matches(component: ParsedComponent, pkg: dict) -> bool:
+    """Check advisory package refers to the same component identity.
+
+    Compares purl identity first, then normalized/name fallback.
+    Returns False when advisory package carries no usable identity
+    to avoid false positives from ecosystem-only matches.
+    """
+    aff_purl = pkg.get("purl")
+    aff_name = pkg.get("name")
+
+    if aff_purl and component.purl:
+        comp_id = _strip_purl_identity(component.purl)
+        aff_id = _strip_purl_identity(aff_purl)
+        if comp_id and aff_id:
+            return comp_id == aff_id
+        return False
+
+    # If advisory has purl but component does not (or vice versa),
+    # fall back to name comparison when both names are available.
+    comp_name = (component.normalized_name or component.raw_name or "").lower().strip()
+    # Component normalized may be "group/name"; also try last segment.
+    comp_names = {comp_name}
+    if "/" in comp_name:
+        comp_names.add(comp_name.split("/")[-1])
+
+    if aff_name:
+        aff_n = str(aff_name).lower().strip()
+        aff_names = {aff_n}
+        if "/" in aff_n:
+            aff_names.add(aff_n.split("/")[-1])
+        return bool(comp_names & aff_names)
+
+    # No usable advisory identity (no purl, no name): do not match.
+    # Ecosystem-only ranges must not create deterministic exposures.
+    return False
 
 
 @dataclass
@@ -118,7 +167,9 @@ class MatchingService:
                 )
 
             # Try to match against advisory affected ranges
+            # Must match canonical package identity first, then version range.
             matched = False
+            identity_matched = False
             for aff in advisory.get("affected", []):
                 pkg = aff.get("package", {})
                 aff_eco = pkg.get("ecosystem")
@@ -129,6 +180,11 @@ class MatchingService:
                     if aff_eco_norm != eco and aff_eco_norm != "generic":
                         # Allow pypi vs PyPI mismatch already normalized
                         continue
+                # Identity check: purl/name must refer to the same package
+                # before any range or explicit version is evaluated.
+                if not _package_identity_matches(component, pkg):
+                    continue
+                identity_matched = True
                 # Check ranges
                 for rng in aff.get("ranges", []):
                     events = rng.get("events", [])
@@ -172,20 +228,27 @@ class MatchingService:
                     ),
                 )
             else:
-                # Explicit not in range => not_affected for this component
-                # But we shouldn't claim not_affected globally; for test we return not_affected
-                # If advisory has no affected ranges, treat as candidate?
-                has_ranges = any(aff.get("ranges") or aff.get("versions") for aff in advisory.get("affected", []))
-                if has_ranges:
-                    return ExposureResult(
-                        match_class="not_affected",
-                        confidence=0.85,
-                        should_create_case=False,
-                        case_id=None,
-                        matched_rules=["osv.purl-range.not_affected"],
-                        limitations=[],
-                        matcher_version=self.MATCHER_VERSION,
+                # No identity matched at all: cannot claim not_affected,
+                # fall through to candidate (ecosystem-only ranges must not
+                # create false exposures or false negatives).
+                if not identity_matched:
+                    pass
+                else:
+                    # Explicit not in range => not_affected for this component
+                    has_ranges = any(
+                        aff.get("ranges") or aff.get("versions")
+                        for aff in advisory.get("affected", [])
                     )
+                    if has_ranges:
+                        return ExposureResult(
+                            match_class="not_affected",
+                            confidence=0.85,
+                            should_create_case=False,
+                            case_id=None,
+                            matched_rules=["osv.purl-range.not_affected"],
+                            limitations=[],
+                            matcher_version=self.MATCHER_VERSION,
+                        )
 
         # 4. Distribution/package range - similar to purl but via Wazuh package name
         # For MVP, treat similarly if component has raw_name matching

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from packaging.version import Version, InvalidVersion
-
+from packaging.version import InvalidVersion, Version
 
 SUPPORTED_ECOSYSTEMS = {"pypi", "deb", "maven", "npm", "golang", "generic", "pyPI".lower()}
 
@@ -35,7 +34,9 @@ def _compare_versions(a: str, b: str) -> int:
     return 0
 
 
-def is_version_in_range(version: str, introduced: str | None, fixed: str | None, last_affected: str | None = None) -> bool:
+def is_version_in_range(
+    version: str, introduced: str | None, fixed: str | None, last_affected: str | None = None
+) -> bool:
     """
     Determine if version is within OSV range.
     OSV semantics:
@@ -44,16 +45,11 @@ def is_version_in_range(version: str, introduced: str | None, fixed: str | None,
     - last_affected: last vulnerable version (inclusive)
     If introduced is "0" or None, means from beginning.
     """
-    if introduced and introduced != "0":
-        if _compare_versions(version, introduced) < 0:
-            return False
-    if fixed:
-        if _compare_versions(version, fixed) >= 0:
-            return False
-    if last_affected:
-        if _compare_versions(version, last_affected) > 0:
-            return False
-    return True
+    if introduced and introduced != "0" and _compare_versions(version, introduced) < 0:
+        return False
+    if fixed and _compare_versions(version, fixed) >= 0:
+        return False
+    return not (last_affected and _compare_versions(version, last_affected) > 0)
 
 
 def supports_ecosystem(ecosystem: str | None) -> bool:
@@ -67,5 +63,12 @@ def normalize_ecosystem(ecosystem: str | None) -> str | None:
         return None
     # OSV uses PyPI, PyPI vs pypi
     lower = ecosystem.lower()
-    mapping = {"pypi": "pypi", "pyPI": "pypi", "deb": "deb", "debian": "deb", "maven": "maven", "npm": "npm"}
+    mapping = {
+        "pypi": "pypi",
+        "pyPI": "pypi",
+        "deb": "deb",
+        "debian": "deb",
+        "maven": "maven",
+        "npm": "npm",
+    }
     return mapping.get(lower, lower)

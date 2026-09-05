@@ -1,14 +1,14 @@
-from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from vulnops.db import Base
 from vulnops.cases.service import CaseService
+from vulnops.db import Base
 
 
 def _engine():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     import vulnops.cases.models  # noqa
+
     Base.metadata.create_all(bind=eng)
     return eng
 
@@ -65,7 +65,9 @@ def test_valid_wazuh_inventory_can_close():
     session = Session()
     svc = CaseService(session)
 
-    case = svc.create_case(organization_id="org1", title="test", owner_team="t1", priority="P1", exposures=["exp1"])
+    case = svc.create_case(
+        organization_id="org1", title="test", owner_team="t1", priority="P1", exposures=["exp1"]
+    )
     for s in ["triage", "assigned", "in_progress", "awaiting_verification"]:
         svc.transition(case.id, s, actor="a")
 
@@ -73,7 +75,11 @@ def test_valid_wazuh_inventory_can_close():
         case.id,
         method="wazuh_inventory",
         evidence_ids=["ev_wazuh_879"],
-        coverage={"status": "complete", "scope_version": "inventory-policy-3", "freshness_seconds": 900},
+        coverage={
+            "status": "complete",
+            "scope_version": "inventory-policy-3",
+            "freshness_seconds": 900,
+        },
         actor="verifier",
     )
     assert result.status == "closed"

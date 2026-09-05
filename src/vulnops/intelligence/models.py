@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Index, Text, Float, JSON, UniqueConstraint, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from vulnops.db import Base
 
 
 def _utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Vulnerability(Base):
     __tablename__ = "vulnerabilities"
-    __table_args__ = (
-        Index("ix_vuln_published", "published_at"),
-    )
+    __table_args__ = (Index("ix_vuln_published", "published_at"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # CVE-ID or internal
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -25,18 +24,22 @@ class Vulnerability(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     aliases: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
 
 
 class VulnerabilityAlias(Base):
     __tablename__ = "vulnerability_aliases"
-    __table_args__ = (
-        UniqueConstraint("vulnerability_id", "alias", name="uq_vuln_alias"),
-    )
+    __table_args__ = (UniqueConstraint("vulnerability_id", "alias", name="uq_vuln_alias"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    vulnerability_id: Mapped[str] = mapped_column(String(64), ForeignKey("vulnerabilities.id"), nullable=False)
+    vulnerability_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("vulnerabilities.id"), nullable=False
+    )
     alias: Mapped[str] = mapped_column(String(128), nullable=False)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -49,7 +52,9 @@ class AffectedRange(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    vulnerability_id: Mapped[str] = mapped_column(String(64), ForeignKey("vulnerabilities.id"), nullable=False)
+    vulnerability_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("vulnerabilities.id"), nullable=False
+    )
     ecosystem: Mapped[str | None] = mapped_column(String(64), nullable=True)
     purl: Mapped[str | None] = mapped_column(Text, nullable=True)
     introduced: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -57,7 +62,9 @@ class AffectedRange(Base):
     last_affected: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class AdvisoryAssertion(Base):
@@ -68,9 +75,13 @@ class AdvisoryAssertion(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    vulnerability_id: Mapped[str] = mapped_column(String(64), ForeignKey("vulnerabilities.id"), nullable=False)
+    vulnerability_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("vulnerabilities.id"), nullable=False
+    )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_snapshot_id: Mapped[str] = mapped_column(String(64), ForeignKey("source_snapshots.id"), nullable=True)
+    source_snapshot_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("source_snapshots.id"), nullable=True
+    )
     content: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     kev: Mapped[bool | None] = mapped_column(nullable=True)
     epss_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -78,14 +89,14 @@ class AdvisoryAssertion(Base):
     vex_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class SourceStatus(Base):
     __tablename__ = "source_statuses"
-    __table_args__ = (
-        UniqueConstraint("source", "scope", name="uq_source_scope"),
-    )
+    __table_args__ = (UniqueConstraint("source", "scope", name="uq_source_scope"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -93,8 +104,14 @@ class SourceStatus(Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    freshness: Mapped[str] = mapped_column(String(32), nullable=False, default="fresh")  # fresh|stale|degraded|unknown
+    freshness: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="fresh"
+    )  # fresh|stale|degraded|unknown
     cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )

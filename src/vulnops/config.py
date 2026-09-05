@@ -77,7 +77,7 @@ class Settings(BaseSettings):
 
     def is_postgres(self) -> bool:
         url = self.effective_database_url
-        return url.startswith("postgresql") or url.startswith("postgres")
+        return url.startswith(("postgresql", "postgres"))
 
 
 @lru_cache(maxsize=1)

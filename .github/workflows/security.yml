@@ -40,10 +40,11 @@ jobs:
         with:
           path: ./
           format: cyclonedx-json
-      - name: Scan image
+      - name: Scan filesystem
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "ghcr.io/example/vulnops-hub:latest"
+          scan-type: "fs"
+          scan-ref: "."
           format: "sarif"
           output: "trivy-results.sarif"
       - name: Upload SARIF
