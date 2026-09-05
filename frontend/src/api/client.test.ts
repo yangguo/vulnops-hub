@@ -8,7 +8,15 @@ describe('apiClient error normalization', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(
-        JSON.stringify({ type: 'x', title: 'Invalid Transition', status: 422, code: 'invalid_transition', detail: 'transition new -> closed not allowed' }),
+        JSON.stringify({
+          detail: {
+            type: 'https://hub.example/problems/invalid-transition',
+            title: 'Invalid Transition',
+            status: 422,
+            code: 'invalid_transition',
+            detail: 'transition new -> closed not allowed',
+          },
+        }),
         { status: 422, headers: { 'content-type': 'application/json' } },
       )),
     )

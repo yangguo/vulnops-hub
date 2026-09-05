@@ -32,9 +32,15 @@ async function request<T>(path: string, init: RequestInit = {}, allowRetry = tru
     ? await resp.json().catch(() => null)
     : null
   if (!resp.ok) {
-    const raw = body && (body.detail ?? body.title) ? body.detail ?? body.title : resp.statusText
-    const message = typeof raw === 'string' ? raw : JSON.stringify(raw)
-    const code = body?.code ?? 'error'
+    const raw = body && (body.detail ?? body.title)
+    const nested = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : null
+    const message =
+      nested != null
+        ? String(nested.detail ?? nested.title ?? JSON.stringify(nested))
+        : typeof raw === 'string' && raw
+          ? raw
+          : resp.statusText
+    const code = body?.code ?? (nested?.code as string | undefined) ?? 'error'
     throw new ApiError(resp.status, code, message)
   }
   return body as T
