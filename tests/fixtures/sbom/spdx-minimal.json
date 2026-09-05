@@ -1,0 +1,19 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "example",
+  "documentNamespace": "https://example.com/spdx/1",
+  "creationInfo": {"created": "2026-09-05T10:00:00Z", "creators": ["Tool: test"]},
+  "packages": [
+    {
+      "name": "openssl",
+      "SPDXID": "SPDXRef-Package-openssl",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "verificationCode": "NOASSERTION",
+      "versionInfo": "3.0.2",
+      "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:deb/debian/openssl@3.0.2"}]
+    }
+  ]
+}

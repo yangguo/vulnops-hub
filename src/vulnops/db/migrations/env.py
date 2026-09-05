@@ -14,6 +14,8 @@ from vulnops.config import get_settings
 import vulnops.db.models.source_snapshot
 import vulnops.db.models.audit_event
 import vulnops.db.models.outbox_event
+import vulnops.assets.models  # noqa: F401
+import vulnops.sbom.models  # noqa: F401
 # future models will be imported here
 
 config = context.config

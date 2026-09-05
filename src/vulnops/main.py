@@ -64,11 +64,12 @@ def create_app() -> FastAPI:
 
     # Routers
     app.include_router(health_router)
+    try:
+        from vulnops.api.sboms import router as sbom_router
 
-    # Placeholder for future routers - imported lazily to avoid circular deps
-    # They will be included here once modules exist:
-    # from vulnops.api.sboms import router as sbom_router
-    # app.include_router(sbom_router, prefix="/api/v1")
+        app.include_router(sbom_router, prefix="/api/v1")
+    except Exception as e:
+        logger.warning("sbom router not loaded: %s", e)
 
     @app.get("/", include_in_schema=False)
     async def root(request: Request):
