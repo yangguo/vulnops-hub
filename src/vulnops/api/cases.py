@@ -2,14 +2,36 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
-from vulnops.cases.models import ALLOWED_TRANSITIONS
+from vulnops.cases.models import ALLOWED_TRANSITIONS, RemediationCase
 from vulnops.cases.service import CaseService
 
 router = APIRouter(tags=["cases"])
+
+
+def _serialize_case(case: RemediationCase) -> dict:
+    return {
+        "id": case.id,
+        "case_key": case.case_key,
+        "title": case.title,
+        "status": case.status,
+        "priority": case.priority,
+        "owner_team": case.owner_team,
+        "assignee": case.assignee,
+        "organization_id": case.organization_id,
+        "policy_version": case.policy_version,
+        "version": case.version,
+        "etag": f'"{case.version}"',
+        "due_at": case.due_at.isoformat() if case.due_at else None,
+        "exposures": case.exposures or [],
+        "sla_breached": case.sla_breached,
+        "closure_reason": case.closure_reason,
+        "created_at": case.created_at.isoformat() if case.created_at else None,
+        "updated_at": case.updated_at.isoformat() if case.updated_at else None,
+    }
 
 
 def _parse_if_match(if_match: str | None) -> int | None:
@@ -69,6 +91,41 @@ async def create_case(org_id: str, request: Request, db: Session = Depends(get_d
     }
 
 
+@router.get("/organizations/{org_id}/cases")
+async def list_cases(
+    org_id: str,
+    status: str | None = None,
+    priority: str | None = None,
+    owner_team: str | None = None,
+    assignee: str | None = None,
+    sla_breached: bool | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    sort: str = Query(
+        default="-created_at", pattern=r"^-?(created_at|updated_at|due_at|priority)$"
+    ),
+    db: Session = Depends(get_db),
+):
+    svc = CaseService(db)
+    items, total = svc.list_cases(
+        organization_id=org_id,
+        status=status,
+        priority=priority,
+        owner_team=owner_team,
+        assignee=assignee,
+        sla_breached=sla_breached,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+    )
+    return {
+        "items": [_serialize_case(c) for c in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
 @router.get("/organizations/{org_id}/cases/{case_id}")
 async def get_case(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
@@ -78,22 +135,7 @@ async def get_case(org_id: str, case_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Case not found")
     if case.organization_id != org_id:
         raise HTTPException(status_code=404, detail="Case not found")
-    # FastAPI will set headers via response
-    return {
-        "id": case.id,
-        "case_key": case.case_key,
-        "title": case.title,
-        "status": case.status,
-        "priority": case.priority,
-        "owner_team": case.owner_team,
-        "assignee": case.assignee,
-        "organization_id": case.organization_id,
-        "version": case.version,
-        "etag": f'"{case.version}"',
-        "due_at": case.due_at.isoformat() if case.due_at else None,
-        "exposures": case.exposures,
-        "sla_breached": case.sla_breached,
-    }
+    return _serialize_case(case)
 
 
 @router.get("/organizations/{org_id}/cases/{case_id}/allowed-transitions")

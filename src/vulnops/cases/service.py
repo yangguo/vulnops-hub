@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from vulnops.cases.models import (
@@ -112,6 +112,40 @@ class CaseService:
         if not case:
             raise ValueError(f"case {case_id} not found")
         return case
+
+    def list_cases(
+        self,
+        organization_id: str,
+        *,
+        status: str | None = None,
+        priority: str | None = None,
+        owner_team: str | None = None,
+        assignee: str | None = None,
+        sla_breached: bool | None = None,
+        page: int = 1,
+        page_size: int = 20,
+        sort: str = "-created_at",
+    ) -> tuple[list[RemediationCase], int]:
+        stmt = select(RemediationCase).where(RemediationCase.organization_id == organization_id)
+        if status:
+            stmt = stmt.where(RemediationCase.status == status)
+        if priority:
+            stmt = stmt.where(RemediationCase.priority == priority)
+        if owner_team:
+            stmt = stmt.where(RemediationCase.owner_team == owner_team)
+        if assignee:
+            stmt = stmt.where(RemediationCase.assignee == assignee)
+        if sla_breached is not None:
+            stmt = stmt.where(RemediationCase.sla_breached == sla_breached)
+
+        total = self.session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+
+        desc = sort.startswith("-")
+        order_col = getattr(RemediationCase, sort.lstrip("-"))
+        stmt = stmt.order_by(order_col.desc() if desc else order_col.asc())
+        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
+        items = list(self.session.scalars(stmt).all())
+        return items, total
 
     def transition(
         self,
