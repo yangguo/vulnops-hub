@@ -1,1 +1,15 @@
 .worktrees/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.db
+*.sqlite
+.env
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+uv.lock
