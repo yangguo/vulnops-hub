@@ -40,8 +40,11 @@ jobs:
           uv run python -c "from vulnops.main import create_app; app=create_app(); print(app.openapi()['openapi'])"
           test -f openapi/openapi.yaml
           echo "OpenAPI valid"
-      - name: Alembic check
-        run: uv run alembic -c alembic.ini check
+      - name: Alembic upgrade and check
+        run: |
+          rm -f vulnops.db
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini check
 
   docker-build:
     runs-on: ubuntu-latest
