@@ -207,7 +207,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CaseListResponse'
         '422':
           description: Validation Error
           content:
@@ -385,7 +386,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/RiskDecisionsResponse'
         '422':
           description: Validation Error
           content:
@@ -416,7 +418,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/VerificationsResponse'
         '422':
           description: Validation Error
           content:
@@ -455,6 +458,111 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    CaseDetailResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        case_key:
+          type: string
+          title: Case Key
+        title:
+          type: string
+          title: Title
+        status:
+          type: string
+          title: Status
+        priority:
+          type: string
+          title: Priority
+        owner_team:
+          type: string
+          title: Owner Team
+        assignee:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Assignee
+        organization_id:
+          type: string
+          title: Organization Id
+        policy_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Policy Version
+        version:
+          type: integer
+          title: Version
+        etag:
+          type: string
+          title: Etag
+        due_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Due At
+        exposures:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Exposures
+        sla_breached:
+          type: boolean
+          title: Sla Breached
+        closure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Closure Reason
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Updated At
+      type: object
+      required:
+      - id
+      - case_key
+      - title
+      - status
+      - priority
+      - owner_team
+      - organization_id
+      - version
+      - etag
+      - sla_breached
+      title: CaseDetailResponse
+    CaseListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CaseDetailResponse'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: CaseListResponse
     HTTPValidationError:
       properties:
         detail:
@@ -464,6 +572,87 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    RiskDecisionResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        case_id:
+          type: string
+          title: Case Id
+        type:
+          type: string
+          title: Type
+        status:
+          type: string
+          title: Status
+        scope_exposure_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Scope Exposure Ids
+        reason:
+          type: string
+          title: Reason
+        compensating_controls:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Compensating Controls
+        evidence_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Evidence Ids
+        requested_by:
+          type: string
+          title: Requested By
+        approver:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approver
+        approver_role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approver Role
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+      type: object
+      required:
+      - id
+      - case_id
+      - type
+      - status
+      - reason
+      - requested_by
+      title: RiskDecisionResponse
+    RiskDecisionsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RiskDecisionResponse'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: RiskDecisionsResponse
     ValidationError:
       properties:
         loc:
@@ -490,3 +679,58 @@ components:
       - msg
       - type
       title: ValidationError
+    VerificationResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        case_id:
+          type: string
+          title: Case Id
+        method:
+          type: string
+          title: Method
+        asserted_result:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asserted Result
+        evidence_ids:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Evidence Ids
+        coverage:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Coverage
+        status:
+          type: string
+          title: Status
+        created_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Created At
+      type: object
+      required:
+      - id
+      - case_id
+      - method
+      - status
+      title: VerificationResponse
+    VerificationsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/VerificationResponse'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: VerificationsResponse

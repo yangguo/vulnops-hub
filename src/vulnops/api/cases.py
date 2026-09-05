@@ -6,6 +6,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.api.schemas import (
+    CaseListResponse,
+    RiskDecisionsResponse,
+    VerificationsResponse,
+)
 from vulnops.cases.models import ALLOWED_TRANSITIONS, RemediationCase
 from vulnops.cases.service import CaseService
 
@@ -122,7 +127,7 @@ async def create_case(org_id: str, request: Request, db: Session = Depends(get_d
     }
 
 
-@router.get("/organizations/{org_id}/cases")
+@router.get("/organizations/{org_id}/cases", response_model=CaseListResponse)
 async def list_cases(
     org_id: str,
     status: str | None = None,
@@ -339,7 +344,10 @@ async def create_risk_decision(
     }
 
 
-@router.get("/organizations/{org_id}/cases/{case_id}/risk-decisions")
+@router.get(
+    "/organizations/{org_id}/cases/{case_id}/risk-decisions",
+    response_model=RiskDecisionsResponse,
+)
 async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
     try:
@@ -352,7 +360,10 @@ async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(g
     return {"items": [_serialize_risk_decision(d) for d in decisions]}
 
 
-@router.get("/organizations/{org_id}/cases/{case_id}/verifications")
+@router.get(
+    "/organizations/{org_id}/cases/{case_id}/verifications",
+    response_model=VerificationsResponse,
+)
 async def list_verifications(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
     try:
