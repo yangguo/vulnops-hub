@@ -79,8 +79,13 @@ def create_app() -> FastAPI:
     except Exception as e:
         logger.warning("cases router not loaded: %s", e)
 
+    from vulnops.api.frontend import frontend_index_response
+
     @app.get("/", include_in_schema=False)
     async def root(request: Request):
+        index = frontend_index_response()
+        if index is not None:
+            return index
         return {
             "service": settings.app_name,
             "version": settings.app_version or __version__,
@@ -88,6 +93,9 @@ def create_app() -> FastAPI:
             "health": "/health/live",
         }
 
+    from vulnops.api.frontend import mount_frontend
+
+    mount_frontend(app)
     return app
 
 
