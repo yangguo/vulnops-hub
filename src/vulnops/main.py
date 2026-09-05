@@ -70,6 +70,12 @@ def create_app() -> FastAPI:
         app.include_router(sbom_router, prefix="/api/v1")
     except Exception as e:
         logger.warning("sbom router not loaded: %s", e)
+    try:
+        from vulnops.api.cases import router as cases_router
+
+        app.include_router(cases_router, prefix="/api/v1")
+    except Exception as e:
+        logger.warning("cases router not loaded: %s", e)
 
     @app.get("/", include_in_schema=False)
     async def root(request: Request):

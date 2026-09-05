@@ -18,6 +18,7 @@ import vulnops.assets.models  # noqa: F401
 import vulnops.sbom.models  # noqa: F401
 import vulnops.intelligence.models  # noqa: F401
 import vulnops.matching.models  # noqa: F401
+import vulnops.cases.models  # noqa: F401
 # future models will be imported here
 
 config = context.config
