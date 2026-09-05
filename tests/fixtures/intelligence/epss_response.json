@@ -1,0 +1,15 @@
+{
+  "status": "OK",
+  "status-code": 200,
+  "version": "1.0",
+  "access": "public",
+  "total": 1,
+  "data": [
+    {
+      "cve": "CVE-2026-12345",
+      "epss": "0.91",
+      "percentile": "0.99",
+      "date": "2026-01-15"
+    }
+  ]
+}

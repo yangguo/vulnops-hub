@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "vulns": [
+        {
+          "id": "CVE-2026-12345",
+          "summary": "Example vulnerability in urllib3",
+          "details": "A vulnerability.",
+          "aliases": ["CVE-2026-12345", "GHSA-xxxx-yyyy-zzzz"],
+          "affected": [
+            {
+              "package": {
+                "ecosystem": "PyPI",
+                "name": "urllib3",
+                "purl": "pkg:pypi/urllib3"
+              },
+              "ranges": [
+                {
+                  "type": "ECOSYSTEM",
+                  "events": [
+                    {"introduced": "0"},
+                    {"fixed": "1.26.19"}
+                  ]
+                }
+              ],
+              "versions": ["1.26.18"]
+            }
+          ],
+          "references": [{"type": "WEB", "url": "https://osv.dev/vulnerability/CVE-2026-12345"}],
+          "published": "2026-01-15T10:00:00Z",
+          "modified": "2026-01-16T10:00:00Z"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "CVE-2026-12345",
+  "containers": {
+    "cna": {
+      "descriptions": [{"lang": "en", "value": "Example vulnerability"}],
+      "affected": [{"product": "urllib3", "vendor": "python"}],
+      "metrics": [{"cvssV3_1": {"baseScore": 9.8, "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}}]
+    }
+  },
+  "cveMetadata": {
+    "cveId": "CVE-2026-12345",
+    "state": "PUBLISHED",
+    "assignerShortName": "cve@mitre.org"
+  },
+  "vulnerability-lookup": {
+    "source": "vulnerability-lookup",
+    "url": "https://vulnerability.circl.lu/vuln/CVE-2026-12345"
+  }
+}
