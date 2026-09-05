@@ -1,0 +1,104 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/example/vulnops-hub
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: hub.example
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+env:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  DATABASE_URL: "postgresql+psycopg2://vulnops:changeme@postgres:5432/vulnops"
+  REDIS_URL: "redis://valkey:6379/0"
+  OBJECT_STORAGE_ENDPOINT: "http://minio:9000"
+  OBJECT_STORAGE_BUCKET: "vulnops-snapshots"
+
+secrets:
+  # Managed externally via secret manager; chart creates placeholder for external-secrets
+  enabled: false
+  data: {}
+
+postgresql:
+  enabled: true
+  auth:
+    username: vulnops
+    database: vulnops
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+valkey:
+  enabled: true
+
+minio:
+  enabled: true
+  auth:
+    rootUser: minioadmin
+    rootPassword: minioadmin
+
+worker:
+  enabled: true
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 10

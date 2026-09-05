@@ -1,0 +1,14 @@
+apiVersion: v2
+name: vulnops-hub
+description: VulnOps Hub — vulnerability-operations control plane
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - vulnerability-management
+  - secops
+home: https://github.com/example/vulnops-hub
+sources:
+  - https://github.com/example/vulnops-hub
+maintainers:
+  - name: VulnOps Team
