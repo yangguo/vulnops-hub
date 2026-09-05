@@ -8,7 +8,7 @@
         v-if="target === 'risk_accepted'"
         type="warning"
         plain
-        @click="riskVisible = true"
+        @click="riskMode = 'risk_accepted'; riskVisible = true"
       >
         接受风险…
       </el-button>
@@ -75,11 +75,12 @@ async function doTransition(target: string) {
     ElMessage.success(`已流转到 ${TARGET_LABELS[target] ?? target}`)
   } catch (err) {
     if (err instanceof ApiError && err.status === 412) {
-      await ElMessageBox.confirm('工单已被他人修改。刷新后重试？', '版本冲突', {
+      const confirmed = await ElMessageBox.confirm('工单已被他人修改。刷新后重试？', '版本冲突', {
         confirmButtonText: '刷新',
         cancelButtonText: '取消',
         type: 'warning',
-      })
+      }).catch(() => null)
+      if (confirmed == null) return
       await store.refresh()
       return
     }
