@@ -26,7 +26,7 @@ def _serialize_case(case: RemediationCase) -> dict:
         "version": case.version,
         "etag": f'"{case.version}"',
         "due_at": case.due_at.isoformat() if case.due_at else None,
-        "exposures": case.exposures or [],
+        "exposures": case.exposures,
         "sla_breached": case.sla_breached,
         "closure_reason": case.closure_reason,
         "created_at": case.created_at.isoformat() if case.created_at else None,

@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from vulnops.main import create_app
@@ -31,17 +33,18 @@ def test_list_cases_returns_paged_shape():
 
 def test_list_cases_filter_status_and_priority():
     client = TestClient(create_app())
-    c1 = _create_case(client, "filterorg", "triage me", priority="P1")
-    _create_case(client, "filterorg", "other", priority="P2")
+    org = f"filterorg-{uuid4().hex[:8]}"
+    c1 = _create_case(client, org, "triage me", priority="P1")
+    _create_case(client, org, "other", priority="P2")
     client.post(
-        f"/api/v1/organizations/filterorg/cases/{c1['id']}/transitions",
+        f"/api/v1/organizations/{org}/cases/{c1['id']}/transitions",
         json={"target": "triage", "actor": "t"},
     )
-    resp = client.get("/api/v1/organizations/filterorg/cases?status=triage")
+    resp = client.get(f"/api/v1/organizations/{org}/cases?status=triage")
     assert resp.status_code == 200
     assert {i["id"] for i in resp.json()["items"]} == {c1["id"]}
 
-    resp = client.get("/api/v1/organizations/filterorg/cases?priority=P2")
+    resp = client.get(f"/api/v1/organizations/{org}/cases?priority=P2")
     items = resp.json()["items"]
     assert items
     assert all(i["priority"] == "P2" for i in items)
