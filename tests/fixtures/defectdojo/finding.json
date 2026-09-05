@@ -1,0 +1,37 @@
+{
+  "id": 123456,
+  "test": 987,
+  "title": "CVE-2026-12345 in openssl 3.0.2",
+  "severity": "High",
+  "cve": "CVE-2026-12345",
+  "component_name": "openssl",
+  "component_version": "3.0.2",
+  "purl": "pkg:deb/debian/openssl@3.0.2",
+  "file_path": "/api/v1/findings/123456/",
+  "url": "https://dojo.example/findings/123456",
+  "product_name": "payments-api",
+  "engagement_name": "2026-09-05",
+  "test_type": "OpenVAS Scan",
+  "found_by": "Greenbone",
+  "date": "2026-09-05T09:59:00Z",
+  "verified": true,
+  "active": true,
+  "is_mitigated": false,
+  "reimport": {
+    "test_id": 987,
+    "scan_type": "OpenVAS Scan",
+    "version": 2
+  },
+  "service": "payments-api-3",
+  "host": "payments-api-3",
+  "asset_hints": [
+    {"namespace": "cmdb", "value": "CI-009871"},
+    {"namespace": "hostname", "value": "payments-api-3"}
+  ],
+  "scan_run": {
+    "id": "scan-2026-09-05-001",
+    "completed_at": "2026-09-05T09:59:00Z",
+    "scope_status": "complete",
+    "credentials_status": "authenticated"
+  }
+}

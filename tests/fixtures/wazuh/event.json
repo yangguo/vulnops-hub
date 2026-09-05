@@ -1,0 +1,39 @@
+{
+  "agent": {
+    "id": "001",
+    "name": "payments-api-3",
+    "ip": "10.0.1.23"
+  },
+  "package": {
+    "name": "openssl",
+    "version": "3.0.2",
+    "architecture": "x86_64",
+    "format": "deb",
+    "purl": "pkg:deb/debian/openssl@3.0.2?arch=x86_64"
+  },
+  "vulnerability": {
+    "id": "CVE-2026-12345",
+    "severity": "High",
+    "status": "affected",
+    "detection_time": "2026-09-05T10:00:00Z"
+  },
+  "data": {
+    "wazuh": {
+      "vulnerability": {
+        "package": {
+          "name": "openssl",
+          "version": "3.0.2"
+        }
+      }
+    }
+  },
+  "scan": {
+    "id": "wazuh-scan-001",
+    "completed_at": "2026-09-05T10:05:00Z",
+    "scope_status": "complete"
+  },
+  "asset_hints": [
+    {"namespace": "wazuh", "value": "001"},
+    {"namespace": "hostname", "value": "payments-api-3"}
+  ]
+}
