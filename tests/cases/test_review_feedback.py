@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from threading import Barrier
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from vulnops.cases.models import CaseStatus
@@ -293,6 +293,81 @@ def test_approval_rejects_decision_without_evidence():
     session.close()
 
 
+def test_approval_rejects_expired_decision_without_mutating_workflow():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    decision.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    session.commit()
+    before_audits = session.scalar(select(func.count()).select_from(AuditEvent))
+    before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+    before_case = (svc.get_case(case.id).status, svc.get_case(case.id).version)
+
+    with pytest.raises(ValueError, match="risk decision expires_at must be in the future"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="independent review",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
+    assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
+    unchanged = svc.get_risk_decision(decision.id)
+    assert unchanged.status == "pending_approval"
+    assert unchanged.approver is None
+    assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
+    session.close()
+
+
+def test_approval_rolls_back_conditional_update_execution_errors(monkeypatch):
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    original_execute = session.execute
+    failed = False
+
+    def fail_once(statement, *args, **kwargs):
+        nonlocal failed
+        if not failed and statement.__class__.__name__ == "Update":
+            failed = True
+            raise RuntimeError("injected database execution failure")
+        return original_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", fail_once)
+    with pytest.raises(RuntimeError, match="injected database execution failure"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="first attempt",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+    assert not session.in_transaction()
+
+    approved = svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="retry after rollback",
+        actor="bob-approver",
+        actor_principal_type="human",
+        actor_roles={"risk_approver"},
+        actor_capabilities={"risk:approve"},
+        actor_provenance="authenticated_claim",
+    )
+    assert approved.status == "approved"
+    session.close()
+
+
 def test_concurrent_approval_has_one_winner_and_one_stable_conflict(tmp_path):
     engine = _file_engine(tmp_path / "approval-concurrency.db")
     Session = sessionmaker(bind=engine)
@@ -423,6 +498,8 @@ def test_workflow_trace_ids_are_preserved_in_audit_and_outbox(tmp_path):
     )
     assert approval_outbox.payload["request_id"] == "req-approval"
     assert approval_outbox.payload["correlation_id"] == "corr-approval"
+    assert approval_outbox.payload["actor"] == "bob"
+    assert approval_outbox.payload["organization_id"] == "org1"
     assert approval_outbox.payload["principal_type"] == "human"
     assert approval_outbox.payload["roles"] == ["risk_approver"]
     assert approval_outbox.payload["scopes"] == ["risk:approve"]

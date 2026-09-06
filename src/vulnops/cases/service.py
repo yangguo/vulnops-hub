@@ -71,6 +71,8 @@ def _approval_role(actor_roles: Iterable[str] | None) -> str | None:
 def _trace_payload(
     *,
     actor_fields: dict[str, Any],
+    actor: str,
+    organization_id: str,
     request_id: str | None,
     correlation_id: str,
 ) -> dict[str, Any]:
@@ -78,6 +80,9 @@ def _trace_payload(
     roles = actor_fields["actor_roles"]
     scopes = actor_fields["actor_scopes"]
     return {
+        "actor": actor,
+        "actor_subject": actor,
+        "organization_id": organization_id,
         "request_id": request_id,
         "correlation_id": correlation_id,
         "principal_type": principal_type,
@@ -115,6 +120,25 @@ def _validate_risk_decision_request(
     if expires_at.utcoffset() is None:
         raise ValueError("risk decision expires_at must be timezone-aware")
     if expires_at <= _utcnow():
+        raise ValueError("risk decision expires_at must be in the future")
+
+
+def _validate_risk_decision_expiry(expires_at: Any) -> None:
+    """Validate the expiry again immediately before an approval mutation.
+
+    SQLite's timezone-aware datetime adapter returns persisted values as naive
+    UTC datetimes.  Normalize that storage representation before applying the
+    same future-time check used for a newly submitted request.
+    """
+
+    if expires_at is None:
+        raise ValueError("risk decision expires_at is required")
+    if not isinstance(expires_at, datetime):
+        raise ValueError("risk decision expires_at must be timezone-aware")
+    effective_expiry = _ensure_aware(expires_at)
+    if effective_expiry is None or effective_expiry.utcoffset() is None:
+        raise ValueError("risk decision expires_at must be timezone-aware")
+    if effective_expiry <= _utcnow():
         raise ValueError("risk decision expires_at must be in the future")
 
 
@@ -310,6 +334,8 @@ class CaseService:
                 "evidence_ids": extra.get("evidence_ids") if extra else None,
                 **_trace_payload(
                     actor_fields=actor_fields,
+                    actor=actor,
+                    organization_id=case.organization_id,
                     request_id=request_id,
                     correlation_id=event_correlation_id,
                 ),
@@ -448,6 +474,8 @@ class CaseService:
                 "reason": reason,
                 **_trace_payload(
                     actor_fields=actor_fields,
+                    actor=actor,
+                    organization_id=case.organization_id,
                     request_id=request_id,
                     correlation_id=event_correlation_id,
                 ),
@@ -551,6 +579,8 @@ class CaseService:
                 "expires_at": expires_at.isoformat(),
                 **_trace_payload(
                     actor_fields=actor_fields,
+                    actor=actor,
+                    organization_id=case.organization_id,
                     request_id=request_id,
                     correlation_id=event_correlation_id,
                 ),
@@ -638,11 +668,8 @@ class CaseService:
             if not isinstance(decision.reason, str) or not decision.reason.strip():
                 raise ValueError("risk decision reason is required")
             _validate_evidence_ids(decision.evidence_ids)
+            _validate_risk_decision_expiry(decision.expires_at)
             target_state = target_state_map[decision.type]
-            if target_state not in ALLOWED_TRANSITIONS.get(prior, []):
-                raise ValueError(
-                    f"transition {prior} -> {target_state} not allowed for decision type {decision.type}"
-                )
             audit_action = audit_action_map.get(decision.type, "risk.accepted")
             outbox_type = "vulnops.risk-decision.accepted.v1"
             next_status = "approved"
@@ -655,74 +682,84 @@ class CaseService:
         # The conditional UPDATE is the linearization point for an approval.
         # Every contender may validate the same pending snapshot, but exactly
         # one transaction can claim the row and create its audit/outbox pair.
-        decision_update = self.session.execute(
-            update(RiskDecision)
-            .where(
-                RiskDecision.id == decision.id,
-                RiskDecision.status == "pending_approval",
-            )
-            .values(
-                status=next_status,
-                approver=actor,
-                approver_role=role,
-                approver_provenance=actor_provenance,
-                approver_principal_type=actor_principal_type,
-                decided_at=now,
-                updated_at=now,
-            )
-        )
-        if decision_update.rowcount != 1:
-            self.session.rollback()
-            raise ValueError("risk decision conflict: decision is no longer pending approval")
-
-        if normalized_outcome == "approve":
-            case.status = target_state
-            case.version += 1
-            case.updated_at = now
-
-        audit = AuditEvent(
-            id=f"aud_{uuid.uuid4().hex[:12]}",
-            actor=actor,
-            action=audit_action,
-            subject_type="risk_decision",
-            subject_id=decision.id,
-            correlation_id=event_correlation_id,
-            request_id=request_id,
-            prior_state=prior if normalized_outcome == "approve" else None,
-            new_state=target_state if normalized_outcome == "approve" else None,
-            reason=reason,
-            organization_id=case.organization_id,
-            **actor_fields,
-        )
-        payload = {
-            "decision_id": decision.id,
-            "case_id": case.id,
-            "type": decision.type,
-            "outcome": normalized_outcome,
-            "approver": actor,
-            "approver_role": role,
-            "decided_at": now.isoformat(),
-            **_trace_payload(
-                actor_fields=actor_fields,
-                request_id=request_id,
-                correlation_id=event_correlation_id,
-            ),
-        }
-        if normalized_outcome == "approve":
-            payload["expires_at"] = decision.expires_at.isoformat() if decision.expires_at else None
-
-        outbox = OutboxEvent(
-            id=f"evt_{uuid.uuid4().hex[:12]}",
-            aggregate_type="risk_decision",
-            aggregate_id=decision.id,
-            event_type=outbox_type,
-            payload=payload,
-            correlation_id=audit.correlation_id,
-        )
         try:
+            decision_update = self.session.execute(
+                update(RiskDecision)
+                .where(
+                    RiskDecision.id == decision.id,
+                    RiskDecision.status == "pending_approval",
+                )
+                .values(
+                    status=next_status,
+                    approver=actor,
+                    approver_role=role,
+                    approver_provenance=actor_provenance,
+                    approver_principal_type=actor_principal_type,
+                    decided_at=now,
+                    updated_at=now,
+                )
+            )
+            if decision_update.rowcount != 1:
+                raise ValueError("risk decision conflict: decision is no longer pending approval")
+
+            if normalized_outcome == "approve":
+                if target_state not in ALLOWED_TRANSITIONS.get(prior, []):
+                    raise ValueError(
+                        f"transition {prior} -> {target_state} not allowed for decision type {decision.type}"
+                    )
+                case.status = target_state
+                case.version += 1
+                case.updated_at = now
+
+            audit = AuditEvent(
+                id=f"aud_{uuid.uuid4().hex[:12]}",
+                actor=actor,
+                action=audit_action,
+                subject_type="risk_decision",
+                subject_id=decision.id,
+                correlation_id=event_correlation_id,
+                request_id=request_id,
+                prior_state=prior if normalized_outcome == "approve" else None,
+                new_state=target_state if normalized_outcome == "approve" else None,
+                reason=reason,
+                organization_id=case.organization_id,
+                **actor_fields,
+            )
+            payload = {
+                "decision_id": decision.id,
+                "case_id": case.id,
+                "type": decision.type,
+                "outcome": normalized_outcome,
+                "approver": actor,
+                "approver_role": role,
+                "decided_at": now.isoformat(),
+                **_trace_payload(
+                    actor_fields=actor_fields,
+                    actor=actor,
+                    organization_id=case.organization_id,
+                    request_id=request_id,
+                    correlation_id=event_correlation_id,
+                ),
+            }
+            if normalized_outcome == "approve":
+                payload["expires_at"] = (
+                    decision.expires_at.isoformat() if decision.expires_at else None
+                )
+
+            outbox = OutboxEvent(
+                id=f"evt_{uuid.uuid4().hex[:12]}",
+                aggregate_type="risk_decision",
+                aggregate_id=decision.id,
+                event_type=outbox_type,
+                payload=payload,
+                correlation_id=audit.correlation_id,
+            )
             self.session.add(audit)
             self.session.add(outbox)
             self.session.commit()
+        except ValueError:
+            self.session.rollback()
+            raise
         except Exception:
             self.session.rollback()
             raise

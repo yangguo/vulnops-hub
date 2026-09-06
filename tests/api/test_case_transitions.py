@@ -1,7 +1,11 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from vulnops.auth.models import Principal
+from vulnops.cases.models import RiskDecision
 from vulnops.db import get_engine, get_sessionmaker
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
@@ -199,6 +203,61 @@ def test_risk_decision_api_returns_stable_problem_details_for_invalid_request(
     assert body["code"] == "invalid_risk_decision"
     assert body["status"] == 422
     assert body["detail"] == detail
+
+
+def test_risk_approval_api_rejects_expired_decision_with_stable_problem_details():
+    app = create_app()
+    client = TestClient(app)
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "expired approval", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+    transition = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+    )
+    assert transition.status_code == 200, transition.text
+    request_response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+        json={
+            "type": "risk_accepted",
+            "reason": "temporary exception",
+            "evidence_ids": ["ev-expired"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
+    )
+    assert request_response.status_code == 200, request_response.text
+    decision_id = request_response.json()["id"]
+
+    session = get_sessionmaker(get_engine())()
+    try:
+        decision = session.get(RiskDecision, decision_id)
+        assert decision is not None
+        decision.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+    finally:
+        session.close()
+
+    app.state.test_principal = Principal(
+        subject="approver",
+        principal_type="human",
+        organization_ids={"acme"},
+        roles={"risk_approver"},
+    )
+
+    approval = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions/{decision_id}/approval",
+        json={"outcome": "approve", "reason": "late review"},
+    )
+    assert approval.status_code == 422, approval.text
+    body = approval.json()["detail"]
+    assert body["code"] == "invalid_risk_approval"
+    assert body["status"] == 422
+    assert body["detail"] == "risk decision expires_at must be in the future"
+    current = client.get(f"/api/v1/organizations/acme/cases/{case_id}")
+    assert current.json()["status"] == "triage"
 
 
 @pytest.mark.parametrize(
