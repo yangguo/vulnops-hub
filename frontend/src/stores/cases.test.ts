@@ -62,4 +62,26 @@ describe('casesStore', () => {
     await useCasesStore().fetch()
     expect(apiClient.listCases).toHaveBeenCalledWith('org-demo', '?page=1&page_size=20&sort=-created_at')
   })
+
+  it('ignores a response that resolves after the store is cleared', async () => {
+    type ListCasesResponse = Awaited<ReturnType<typeof apiClient.listCases>>
+    let resolve!: (value: ListCasesResponse) => void
+    const pending = new Promise<ListCasesResponse>((resolvePending) => {
+      resolve = resolvePending
+    })
+    vi.mocked(apiClient.listCases).mockReturnValue(pending)
+
+    const store = useCasesStore()
+    const fetchPromise = store.fetch()
+    const generationBeforeClear = store.generation
+    store.clear()
+
+    resolve({ items: [caseOf('alice-case')], total: 1, page: 1, page_size: 20 })
+    await fetchPromise
+
+    expect(store.generation).toBe(generationBeforeClear + 1)
+    expect(store.items).toEqual([])
+    expect(store.total).toBe(0)
+    expect(store.loading).toBe(false)
+  })
 })

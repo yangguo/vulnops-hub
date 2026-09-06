@@ -6,9 +6,9 @@ import { useDashboardStore } from '../stores/dashboard'
 
 export { SBOM_HISTORY_STORAGE_KEY }
 
-function resetLiveStore(reset: () => void): void {
+function clearLiveStore(clear: () => void): void {
   try {
-    reset()
+    clear()
   } catch {
     // Pinia may be unavailable in some unit contexts.
   }
@@ -35,7 +35,7 @@ export function clearUserBoundBrowserState(): void {
       // ignore
     }
   }
-  resetLiveStore(() => useCasesStore().$reset())
-  resetLiveStore(() => useCaseDetailStore().$reset())
-  resetLiveStore(() => useDashboardStore().$reset())
+  clearLiveStore(() => useCasesStore().clear())
+  clearLiveStore(() => useCaseDetailStore().clear())
+  clearLiveStore(() => useDashboardStore().clear())
 }

@@ -309,6 +309,9 @@ describe('auth store', () => {
     cases.total = 3
     caseDetail.allowed = ['case:write']
     dashboard.openCount = 5
+    const casesGeneration = cases.generation
+    const caseDetailGeneration = caseDetail.generation
+    const dashboardGeneration = dashboard.generation
     const store = useAuthStore()
 
     store.clearUnauthenticatedSession()
@@ -316,5 +319,8 @@ describe('auth store', () => {
     expect(cases.total).toBe(0)
     expect(caseDetail.allowed).toEqual([])
     expect(dashboard.openCount).toBe(0)
+    expect(cases.generation).toBe(casesGeneration + 1)
+    expect(caseDetail.generation).toBe(caseDetailGeneration + 1)
+    expect(dashboard.generation).toBe(dashboardGeneration + 1)
   })
 })
