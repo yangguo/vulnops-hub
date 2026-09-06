@@ -32,9 +32,16 @@ def test_expired_acceptance_reopens_case():
         expires_at=datetime.now(UTC) + timedelta(days=30),
         evidence_ids=["ev_change_459"],
         requested_by="user1",
-        approver="alice-approver",
-        approver_role="risk_approver",
-        actor="requester",
+        actor="user1",
+    )
+    decision = svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="independent review",
+        actor="alice-approver",
+        actor_principal_type="human",
+        actor_roles={"risk_approver"},
+        actor_capabilities={"risk:approve"},
     )
     assert decision.status == "approved"
     assert svc.get_case(case.id).status == "risk_accepted"
@@ -89,9 +96,16 @@ def test_revoked_decision_does_not_auto_close():
         expires_at=datetime.now(UTC) + timedelta(days=10),
         evidence_ids=["ev1"],
         requested_by="u1",
-        approver="alice-approver",
-        approver_role="risk_approver",
-        actor="a",
+        actor="u1",
+    )
+    decision = svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="independent review",
+        actor="alice-approver",
+        actor_principal_type="human",
+        actor_roles={"risk_approver"},
+        actor_capabilities={"risk:approve"},
     )
     assert svc.get_case(case.id).status == "risk_accepted"
     # Revoke via new event - should go back to triage, not closed

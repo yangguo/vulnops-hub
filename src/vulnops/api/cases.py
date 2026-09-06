@@ -25,6 +25,42 @@ from vulnops.cases.service import CaseService
 router = APIRouter(tags=["cases"])
 
 
+_CLIENT_IDENTITY_FIELDS = frozenset(
+    {
+        "actor",
+        "actorId",
+        "requested_by",
+        "requestedBy",
+        "requestedById",
+        "requester",
+        "requesterId",
+        "approver",
+        "approverId",
+        "approved_by",
+        "approvedBy",
+        "approvedById",
+        "approver_role",
+        "approverRole",
+    }
+)
+
+
+def _reject_client_identity_fields(data: object) -> dict:
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=422, detail="request body must be a JSON object")
+    supplied = sorted(_CLIENT_IDENTITY_FIELDS.intersection(data))
+    if supplied:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "identity_fields_forbidden",
+                "detail": "workflow actor identity is derived from the authenticated principal",
+                "fields": supplied,
+            },
+        )
+    return data
+
+
 def _serialize_case(case: RemediationCase) -> dict:
     return {
         "id": case.id,
@@ -244,13 +280,12 @@ async def transition_case(
         raise AuthorizationError("resource_not_found")
     authorize_capability(request, principal, "case:write")
 
-    data = await request.json()
+    data = _reject_client_identity_fields(await request.json())
     target = data.get("target") or data.get("to") or data.get("next_status")
     if not target:
         raise HTTPException(status_code=400, detail="target required")
     reason = data.get("reason")
-    actor = data.get("actor") or data.get("requested_by") or "api"
-    extra = {k: v for k, v in data.items() if k not in ("target", "reason", "actor")}
+    extra = {k: v for k, v in data.items() if k not in ("target", "to", "next_status", "reason")}
 
     try:
         expected_version = _parse_if_match(if_match)
@@ -270,10 +305,14 @@ async def transition_case(
         updated = svc.transition(
             case_id,
             target,
-            actor=actor,
+            actor=principal.subject,
             reason=reason,
             extra=extra,
             expected_version=expected_version,
+            actor_provenance="authenticated_claim",
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_scopes=principal.scopes,
         )
     except ValueError as ve:
         msg = str(ve).lower()
@@ -330,17 +369,12 @@ async def create_risk_decision(
         raise AuthorizationError("resource_not_found")
     authorize_capability(request, principal, "risk:request")
 
-    data = await request.json()
+    data = _reject_client_identity_fields(await request.json())
     type_ = data.get("type")
     reason = data.get("reason") or "no reason"
     scope = data.get("scope")
     compensating = data.get("compensating_controls") or data.get("compensatingControls")
     evidence_ids = data.get("evidence_ids") or data.get("evidenceIds") or []
-    requested_by = (
-        data.get("requested_by") or data.get("requestedBy") or data.get("requester") or "unknown"
-    )
-    approver = data.get("approver") or data.get("approved_by")
-    approver_role = data.get("approver_role") or data.get("approverRole")
     expires_at_str = data.get("expires_at") or data.get("expiresAt")
     expires_at = None
     if expires_at_str:
@@ -363,11 +397,13 @@ async def create_risk_decision(
             expires_at=expires_at,
             compensating_controls=compensating,
             evidence_ids=evidence_ids,
-            requested_by=requested_by,
-            approver=approver,
-            approver_role=approver_role,
-            actor=requested_by,
+            requested_by=principal.subject,
+            actor=principal.subject,
             scope=scope,
+            actor_provenance="authenticated_claim",
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_scopes=principal.scopes,
         )
     except ValueError as ve:
         raise HTTPException(
@@ -387,6 +423,74 @@ async def create_risk_decision(
         "status": decision.status,
         "reason": decision.reason,
         "expires_at": decision.expires_at.isoformat() if decision.expires_at else None,
+        "case_status": svc.get_case(case_id).status,
+    }
+
+
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/risk-decisions/{decision_id}/approval",
+    dependencies=[Depends(require_organization)],
+)
+async def approve_risk_decision(
+    org_id: str,
+    case_id: str,
+    decision_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+        if case.organization_id != org_id:
+            raise AuthorizationError("resource_not_found")
+        decision = svc.get_risk_decision(decision_id)
+        if decision.case_id != case_id:
+            raise AuthorizationError("resource_not_found")
+    except ValueError:
+        raise AuthorizationError("resource_not_found")
+
+    authorize_capability(request, principal, "risk:approve")
+    data = _reject_client_identity_fields(await request.json())
+    outcome = data.get("outcome") or data.get("decision")
+    reason = data.get("reason")
+    if not isinstance(outcome, str) or not outcome.strip():
+        raise HTTPException(status_code=422, detail="outcome required")
+    if not isinstance(reason, str) or not reason.strip():
+        raise HTTPException(status_code=422, detail="approval reason required")
+
+    try:
+        decision = svc.approve_risk_decision(
+            decision.id,
+            outcome=outcome,
+            reason=reason,
+            actor=principal.subject,
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_capabilities=principal.capabilities,
+            actor_provenance="authenticated_claim",
+            actor_scopes=principal.scopes,
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "type": "https://hub.example/problems/invalid-risk-approval",
+                "title": "Invalid Risk Approval",
+                "status": 422,
+                "code": "invalid_risk_approval",
+                "detail": str(ve),
+            },
+        )
+
+    return {
+        "id": decision.id,
+        "case_id": decision.case_id,
+        "type": decision.type,
+        "status": decision.status,
+        "approver": decision.approver,
+        "approver_role": decision.approver_role,
+        "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
         "case_status": svc.get_case(case_id).status,
     }
 
@@ -459,7 +563,7 @@ async def submit_verification(
         raise AuthorizationError("resource_not_found")
     authorize_capability(request, principal, "verification:write")
 
-    data = await request.json()
+    data = _reject_client_identity_fields(await request.json())
     method = data.get("method") or data.get("type") or "unknown"
     evidence_ids = (
         data.get("evidence_ids") or data.get("evidenceIds") or data.get("evidence_ids") or []
@@ -473,8 +577,12 @@ async def submit_verification(
             method=method,
             evidence_ids=evidence_ids,
             coverage=coverage,
-            actor=data.get("actor") or "api",
+            actor=principal.subject,
             asserted_result=asserted,
+            actor_provenance="authenticated_claim",
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_scopes=principal.scopes,
         )
     except ValueError as ve:
         msg = str(ve).lower()

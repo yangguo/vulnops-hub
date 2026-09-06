@@ -3,12 +3,13 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from vulnops.cases.models import CaseStatus
 from vulnops.cases.service import CaseService
 from vulnops.db import Base
+from vulnops.db.models.audit_event import AuditEvent
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
 from vulnops.sbom.service import SBOMService
@@ -78,46 +79,90 @@ def test_matching_rejects_different_package_name_same_ecosystem():
     assert result.should_create_case is False
 
 
-def test_self_approval_rejected():
-    svc, session = _svc()
-    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
-    svc.transition(case.id, "triage", actor="analyst")
-    decision = svc.create_risk_decision(
-        case.id,
+def _request_risk_decision(svc: CaseService, case_id: str, requester: str = "alice"):
+    return svc.create_risk_decision(
+        case_id,
         type="risk_accepted",
         reason="need window",
         expires_at=datetime.now(UTC) + timedelta(days=10),
         evidence_ids=["ev1"],
-        requested_by="alice",
-        approver="alice",
-        approver_role="risk_approver",
-        actor="alice",
+        requested_by=requester,
+        actor=requester,
+        actor_provenance="authenticated_claim",
+        actor_principal_type="human",
     )
+
+
+def test_risk_request_stays_pending_and_does_not_change_case_state():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+
+    decision = _request_risk_decision(svc, case.id)
+
+    assert decision.status == "pending_approval"
+    assert decision.requested_by == "alice"
+    assert decision.approver is None
+    assert svc.get_case(case.id).status == "triage"
+    requested_audit = session.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.action == "risk.decision.requested")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    assert requested_audit is not None
+    assert requested_audit.actor == "alice"
+    assert requested_audit.actor_provenance == "authenticated_claim"
+    session.close()
+
+
+def test_self_approval_rejected():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+
+    decision = _request_risk_decision(svc, case.id)
+
+    with pytest.raises(ValueError, match="self-approval"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="same person",
+            actor="alice",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
     assert decision.status == "pending_approval"
     assert svc.get_case(case.id).status == "triage"
     session.close()
 
 
-def test_invalid_approver_role_rejected():
+def test_service_principal_cannot_approve_even_with_spoofed_capability():
     svc, session = _svc()
     case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
     svc.transition(case.id, "triage", actor="analyst")
-    decision = svc.create_risk_decision(
-        case.id,
-        type="risk_accepted",
-        reason="need window",
-        expires_at=datetime.now(UTC) + timedelta(days=10),
-        evidence_ids=["ev1"],
-        requested_by="alice",
-        approver="bob",
-        approver_role="viewer",
-        actor="alice",
-    )
+    decision = _request_risk_decision(svc, case.id)
+
+    with pytest.raises(ValueError, match="service principals"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="service must not approve",
+            actor="ci-service",
+            actor_principal_type="service",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
     assert decision.status == "pending_approval"
+    assert svc.get_case(case.id).status == "triage"
     session.close()
 
 
-def test_false_positive_maps_to_not_applicable():
+def test_authenticated_approval_records_claim_actor_and_changes_case_state():
     svc, session = _svc()
     case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
     svc.transition(case.id, "triage", actor="analyst")
@@ -127,12 +172,69 @@ def test_false_positive_maps_to_not_applicable():
         reason="scanner mis-identified",
         evidence_ids=["ev1"],
         requested_by="alice",
-        approver="bob-approver",
-        approver_role="risk_approver",
         actor="alice",
+        actor_provenance="authenticated_claim",
+        actor_principal_type="human",
     )
+
+    decision = svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="independent review",
+        actor="bob-approver",
+        actor_principal_type="human",
+        actor_roles={"risk_approver"},
+        actor_capabilities={"risk:approve"},
+        actor_provenance="authenticated_claim",
+    )
+
     assert decision.status == "approved"
+    assert decision.approver == "bob-approver"
+    assert decision.approver_role == "risk_approver"
+    assert decision.approver_provenance == "authenticated_claim"
+    assert decision.decided_at is not None
     assert svc.get_case(case.id).status == CaseStatus.NOT_APPLICABLE
+    approval_audit = session.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.action == "risk.false_positive.accepted")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    assert approval_audit is not None
+    assert approval_audit.actor == "bob-approver"
+    assert approval_audit.actor_provenance == "authenticated_claim"
+    session.close()
+
+
+def test_authenticated_rejection_records_decision_without_changing_case_state():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+
+    decision = svc.approve_risk_decision(
+        decision.id,
+        outcome="reject",
+        reason="insufficient evidence",
+        actor="bob-approver",
+        actor_principal_type="human",
+        actor_roles={"security_lead"},
+        actor_capabilities={"risk:approve"},
+        actor_provenance="authenticated_claim",
+    )
+
+    assert decision.status == "rejected"
+    assert decision.approver == "bob-approver"
+    assert decision.approver_role == "security_lead"
+    assert decision.decided_at is not None
+    assert svc.get_case(case.id).status == CaseStatus.TRIAGE
+    rejection_audit = session.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.action == "risk.decision.rejected")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    assert rejection_audit is not None
+    assert rejection_audit.subject_id == decision.id
+    assert rejection_audit.actor == "bob-approver"
     session.close()
 
 
@@ -146,9 +248,18 @@ def test_not_affected_maps_to_not_applicable():
         reason="VEX says not affected",
         evidence_ids=["ev-vex"],
         requested_by="alice",
-        approver="bob-approver",
-        approver_role="security_lead",
         actor="alice",
+        actor_provenance="legacy_request",
+    )
+    decision = svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="independent review",
+        actor="bob-approver",
+        actor_principal_type="human",
+        actor_roles={"security_lead"},
+        actor_capabilities={"risk:approve"},
+        actor_provenance="authenticated_claim",
     )
     assert decision.status == "approved"
     assert svc.get_case(case.id).status == CaseStatus.NOT_APPLICABLE

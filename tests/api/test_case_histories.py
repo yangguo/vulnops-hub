@@ -21,7 +21,7 @@ def test_list_risk_decisions_returns_history():
     cid = case["id"]
     client.post(
         f"/api/v1/organizations/{org}/cases/{cid}/transitions",
-        json={"target": "triage", "actor": "t"},
+        json={"target": "triage"},
     )
     resp = client.post(
         f"/api/v1/organizations/{org}/cases/{cid}/risk-decisions",
@@ -29,9 +29,6 @@ def test_list_risk_decisions_returns_history():
             "type": "risk_accepted",
             "reason": "waiver until Q4",
             "evidence_ids": ["e1"],
-            "requested_by": "alice",
-            "approver": "bob",
-            "approver_role": "security_lead",
         },
     )
     assert resp.status_code in (200, 201), resp.text
@@ -41,9 +38,10 @@ def test_list_risk_decisions_returns_history():
     items = resp.json()["items"]
     assert len(items) == 1
     assert items[0]["type"] == "risk_accepted"
-    assert items[0]["status"] == "approved"
+    assert items[0]["status"] == "pending_approval"
     assert items[0]["case_id"] == cid
-    assert items[0]["approver"] == "bob"
+    assert items[0]["requested_by"] == "test-principal"
+    assert items[0]["approver"] is None
     assert items[0]["created_at"]
 
 
@@ -70,7 +68,7 @@ def test_list_verifications_returns_history():
     for target in ["triage", "assigned", "in_progress", "awaiting_verification"]:
         client.post(
             f"/api/v1/organizations/{org}/cases/{cid}/transitions",
-            json={"target": target, "actor": "t"},
+            json={"target": target},
         )
     resp = client.post(
         f"/api/v1/organizations/{org}/cases/{cid}/verifications",

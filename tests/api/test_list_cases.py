@@ -38,7 +38,7 @@ def test_list_cases_filter_status_and_priority():
     _create_case(client, org, "other", priority="P2")
     client.post(
         f"/api/v1/organizations/{org}/cases/{c1['id']}/transitions",
-        json={"target": "triage", "actor": "t"},
+        json={"target": "triage"},
     )
     resp = client.get(f"/api/v1/organizations/{org}/cases?status=triage")
     assert resp.status_code == 200

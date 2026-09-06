@@ -59,7 +59,7 @@ def test_case_transition_conforms_to_openapi():
 
     resp = client.post(
         f"/api/v1/organizations/acme/cases/{case_id}/transitions",
-        json={"target": "triage", "reason": "triage", "actor": "analyst"},
+        json={"target": "triage", "reason": "triage"},
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "triage"
@@ -67,7 +67,7 @@ def test_case_transition_conforms_to_openapi():
     # Invalid transition should be 422 with problem details
     resp = client.post(
         f"/api/v1/organizations/acme/cases/{case_id}/transitions",
-        json={"target": "closed", "reason": "bad", "actor": "analyst"},
+        json={"target": "closed", "reason": "bad"},
     )
     assert resp.status_code == 422
     assert "detail" in resp.json()

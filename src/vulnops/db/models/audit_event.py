@@ -34,6 +34,15 @@ class AuditEvent(Base):
 
     evidence_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     organization_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # ``legacy_request`` preserves provenance for rows written before the
+    # authenticated actor boundary.  New HTTP workflow events set the
+    # authenticated claim metadata explicitly.
+    actor_provenance: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="legacy_request"
+    )
+    actor_principal_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    actor_roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    actor_scopes: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow

@@ -619,3 +619,106 @@ def test_real_wildcard_organization_claim_does_not_grant_global_access(
     ):
         response = wildcard.get(path, headers=_headers())
         _problem(response, 404, "resource_not_found")
+
+
+def test_risk_approver_approves_another_principal_request(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    organization_id = f"auth-approval-{uuid4().hex[:8]}"
+    requester = _client(
+        monkeypatch,
+        _claims(organization_ids=[organization_id], roles=["owner"], subject="requester"),
+    )
+    case = _create_case(requester, organization_id)
+    _transition_case(requester, organization_id, case["id"], "triage")
+    requested = requester.post(
+        f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions",
+        json={"type": "risk_accepted", "reason": "maintenance window"},
+        headers=_headers(),
+    )
+    assert requested.status_code == 200, requested.text
+    decision_id = requested.json()["id"]
+    assert requested.json()["status"] == "pending_approval"
+    assert requested.json()["case_status"] == "triage"
+
+    approver = _client(
+        monkeypatch,
+        _claims(
+            organization_ids=[organization_id],
+            roles=["risk_approver"],
+            subject="approver",
+        ),
+    )
+    approved = approver.post(
+        f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions/{decision_id}/approval",
+        json={"outcome": "approve", "reason": "independent review"},
+        headers=_headers(),
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["approver"] == "approver"
+    assert approved.json()["approver_role"] == "risk_approver"
+    assert approved.json()["case_status"] == "risk_accepted"
+
+
+def test_service_principal_cannot_use_risk_approval_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    organization_id = f"auth-service-approval-{uuid4().hex[:8]}"
+    requester = _client(
+        monkeypatch,
+        _claims(organization_ids=[organization_id], roles=["owner"], subject="requester"),
+    )
+    case = _create_case(requester, organization_id)
+    _transition_case(requester, organization_id, case["id"], "triage")
+    requested = requester.post(
+        f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions",
+        json={"type": "risk_accepted", "reason": "maintenance window"},
+        headers=_headers(),
+    )
+    assert requested.status_code == 200, requested.text
+
+    service = _client(
+        monkeypatch,
+        _claims(
+            organization_ids=[organization_id],
+            scopes="sbom:write",
+            subject="ci-service",
+        ),
+    )
+    response = service.post(
+        f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions/{requested.json()['id']}/approval",
+        json={"outcome": "approve", "reason": "service must not approve"},
+        headers=_headers(),
+    )
+    _problem(response, 403, "insufficient_permission")
+
+
+def test_cross_org_risk_approval_is_hidden_before_capability_and_body_validation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    organization_a = f"auth-approval-a-{uuid4().hex[:8]}"
+    organization_b = f"auth-approval-b-{uuid4().hex[:8]}"
+    requester = _client(
+        monkeypatch,
+        _claims(organization_ids=[organization_a], roles=["owner"], subject="requester"),
+    )
+    case = _create_case(requester, organization_a)
+    _transition_case(requester, organization_a, case["id"], "triage")
+    requested = requester.post(
+        f"/api/v1/organizations/{organization_a}/cases/{case['id']}/risk-decisions",
+        json={"type": "risk_accepted", "reason": "maintenance window"},
+        headers=_headers(),
+    )
+    assert requested.status_code == 200, requested.text
+
+    cross_org = _client(
+        monkeypatch,
+        _claims(organization_ids=[organization_b], scopes="sbom:write", subject="ci-service"),
+    )
+    response = cross_org.post(
+        f"/api/v1/organizations/{organization_b}/cases/{case['id']}/risk-decisions/{requested.json()['id']}/approval",
+        json={"actor": "spoof", "outcome": "approve"},
+        headers=_headers(),
+    )
+    _problem(response, 404, "resource_not_found")

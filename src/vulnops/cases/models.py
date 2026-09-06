@@ -134,8 +134,14 @@ class RiskDecision(Base):
     compensating_controls: Mapped[list | None] = mapped_column(JSON, nullable=True)
     evidence_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     requested_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    requested_by_provenance: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="legacy_request"
+    )
     approver: Mapped[str | None] = mapped_column(String(128), nullable=True)
     approver_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approver_provenance: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    approver_principal_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
