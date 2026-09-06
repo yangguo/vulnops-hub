@@ -11,6 +11,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
 import threading
@@ -29,6 +30,8 @@ CLIENT_ID = "vulnops-e2e"
 AUDIENCE = "vulnops-api"
 USER_COOKIE = "vulnops_test_user"
 KEY_ID = "vulnops-e2e-key-1"
+PLAYWRIGHT_REDIRECT_URI = "http://127.0.0.1:4173/auth/callback"
+PLAYWRIGHT_POST_LOGOUT_REDIRECT_URI = "http://127.0.0.1:4173/login"
 
 
 @dataclass(frozen=True)
@@ -190,6 +193,44 @@ def _append_query(url: str, values: dict[str, str]) -> str:
     return urlunparse(parsed._replace(query=urlencode(query)))
 
 
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_startup_configuration(host: str, issuer: str | None, port: int) -> str:
+    if not _is_loopback_host(host):
+        raise ValueError("OIDC test issuer must bind to a loopback host")
+
+    advertised_issuer = issuer or f"http://{host}:{port}"
+    try:
+        parsed = urlparse(advertised_issuer)
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError:
+        raise ValueError("OIDC test issuer must advertise a loopback HTTP URL") from None
+    if (
+        parsed.scheme != "http"
+        or not parsed.netloc
+        or not _is_loopback_host(hostname)
+    ):
+        raise ValueError("OIDC test issuer must advertise a loopback HTTP URL")
+    return advertised_issuer.rstrip("/")
+
+
+def is_allowed_redirect_uri(uri: str, *, post_logout: bool = False) -> bool:
+    allowed = (
+        {PLAYWRIGHT_POST_LOGOUT_REDIRECT_URI}
+        if post_logout
+        else {PLAYWRIGHT_REDIRECT_URI}
+    )
+    return uri in allowed
+
+
 class OIDCRequestHandler(BaseHTTPRequestHandler):
     server: IssuerServer
 
@@ -302,6 +343,7 @@ class OIDCRequestHandler(BaseHTTPRequestHandler):
             or not state
             or not code_challenge
             or _first_query_value(query, "response_type") != "code"
+            or not is_allowed_redirect_uri(redirect_uri)
         ):
             self._send_json({"error": "invalid_authorization_request"}, HTTPStatus.BAD_REQUEST)
             return
@@ -374,6 +416,9 @@ class OIDCRequestHandler(BaseHTTPRequestHandler):
     def _logout(self, query: str) -> None:
         redirect_uri = _first_query_value(query, "post_logout_redirect_uri")
         state = _first_query_value(query, "state")
+        if redirect_uri and not is_allowed_redirect_uri(redirect_uri, post_logout=True):
+            self._send_json({"error": "invalid_logout_redirect_uri"}, HTTPStatus.BAD_REQUEST)
+            return
         if redirect_uri:
             values = {"state": state} if state else {}
             self._redirect(_append_query(redirect_uri, values), clear_cookie=True)
@@ -387,7 +432,10 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=9000)
     parser.add_argument("--issuer", default=None)
     args = parser.parse_args()
-    issuer = args.issuer or f"http://{args.host}:{args.port}"
+    try:
+        issuer = validate_startup_configuration(args.host, args.issuer, args.port)
+    except ValueError as exc:
+        parser.error(str(exc))
     server = IssuerServer((args.host, args.port), IssuerState(issuer))
     print(f"OIDC test issuer listening at {server.state.issuer}", flush=True)
     try:
