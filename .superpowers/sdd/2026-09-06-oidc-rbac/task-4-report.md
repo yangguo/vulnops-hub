@@ -91,3 +91,68 @@ existing test-only bypass behavior.
    needs an authenticated test issuer for Docker, OpenAPI, and browser flows.
 3. The test environment emits the existing Starlette/httpx deprecation
    warnings; they are unrelated to the authorization behavior.
+
+## Fix round 1: resource ordering and literal route matrix
+
+### RED
+
+The fix-round tests were added before changing the route implementation and
+were run against the first Task 4 commit:
+
+```text
+uv run pytest tests/api/test_authorization.py -q
+7 failed, 79 passed
+```
+
+All seven failures were the cross-organization ordering cases. A principal
+belonging to the path organization but lacking the operation capability got a
+403 before the endpoint loaded a case, and malformed transition/risk/
+verification bodies therefore also failed with 403 instead of the required
+404. The new test file also contains a literal 11-route by six-principal
+expected-status matrix; it exposed no unrelated baseline failures.
+
+### GREEN
+
+The implementation was then changed so resource routes perform path
+organization membership, resource ownership, and capability checks in that
+order. Request JSON, If-Match parsing, and domain service mutation now happen
+only after both authorization checks pass.
+
+```text
+uv run pytest tests/api/test_authorization.py -q  # 86 passed
+uv run pytest tests/api -q                        # 128 passed
+uv run pytest -q --disable-warnings               # 253 passed
+uv run ruff check src tests                       # passed
+uv run ruff format --check src tests              # passed
+git diff --check                                  # passed
+```
+
+The matrix has one explicit expected status for each of the 66
+route/principal combinations. It covers all 11 current routes: case create,
+case list/detail, allowed transitions, transition, risk request/history,
+verification submit/history, and SBOM submit/detail. Collection-level
+cross-organization case creation/list and SBOM submission are explicitly
+asserted as 404, while resource routes use valid fixture IDs and malformed
+cross-organization bodies to prove no validation or concurrency detail leaks.
+
+### Fix-round self-review
+
+- `require_capability` remains the correct dependency for collection routes,
+  where organization membership precedes capability and there is no resource
+  to resolve.
+- Resource routes use `require_organization`, then resolve and compare the
+  actual case/SBOM organization, then call `authorize_capability`; FastAPI and
+  token parsing remain outside domain services.
+- The allowed-transitions route now performs the same ownership check as case
+  detail, and SBOM detail resolves the organization-filtered record before
+  checking `sbom:read`.
+- The explicit test bypass still permits only its application-created test
+  principal to exercise all organizations; real wildcard claims remain
+  denied.
+
+### Fix-round concerns
+
+1. The separate Task 5 actor-binding and risk-approval work remains pending;
+   this round intentionally changes authorization ordering only.
+2. The full suite still reports the pre-existing Starlette/httpx deprecation
+   warnings when warnings are enabled.

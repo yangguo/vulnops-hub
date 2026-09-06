@@ -11,7 +11,14 @@ from vulnops.api.schemas import (
     RiskDecisionsResponse,
     VerificationsResponse,
 )
-from vulnops.auth.dependencies import AuthorizationError, require_capability
+from vulnops.auth.dependencies import (
+    AuthorizationError,
+    authorize_capability,
+    get_principal,
+    require_capability,
+    require_organization,
+)
+from vulnops.auth.models import Principal
 from vulnops.cases.models import ALLOWED_TRANSITIONS, RemediationCase
 from vulnops.cases.service import CaseService
 
@@ -172,9 +179,15 @@ async def list_cases(
 
 @router.get(
     "/organizations/{org_id}/cases/{case_id}",
-    dependencies=[Depends(require_capability("case:read"))],
+    dependencies=[Depends(require_organization)],
 )
-async def get_case(org_id: str, case_id: str, db: Session = Depends(get_db)):
+async def get_case(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
@@ -182,14 +195,21 @@ async def get_case(org_id: str, case_id: str, db: Session = Depends(get_db)):
         raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
         raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     return _serialize_case(case)
 
 
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/allowed-transitions",
-    dependencies=[Depends(require_capability("case:read"))],
+    dependencies=[Depends(require_organization)],
 )
-async def allowed_transitions(org_id: str, case_id: str, db: Session = Depends(get_db)):
+async def allowed_transitions(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
@@ -197,22 +217,33 @@ async def allowed_transitions(org_id: str, case_id: str, db: Session = Depends(g
         raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
         raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     allowed = ALLOWED_TRANSITIONS.get(case.status, [])
     return {"case_id": case_id, "status": case.status, "allowed": allowed, "current": case.status}
 
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/transitions",
-    dependencies=[Depends(require_capability("case:write"))],
+    dependencies=[Depends(require_organization)],
 )
 async def transition_case(
     org_id: str,
     case_id: str,
     request: Request,
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
     if_match: str | None = Header(default=None, alias="If-Match"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+        if case.organization_id != org_id:
+            raise AuthorizationError("resource_not_found")
+    except ValueError:
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:write")
+
     data = await request.json()
     target = data.get("target") or data.get("to") or data.get("next_status")
     if not target:
@@ -234,14 +265,6 @@ async def transition_case(
                 "detail": str(ve),
             },
         )
-    svc = CaseService(db)
-    try:
-        # Verify org match
-        case = svc.get_case(case_id)
-        if case.organization_id != org_id:
-            raise AuthorizationError("resource_not_found")
-    except ValueError:
-        raise AuthorizationError("resource_not_found")
 
     try:
         updated = svc.transition(
@@ -288,15 +311,25 @@ async def transition_case(
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/risk-decisions",
-    dependencies=[Depends(require_capability("risk:request"))],
+    dependencies=[Depends(require_organization)],
 )
 async def create_risk_decision(
     org_id: str,
     case_id: str,
     request: Request,
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+        if case.organization_id != org_id:
+            raise AuthorizationError("resource_not_found")
+    except ValueError:
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "risk:request")
+
     data = await request.json()
     type_ = data.get("type")
     reason = data.get("reason") or "no reason"
@@ -315,14 +348,6 @@ async def create_risk_decision(
             expires_at = datetime.fromisoformat(expires_at_str)
         except ValueError:
             expires_at = None
-
-    svc = CaseService(db)
-    try:
-        case = svc.get_case(case_id)
-        if case.organization_id != org_id:
-            raise AuthorizationError("resource_not_found")
-    except ValueError:
-        raise AuthorizationError("resource_not_found")
 
     # Handle If-Match if provided - check version
     if if_match:
@@ -369,9 +394,15 @@ async def create_risk_decision(
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/risk-decisions",
     response_model=RiskDecisionsResponse,
-    dependencies=[Depends(require_capability("case:read"))],
+    dependencies=[Depends(require_organization)],
 )
-async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(get_db)):
+async def list_risk_decisions(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
@@ -379,6 +410,7 @@ async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(g
         raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
         raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     decisions = svc.list_risk_decisions(case_id)
     return {"items": [_serialize_risk_decision(d) for d in decisions]}
 
@@ -386,9 +418,15 @@ async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(g
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/verifications",
     response_model=VerificationsResponse,
-    dependencies=[Depends(require_capability("case:read"))],
+    dependencies=[Depends(require_organization)],
 )
-async def list_verifications(org_id: str, case_id: str, db: Session = Depends(get_db)):
+async def list_verifications(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
@@ -396,28 +434,22 @@ async def list_verifications(org_id: str, case_id: str, db: Session = Depends(ge
         raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
         raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     verifications = svc.list_verifications(case_id)
     return {"items": [_serialize_verification(v) for v in verifications]}
 
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/verifications",
-    dependencies=[Depends(require_capability("verification:write"))],
+    dependencies=[Depends(require_organization)],
 )
 async def submit_verification(
     org_id: str,
     case_id: str,
     request: Request,
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ):
-    data = await request.json()
-    method = data.get("method") or data.get("type") or "unknown"
-    evidence_ids = (
-        data.get("evidence_ids") or data.get("evidenceIds") or data.get("evidence_ids") or []
-    )
-    coverage = data.get("coverage")
-    asserted = data.get("asserted_result") or data.get("assertedResult")
-
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
@@ -425,6 +457,15 @@ async def submit_verification(
             raise AuthorizationError("resource_not_found")
     except ValueError:
         raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "verification:write")
+
+    data = await request.json()
+    method = data.get("method") or data.get("type") or "unknown"
+    evidence_ids = (
+        data.get("evidence_ids") or data.get("evidenceIds") or data.get("evidence_ids") or []
+    )
+    coverage = data.get("coverage")
+    asserted = data.get("asserted_result") or data.get("assertedResult")
 
     try:
         verification = svc.verify(

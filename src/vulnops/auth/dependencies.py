@@ -219,11 +219,26 @@ def require_capability(capability: str):
         request: Request,
         principal: Principal = Depends(require_organization),
     ) -> Principal:
-        if _is_explicit_test_bypass(request, principal):
-            return principal
-        if not principal.has_capability(normalized):
-            raise AuthorizationError("insufficient_permission")
-        return principal
+        return authorize_capability(request, principal, normalized)
 
     dependency.__name__ = f"require_{normalized.replace(':', '_')}"
     return dependency
+
+
+def authorize_capability(request: Request, principal: Principal, capability: str) -> Principal:
+    """Authorize a trusted principal after a resource has been resolved.
+
+    Resource routes call this helper only after checking ownership.  Keeping
+    the capability check separate from the organization dependency prevents a
+    cross-organization resource from leaking a 403, validation, or concurrency
+    response before the route can return its safe 404.
+    """
+
+    normalized = capability.strip().lower()
+    if not normalized:
+        raise ValueError("capability must not be empty")
+    if _is_explicit_test_bypass(request, principal):
+        return principal
+    if not principal.has_capability(normalized):
+        raise AuthorizationError("insufficient_permission")
+    return principal

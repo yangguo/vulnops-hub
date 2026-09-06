@@ -83,6 +83,310 @@ def _submit_sbom(client: TestClient, organization_id: str) -> dict[str, Any]:
     return response.json()
 
 
+def _transition_case(client: TestClient, organization_id: str, case_id: str, target: str) -> None:
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/cases/{case_id}/transitions",
+        json={"target": target},
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+
+
+def _prepare_case_for_route(
+    client: TestClient, organization_id: str, route_name: str
+) -> dict[str, Any]:
+    case = _create_case(client, organization_id)
+    if route_name == "risk_request":
+        _transition_case(client, organization_id, case["id"], "triage")
+    elif route_name == "verification_submit":
+        for target in ("triage", "assigned", "in_progress", "awaiting_verification"):
+            _transition_case(client, organization_id, case["id"], target)
+    return case
+
+
+def _route_request(
+    client: TestClient,
+    organization_id: str,
+    route_name: str,
+    case: dict[str, Any] | None,
+    sbom: dict[str, Any] | None,
+):
+    case_id = case["id"] if case else "case_missing"
+    if route_name == "case_create":
+        return client.post(
+            f"/api/v1/organizations/{organization_id}/cases",
+            json={"title": "matrix case", "owner_team": "security", "priority": "P2"},
+            headers=_headers(),
+        )
+    if route_name == "case_list":
+        return client.get(f"/api/v1/organizations/{organization_id}/cases", headers=_headers())
+    if route_name == "case_detail":
+        return client.get(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}", headers=_headers()
+        )
+    if route_name == "allowed_transitions":
+        return client.get(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}/allowed-transitions",
+            headers=_headers(),
+        )
+    if route_name == "case_transition":
+        return client.post(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}/transitions",
+            json={"target": "triage"},
+            headers=_headers(),
+        )
+    if route_name == "risk_request":
+        return client.post(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}/risk-decisions",
+            json={"type": "risk_accepted", "reason": "matrix request"},
+            headers=_headers(),
+        )
+    if route_name == "risk_history":
+        return client.get(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}/risk-decisions",
+            headers=_headers(),
+        )
+    if route_name == "verification_history":
+        return client.get(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}/verifications",
+            headers=_headers(),
+        )
+    if route_name == "verification_submit":
+        return client.post(
+            f"/api/v1/organizations/{organization_id}/cases/{case_id}/verifications",
+            json={"method": "scanner", "coverage": {"status": "partial"}},
+            headers=_headers(),
+        )
+    if route_name == "sbom_submit":
+        return client.post(
+            f"/api/v1/organizations/{organization_id}/sboms",
+            json={
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "components": [
+                    {
+                        "type": "library",
+                        "name": "matrix-fixture",
+                        "version": "1.0.0",
+                        "purl": f"pkg:pypi/matrix-fixture@{uuid4().hex}",
+                    }
+                ],
+            },
+            headers=_headers(),
+        )
+    if route_name == "sbom_detail":
+        return client.get(
+            f"/api/v1/organizations/{organization_id}/sboms/{sbom['id']}",
+            headers=_headers(),
+        )
+    raise AssertionError(f"unknown route matrix entry: {route_name}")
+
+
+ROUTE_EXPECTED_STATUS = {
+    "case_create": {
+        "viewer": 403,
+        "owner": 200,
+        "auditor": 403,
+        "risk_approver": 403,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "case_list": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "case_detail": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "allowed_transitions": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "case_transition": {
+        "viewer": 403,
+        "owner": 200,
+        "auditor": 403,
+        "risk_approver": 403,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "risk_request": {
+        "viewer": 403,
+        "owner": 200,
+        "auditor": 403,
+        "risk_approver": 403,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "risk_history": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "verification_history": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "verification_submit": {
+        "viewer": 403,
+        "owner": 200,
+        "auditor": 403,
+        "risk_approver": 403,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "sbom_submit": {
+        "viewer": 403,
+        "owner": 403,
+        "auditor": 403,
+        "risk_approver": 403,
+        "service": 201,
+        "cross_org": 404,
+    },
+    "sbom_detail": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 403,
+        "risk_approver": 200,
+        "service": 200,
+        "cross_org": 404,
+    },
+}
+
+
+PRINCIPAL_NAMES = ("viewer", "owner", "auditor", "risk_approver", "service", "cross_org")
+
+
+def _claims_for_matrix(
+    principal_name: str, organization_id: str, outside_organization_id: str
+) -> dict[str, Any]:
+    if principal_name == "viewer":
+        return _claims(organization_ids=[organization_id], roles=["viewer"])
+    if principal_name == "owner":
+        return _claims(organization_ids=[organization_id], roles=["owner"])
+    if principal_name == "auditor":
+        return _claims(organization_ids=[organization_id], roles=["auditor"])
+    if principal_name == "risk_approver":
+        return _claims(organization_ids=[organization_id], roles=["risk_approver"])
+    if principal_name == "service":
+        return _claims(
+            organization_ids=[organization_id],
+            scopes=["sbom:read", "sbom:write"],
+            subject="matrix-ci",
+        )
+    if principal_name == "cross_org":
+        return _claims(
+            organization_ids=[outside_organization_id], roles=["admin"], subject="cross-org-admin"
+        )
+    raise AssertionError(f"unknown principal matrix entry: {principal_name}")
+
+
+@pytest.mark.parametrize("route_name", tuple(ROUTE_EXPECTED_STATUS))
+@pytest.mark.parametrize("principal_name", PRINCIPAL_NAMES)
+def test_all_business_routes_have_literal_principal_status_matrix(
+    monkeypatch: pytest.MonkeyPatch, route_name: str, principal_name: str
+):
+    organization_id = f"matrix-{route_name}-{principal_name}-{uuid4().hex[:8]}"
+    outside_organization_id = f"outside-{uuid4().hex[:8]}"
+    admin = _client(monkeypatch, _claims(organization_ids=[organization_id], roles=["admin"]))
+    case = None
+    sbom = None
+    if route_name in {
+        "case_detail",
+        "allowed_transitions",
+        "case_transition",
+        "risk_request",
+        "risk_history",
+        "verification_history",
+        "verification_submit",
+    }:
+        case = _prepare_case_for_route(admin, organization_id, route_name)
+    if route_name == "sbom_detail":
+        sbom = _submit_sbom(admin, organization_id)
+
+    client = _client(
+        monkeypatch,
+        _claims_for_matrix(principal_name, organization_id, outside_organization_id),
+    )
+    response = _route_request(client, organization_id, route_name, case, sbom)
+    expected = ROUTE_EXPECTED_STATUS[route_name][principal_name]
+    assert response.status_code == expected, (
+        f"route={route_name} principal={principal_name} "
+        f"expected={expected} actual={response.status_code}: {response.text}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("route_name", "method", "payload"),
+    [
+        ("case_detail", "get", None),
+        ("allowed_transitions", "get", None),
+        ("case_transition", "post", b"not-json"),
+        ("risk_request", "post", b"not-json"),
+        ("risk_history", "get", None),
+        ("verification_history", "get", None),
+        ("verification_submit", "post", b"not-json"),
+    ],
+)
+def test_cross_org_resource_is_hidden_before_capability_and_validation(
+    monkeypatch: pytest.MonkeyPatch, route_name: str, method: str, payload: bytes | None
+):
+    organization_a = f"ordering-a-{uuid4().hex[:8]}"
+    organization_b = f"ordering-b-{uuid4().hex[:8]}"
+    admin_a = _client(monkeypatch, _claims(organization_ids=[organization_a], roles=["admin"]))
+    case = _prepare_case_for_route(admin_a, organization_a, route_name)
+    client_b = _client(
+        monkeypatch,
+        _claims(organization_ids=[organization_b], roles=["service"], scopes="sbom:write"),
+    )
+    path = {
+        "case_detail": f"/api/v1/organizations/{organization_b}/cases/{case['id']}",
+        "allowed_transitions": (
+            f"/api/v1/organizations/{organization_b}/cases/{case['id']}/allowed-transitions"
+        ),
+        "case_transition": (
+            f"/api/v1/organizations/{organization_b}/cases/{case['id']}/transitions"
+        ),
+        "risk_request": (
+            f"/api/v1/organizations/{organization_b}/cases/{case['id']}/risk-decisions"
+        ),
+        "risk_history": (
+            f"/api/v1/organizations/{organization_b}/cases/{case['id']}/risk-decisions"
+        ),
+        "verification_history": (
+            f"/api/v1/organizations/{organization_b}/cases/{case['id']}/verifications"
+        ),
+        "verification_submit": (
+            f"/api/v1/organizations/{organization_b}/cases/{case['id']}/verifications"
+        ),
+    }[route_name]
+    if method == "get":
+        response = client_b.get(path, headers=_headers())
+    else:
+        response = client_b.post(path, content=payload, headers=_headers())
+    _problem(response, 404, "resource_not_found")
+
+
 def _problem(response, status: int, code: str) -> None:
     assert response.status_code == status, response.text
     body = response.json()
