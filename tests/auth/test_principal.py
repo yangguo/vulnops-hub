@@ -173,6 +173,7 @@ def test_auth_settings_define_oidc_algorithms_claims_and_test_bypass(monkeypatch
     assert settings.oidc_organization_claim == "organizations"
     assert settings.oidc_role_claim == "roles"
     assert settings.oidc_service_scope_claim == "scope"
+    assert settings.oidc_principal_type_claim == "principal_type"
     assert settings.auth_test_bypass_enabled is False
     assert settings.oidc_algorithms == settings.oidc_allowed_algorithms
     assert settings.oidc_org_claim == settings.oidc_organization_claim

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     oidc_organization_claim: str = Field(default="organizations")
     oidc_role_claim: str = Field(default="roles")
     oidc_service_scope_claim: str = Field(default="scope")
+    oidc_principal_type_claim: str = Field(default="principal_type")
     auth_test_bypass_enabled: bool = Field(default=False)
     auth_test_principal_subject: str = Field(default="test-principal")
 
@@ -77,6 +78,7 @@ class Settings(BaseSettings):
         "oidc_organization_claim",
         "oidc_role_claim",
         "oidc_service_scope_claim",
+        "oidc_principal_type_claim",
     )
     @classmethod
     def _require_claim_name(cls, v: str) -> str:

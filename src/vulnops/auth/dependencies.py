@@ -87,15 +87,15 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
     return parts[1].strip()
 
 
-def _claim_principal_type(claims: Mapping[str, Any]) -> PrincipalType:
-    value = claims.get("principal_type", claims.get("principalType", "human"))
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"service", "machine", "client"}:
-            return PrincipalType.SERVICE
-        if normalized in {"human", "user"}:
-            return PrincipalType.HUMAN
-    raise AuthenticationError("invalid_token")
+def _claim_principal_type(claims: Mapping[str, Any], claim_name: str) -> PrincipalType:
+    value = claims.get(claim_name)
+    if not isinstance(value, str):
+        raise AuthenticationError("invalid_token")
+    normalized = value.strip().lower()
+    try:
+        return PrincipalType(normalized)
+    except ValueError:
+        raise AuthenticationError("invalid_token") from None
 
 
 def principal_from_claims(claims: Mapping[str, Any], settings: Settings) -> Principal:
@@ -108,7 +108,7 @@ def principal_from_claims(claims: Mapping[str, Any], settings: Settings) -> Prin
 
     if not isinstance(claims, Mapping):
         raise AuthenticationError("invalid_token")
-    principal_type = _claim_principal_type(claims)
+    principal_type = _claim_principal_type(claims, settings.oidc_principal_type_claim)
     roles: Any = ()
     if principal_type is PrincipalType.HUMAN:
         roles = claims.get(settings.oidc_role_claim, ())
