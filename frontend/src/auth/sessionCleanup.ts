@@ -1,6 +1,8 @@
 import { useOrgStore } from '../stores/org'
 import { SBOM_HISTORY_STORAGE_KEY, useSbomHistoryStore } from '../stores/sbomHistory'
 
+export { SBOM_HISTORY_STORAGE_KEY }
+
 /** Purge browser state that must not survive logout / auth loss across users. */
 export function clearUserBoundBrowserState(): void {
   try {

@@ -109,6 +109,22 @@ function isExpired(user: User | null): boolean {
   return typeof user.expires_at === 'number' && user.expires_at <= Math.floor(Date.now() / 1000)
 }
 
+function subjectForUser(user: User | null): string {
+  return typeof user?.profile?.sub === 'string' ? user.profile.sub : ''
+}
+
+function sameValues(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function identityChanged(previous: User | null, next: User): boolean {
+  if (!previous) return true
+  const previousSubject = subjectForUser(previous)
+  const nextSubject = subjectForUser(next)
+  if (!previousSubject || !nextSubject || previousSubject !== nextSubject) return true
+  return !sameValues(normalizedOrganizations(previous), normalizedOrganizations(next))
+}
+
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -140,6 +156,25 @@ export const useAuthStore = defineStore('auth', {
     },
   },
   actions: {
+    clearUnauthenticatedSession(message = '') {
+      this.user = null
+      this.initialized = true
+      this.error = message
+      clearUserBoundBrowserState()
+    },
+    installUser(user: User, purgeState = false): boolean {
+      if (isExpired(user)) {
+        this.clearUnauthenticatedSession('登录令牌已过期')
+        return false
+      }
+      if (purgeState || identityChanged(this.user, user)) {
+        clearUserBoundBrowserState()
+      }
+      this.user = user
+      this.initialized = true
+      this.error = ''
+      return true
+    },
     async initialize(): Promise<boolean> {
       if (this.initialized) return this.isAuthenticated
       this.loading = true
@@ -147,15 +182,16 @@ export const useAuthStore = defineStore('auth', {
       this.bindEvents()
       try {
         const user = await oidcUserManager.getUser()
-        if (isExpired(user)) {
-          this.user = null
+        if (!user) {
+          this.clearUnauthenticatedSession()
+        } else if (isExpired(user)) {
+          this.clearUnauthenticatedSession()
           await oidcUserManager.removeUser()
         } else {
-          this.user = user
+          this.installUser(user)
         }
       } catch {
-        this.user = null
-        this.error = '无法读取登录状态'
+        this.clearUnauthenticatedSession('无法读取登录状态')
       } finally {
         this.initialized = true
         this.loading = false
@@ -175,40 +211,31 @@ export const useAuthStore = defineStore('auth', {
       try {
         const user = await oidcUserManager.signinCallback(url)
         if (!user || isExpired(user)) throw new Error('登录令牌已过期')
-        this.user = user
-        this.initialized = true
+        this.installUser(user, true)
         return returnToFromState(user.state)
       } catch (error) {
-        this.user = null
-        this.error = error instanceof Error ? error.message : '登录失败，请重试'
+        this.clearUnauthenticatedSession(error instanceof Error ? error.message : '登录失败，请重试')
         throw error
       } finally {
         this.loading = false
       }
     },
     async logout() {
-      this.user = null
-      this.initialized = true
-      this.error = ''
-      clearUserBoundBrowserState()
+      this.clearUnauthenticatedSession()
       await oidcUserManager.signoutRedirect()
     },
     handleUnauthorized() {
-      this.user = null
-      this.initialized = true
-      this.error = '登录已失效，请重新登录'
-      clearUserBoundBrowserState()
+      this.clearUnauthenticatedSession('登录已失效，请重新登录')
       void oidcUserManager.removeUser().catch(() => undefined)
     },
     bindEvents() {
       if (this.eventsBound) return
       this.eventsBound = true
       oidcUserManager.events.addUserLoaded((user) => {
-        this.user = user
-        this.error = ''
+        this.installUser(user)
       })
       oidcUserManager.events.addUserUnloaded(() => {
-        this.user = null
+        this.clearUnauthenticatedSession()
       })
       oidcUserManager.events.addAccessTokenExpired(() => {
         this.handleUnauthorized()

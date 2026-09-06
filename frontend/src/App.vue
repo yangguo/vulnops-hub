@@ -79,11 +79,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useOrgStore } from './stores/org'
 import { useAuthStore } from './stores/auth'
 
 const route = useRoute()
+const router = useRouter()
 const orgStore = useOrgStore()
 const authStore = useAuthStore()
 const pageTitle = computed(() => {
@@ -100,7 +101,11 @@ function switchOrg(org: string) {
 }
 
 async function logout() {
-  await authStore.logout()
+  try {
+    await authStore.logout()
+  } catch {
+    await router.replace({ name: 'login' })
+  }
 }
 </script>
 

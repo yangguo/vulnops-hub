@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import SbomSubmitView from './SbomSubmitView.vue'
 import { useOrgStore } from '../stores/org'
+import { useSbomHistoryStore } from '../stores/sbomHistory'
 import { apiClient } from '../api/client'
 
 vi.mock('../api/client', () => ({ apiClient: { submitSbom: vi.fn() } }))
@@ -45,5 +47,50 @@ describe('SbomSubmitView', () => {
     await w.find('button.submit-btn').trigger('click')
     expect(apiClient.submitSbom).not.toHaveBeenCalled()
     expect(w.text()).toContain('不是合法的 JSON')
+  })
+
+  it('does not persist a successful response after history cleanup invalidates the request', async () => {
+    let resolveSubmission: (value: Record<string, string>) => void = () => undefined
+    const pendingSubmission = new Promise<Record<string, string>>((resolve) => {
+      resolveSubmission = resolve
+    })
+    vi.mocked(apiClient.submitSbom).mockReturnValueOnce(pendingSubmission as never)
+    useOrgStore().setOrg('acme')
+    const w = mount(SbomSubmitView)
+    await w.find('textarea').setValue('{"bomFormat":"CycloneDX","specVersion":"1.5"}')
+    const submitTask = w.find('button.submit-btn').trigger('click')
+    await Promise.resolve()
+
+    useSbomHistoryStore().clear()
+    resolveSubmission({
+      sbom_id: 'sbom-stale',
+      content_sha256: 'stale-sha',
+      status: 'accepted',
+    })
+    await submitTask
+
+    expect(useSbomHistoryStore().history).toEqual([])
+    expect(localStorage.getItem('vulnops.sbom-history')).toBeNull()
+    expect(w.text()).not.toContain('sbom-stale')
+  })
+
+  it('resets mounted form and result state when history cleanup advances the generation', async () => {
+    vi.mocked(apiClient.submitSbom).mockResolvedValue({
+      sbom_id: 'sbom-1',
+      content_sha256: 'abc',
+      status: 'accepted',
+    } as never)
+    const w = mount(SbomSubmitView)
+    await w.find('textarea').setValue('{"bomFormat":"CycloneDX"}')
+    await w.find('button.submit-btn').trigger('click')
+
+    expect(w.text()).toContain('sbom-1')
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toContain('CycloneDX')
+
+    useSbomHistoryStore().clear()
+    await nextTick()
+
+    expect(w.text()).not.toContain('sbom-1')
+    expect((w.find('textarea').element as HTMLTextAreaElement).value).toBe('')
   })
 })

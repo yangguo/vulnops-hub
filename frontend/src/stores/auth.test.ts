@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from './auth'
 import { useOrgStore } from './org'
+import { useSbomHistoryStore } from './sbomHistory'
 
 const oidcDoubles = vi.hoisted(() => {
   const callbacks: {
@@ -61,6 +62,22 @@ function makeUser(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function seedUserBoundState() {
+  useOrgStore().setOrg('acme-user-a')
+  const history = useSbomHistoryStore()
+  history.record(
+    { at: '2026-01-01T00:00:00Z', org: 'acme-user-a', sbom_id: 'sbom-a', sha: 'abc' },
+    history.generation,
+  )
+}
+
+function expectUserBoundStateCleared() {
+  expect(localStorage.getItem('vulnops.org')).toBeNull()
+  expect(localStorage.getItem('vulnops.sbom-history')).toBeNull()
+  expect(useOrgStore().org).toBe('org-demo')
+  expect(useSbomHistoryStore().history).toEqual([])
+}
+
 describe('auth store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -116,6 +133,7 @@ describe('auth store', () => {
   })
 
   it('removes an expired user during initialization', async () => {
+    seedUserBoundState()
     oidcDoubles.manager.getUser.mockResolvedValueOnce(
       makeUser({ expires_at: Math.floor(Date.now() / 1000) - 1, expired: true }),
     )
@@ -125,6 +143,81 @@ describe('auth store', () => {
 
     expect(oidcDoubles.manager.removeUser).toHaveBeenCalledWith()
     expect(store.isAuthenticated).toBe(false)
+    expectUserBoundStateCleared()
+  })
+
+  it('clears user-bound state when startup has no in-memory OIDC user', async () => {
+    seedUserBoundState()
+    const store = useAuthStore()
+
+    await store.initialize()
+
+    expect(store.isAuthenticated).toBe(false)
+    expectUserBoundStateCleared()
+  })
+
+  it('clears user-bound state when the callback fails', async () => {
+    seedUserBoundState()
+    oidcDoubles.manager.signinCallback.mockRejectedValueOnce(new Error('callback failed'))
+    const store = useAuthStore()
+
+    await expect(store.handleCallback()).rejects.toThrow('callback failed')
+
+    expectUserBoundStateCleared()
+  })
+
+  it('clears user-bound state when the OIDC user is unloaded', async () => {
+    const store = useAuthStore()
+    await store.handleCallback()
+    seedUserBoundState()
+
+    await oidcDoubles.callbacks.userUnloaded?.()
+
+    expect(store.isAuthenticated).toBe(false)
+    expectUserBoundStateCleared()
+  })
+
+  it('clears state before installing a callback identity that changes subject or organization', async () => {
+    const store = useAuthStore()
+    await store.handleCallback()
+    seedUserBoundState()
+    oidcDoubles.manager.signinCallback.mockResolvedValueOnce(
+      makeUser({
+        profile: {
+          sub: 'user-b',
+          name: 'User B',
+          organizations: ['other-org'],
+          roles: ['viewer'],
+          principal_type: 'human',
+        },
+      }),
+    )
+
+    await store.handleCallback()
+
+    expect(store.subject).toBe('user-b')
+    expectUserBoundStateCleared()
+  })
+
+  it('clears state when a loaded OIDC identity changes', async () => {
+    const store = useAuthStore()
+    await store.handleCallback()
+    seedUserBoundState()
+
+    await oidcDoubles.callbacks.userLoaded?.(
+      makeUser({
+        profile: {
+          sub: 'user-b',
+          name: 'User B',
+          organizations: ['other-org'],
+          roles: ['viewer'],
+          principal_type: 'human',
+        },
+      }),
+    )
+
+    expect(store.subject).toBe('user-b')
+    expectUserBoundStateCleared()
   })
 
   it('clears the session when the OIDC access-token expiry event fires', async () => {
