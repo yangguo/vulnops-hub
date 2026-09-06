@@ -1,20 +1,23 @@
 import { useOrgStore } from '../stores/org'
-
-export const SBOM_HISTORY_STORAGE_KEY = 'vulnops.sbom-history'
+import { SBOM_HISTORY_STORAGE_KEY, useSbomHistoryStore } from '../stores/sbomHistory'
 
 /** Purge browser state that must not survive logout / auth loss across users. */
 export function clearUserBoundBrowserState(): void {
   try {
-    localStorage.removeItem(SBOM_HISTORY_STORAGE_KEY)
+    useOrgStore().clear()
   } catch {
-    // ignore storage failures in restricted environments
+    try {
+      localStorage.removeItem('vulnops.org')
+    } catch {
+      // ignore storage failures in restricted environments
+    }
   }
   try {
-    useOrgStore().clear()
+    useSbomHistoryStore().clear()
   } catch {
     // Pinia may be unavailable in some unit contexts; still drop the key.
     try {
-      localStorage.removeItem('vulnops.org')
+      localStorage.removeItem(SBOM_HISTORY_STORAGE_KEY)
     } catch {
       // ignore
     }
