@@ -22,6 +22,11 @@ class _RaisingTZInfo(tzinfo):
         raise self.exception_type("malformed timezone")
 
 
+class _RaisingAstimezoneDatetime(datetime):
+    def astimezone(self, tz=None):
+        raise RuntimeError("malformed datetime conversion")
+
+
 def test_case_transition_api_flow():
     app = create_app()
     client = TestClient(app)
@@ -424,6 +429,83 @@ def test_risk_approval_api_maps_malformed_tzinfo_to_stable_problem_details(
     approval = client.post(
         f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions/{decision_id}/approval",
         json={"outcome": "approve", "reason": "review malformed timezone"},
+    )
+    assert approval.status_code == 422, approval.text
+    body = approval.json()["detail"]
+    assert body["code"] == "invalid_risk_approval"
+    assert body["status"] == 422
+    assert body["detail"] == "risk decision expires_at must be timezone-aware"
+
+    current = client.get(f"/api/v1/organizations/acme/cases/{case_id}")
+    assert current.status_code == 200, current.text
+    assert current.json()["status"] == before_case["status"]
+    assert current.json()["version"] == before_case["version"]
+    session = get_sessionmaker(get_engine())()
+    try:
+        decision = session.get(RiskDecision, decision_id)
+        assert decision is not None
+        assert decision.status == "pending_approval"
+        assert decision.approver is None
+        assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
+        assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
+    finally:
+        session.close()
+
+
+def test_risk_approval_api_maps_unnormalizable_datetime_to_stable_problem_details(monkeypatch):
+    app = create_app()
+    client = TestClient(app)
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "unnormalizable expiry", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+    transition = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+    )
+    assert transition.status_code == 200, transition.text
+    request_response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+        json={
+            "type": "risk_accepted",
+            "reason": "temporary exception",
+            "evidence_ids": ["ev-unnormalizable"],
+            "expires_at": "2030-01-01T10:00:00Z",
+        },
+    )
+    assert request_response.status_code == 200, request_response.text
+    decision_id = request_response.json()["id"]
+    before_case = client.get(f"/api/v1/organizations/acme/cases/{case_id}").json()
+    session = get_sessionmaker(get_engine())()
+    try:
+        before_audits = session.scalar(select(func.count()).select_from(AuditEvent))
+        before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+    finally:
+        session.close()
+
+    original_get = CaseService.get_risk_decision
+
+    def get_with_unnormalizable_expiry(self, loaded_decision_id):
+        decision = original_get(self, loaded_decision_id)
+        set_committed_value(
+            decision,
+            "expires_at",
+            _RaisingAstimezoneDatetime(2030, 1, 1, 10, tzinfo=UTC),
+        )
+        return decision
+
+    monkeypatch.setattr(CaseService, "get_risk_decision", get_with_unnormalizable_expiry)
+    app.state.test_principal = Principal(
+        subject="approver",
+        principal_type="human",
+        organization_ids={"acme"},
+        roles={"risk_approver"},
+    )
+    approval = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions/{decision_id}/approval",
+        json={"outcome": "approve", "reason": "review unnormalizable expiry"},
     )
     assert approval.status_code == 422, approval.text
     body = approval.json()["detail"]

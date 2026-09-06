@@ -178,8 +178,14 @@ def _validate_risk_decision_expiry(expires_at: Any) -> None:
         raise ValueError("risk decision expires_at is required")
     if not isinstance(expires_at, datetime):
         raise ValueError(_INVALID_EXPIRY_TIMEZONE)
-    effective_expiry = _ensure_aware(expires_at)
-    if effective_expiry is None or _safe_utcoffset(effective_expiry) is None:
+    try:
+        # Re-normalize the persisted value at the approval boundary instead
+        # of relying only on ``utcoffset``.  A datetime subclass can report a
+        # valid offset while its ``astimezone`` conversion is unusable.
+        effective_expiry = _normalize_utc(expires_at)
+    except _InvalidExpiryTimezone as exc:
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE) from exc
+    if effective_expiry is None:
         raise ValueError(_INVALID_EXPIRY_TIMEZONE)
     try:
         expired = effective_expiry <= _utcnow()

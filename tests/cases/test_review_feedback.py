@@ -57,6 +57,13 @@ class _RaisingTZInfo(tzinfo):
         raise self.exception_type("malformed timezone")
 
 
+class _RaisingAstimezoneDatetime(datetime):
+    """A persisted-looking datetime whose timezone conversion is unusable."""
+
+    def astimezone(self, tz=None):
+        raise RuntimeError("malformed datetime conversion")
+
+
 def test_verification_rejected_outside_awaiting_state():
     svc, session = _svc()
     case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
@@ -499,6 +506,39 @@ def test_malformed_tzinfo_expiry_returns_stable_domain_error_without_mutation(ex
     persisted = session.get(RiskDecision, decision.id)
     assert persisted is not None
     assert persisted.status == "pending_approval"
+    assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
+    session.close()
+
+
+def test_unnormalizable_datetime_expiry_returns_stable_domain_error_without_mutation():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    malformed = _RaisingAstimezoneDatetime(2030, 1, 1, 10, tzinfo=UTC)
+    set_committed_value(decision, "expires_at", malformed)
+    before_case = (svc.get_case(case.id).status, svc.get_case(case.id).version)
+    before_audits = session.scalar(select(func.count()).select_from(AuditEvent))
+    before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+
+    with pytest.raises(ValueError, match="risk decision expires_at must be timezone-aware"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="review unnormalizable expiry",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
+    assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
+    persisted = session.get(RiskDecision, decision.id)
+    assert persisted is not None
+    assert persisted.status == "pending_approval"
+    assert persisted.approver is None
     assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
     session.close()
