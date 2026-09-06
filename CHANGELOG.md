@@ -14,6 +14,8 @@ intentional contract changes.
   endpoints.
 - FastAPI SPA serving, multi-stage container build, Playwright smoke test, and
   frontend CI gates.
+- A loopback-only OIDC test issuer and Playwright enforcement flows for login,
+  auditor read-only access, owner transitions, token expiry, and cross-org denial.
 - Node.js 22.22.2 and pnpm 9.15.0 development baseline.
 - As-built development guide, MVP acceptance matrix, and OIDC/RBAC next-slice
   design and implementation plan.
@@ -22,6 +24,11 @@ intentional contract changes.
 
 - Project status is described as an M1 technical preview rather than a complete
   production-ready MVP.
+- API business routes enforce configured OIDC bearer authentication,
+  organization-scoped RBAC, and server-derived workflow actors; the console's
+  capability-aware controls remain a UX layer over that server authority.
+- CI records automated OIDC/RBAC verification with a test issuer. This is not
+  evidence of integration with a production identity provider.
 - Case-list ordering is deterministic and preserves the nullable `exposures`
   response contract.
 
@@ -34,8 +41,8 @@ intentional contract changes.
 
 ### Known limitations
 
-- OIDC and RBAC are not enforced; deployment is restricted to an isolated
-  intranet boundary.
+- Production IdP integration, production certification, first-adopter
+  integrated-staging evidence, and raw-evidence authorization remain open.
 - Source-health and coverage-gap APIs/UI, CSV/CMDB import, external-ticket and
   notification delivery, and integrated-staging evidence remain open.
 - The production frontend build reports large chunk warnings for Element Plus
