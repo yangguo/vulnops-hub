@@ -167,6 +167,31 @@ def test_authenticated_contract_publishes_actor_free_workflow_requests():
     assert "decision" not in approval_body["properties"]
 
 
+def test_case_create_contract_rejects_unsafe_shapes():
+    schema = create_app().openapi()
+    body = schema["paths"]["/api/v1/organizations/{org_id}/cases"]["post"]["requestBody"][
+        "content"
+    ]["application/json"]["schema"]
+    assert body["additionalProperties"] is False
+    assert body["required"] == ["title", "owner_team", "priority"]
+    assert set(body["properties"]) == {
+        "title",
+        "owner_team",
+        "priority",
+        "exposures",
+        "policy_version",
+        "assignee",
+    }
+    assert "name" not in body["properties"]
+    assert "owner" not in body["properties"]
+    assert "exposure_ids" not in body["properties"]
+    assert body["properties"]["exposures"] == {
+        "items": {"type": "string"},
+        "type": "array",
+        "title": "Exposures",
+    }
+
+
 def test_checked_in_openapi_matches_runtime_schema():
     checked_in = yaml.safe_load(pathlib.Path("openapi/openapi.yaml").read_text())
     assert checked_in == create_app().openapi()

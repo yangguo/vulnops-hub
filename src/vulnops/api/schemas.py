@@ -26,6 +26,44 @@ class ProblemDetails(BaseModel):
     fields: list[str] | None = None
 
 
+class CaseCreateRequest(BaseModel):
+    """Canonical, actor-free case creation request contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("title", "name"),
+    )
+    owner_team: str = Field(
+        min_length=1,
+        validation_alias=AliasChoices("owner_team", "owner"),
+    )
+    priority: Literal["P0", "P1", "P2", "P3", "P4"]
+    exposures: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("exposures", "exposure_ids"),
+    )
+    policy_version: str | None = Field(default=None, min_length=1)
+    assignee: str | None = Field(default=None, min_length=1)
+
+    @field_validator("title", "owner_team", mode="before")
+    @classmethod
+    def validate_required_text(cls, value: object) -> object:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("case text fields must not be blank")
+        return value
+
+    @field_validator("exposures", mode="before")
+    @classmethod
+    def validate_exposures(cls, value: object) -> object:
+        if not isinstance(value, list):
+            raise ValueError("case exposures must be a list")
+        if any(not isinstance(item, str) or not item.strip() for item in value):
+            raise ValueError("case exposures must contain only nonblank strings")
+        return value
+
+
 class TransitionRequest(BaseModel):
     """Actor-free case transition request contract."""
 

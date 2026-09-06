@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from vulnops.api.deps import get_db
 from vulnops.api.schemas import (
     AllowedTransitionsResponse,
+    CaseCreateRequest,
     CaseCreateResponse,
     CaseDetailResponse,
     CaseListResponse,
@@ -197,26 +198,22 @@ def _parse_if_match(if_match: str | None) -> int | None:
 @router.post(
     "/organizations/{org_id}/cases",
     response_model=CaseCreateResponse,
+    openapi_extra=json_request_body(CaseCreateRequest),
     dependencies=[Depends(require_capability("case:write"))],
 )
 async def create_case(org_id: str, request: Request, db: Session = Depends(get_db)):
-    data = await request.json()
-    title = data.get("title") or data.get("name") or "Untitled case"
-    owner_team = data.get("owner_team") or data.get("owner") or "unassigned"
-    priority = data.get("priority", "P2")
-    exposures = data.get("exposures") or data.get("exposure_ids") or []
-    policy_version = data.get("policy_version")
-    assignee = data.get("assignee")
+    data = _reject_client_identity_fields(await request.json())
+    payload = validate_request_body(CaseCreateRequest, data, code="invalid_request_body")
 
     svc = CaseService(db)
     case = svc.create_case(
         organization_id=org_id,
-        title=title,
-        owner_team=owner_team,
-        priority=priority,
-        exposures=exposures,
-        policy_version=policy_version,
-        assignee=assignee,
+        title=payload.title,
+        owner_team=payload.owner_team,
+        priority=payload.priority,
+        exposures=payload.exposures,
+        policy_version=payload.policy_version,
+        assignee=payload.assignee,
     )
     return {
         "id": case.id,

@@ -690,7 +690,27 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Title */
+                    title: string;
+                    /** Owner Team */
+                    owner_team: string;
+                    /**
+                     * Priority
+                     * @enum {string}
+                     */
+                    priority: "P0" | "P1" | "P2" | "P3" | "P4";
+                    /** Exposures */
+                    exposures?: string[];
+                    /** Policy Version */
+                    policy_version?: string | null;
+                    /** Assignee */
+                    assignee?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

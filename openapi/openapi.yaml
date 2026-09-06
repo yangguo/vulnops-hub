@@ -170,6 +170,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              description: Canonical, actor-free case creation request contract.
+              properties:
+                title:
+                  minLength: 1
+                  title: Title
+                  type: string
+                owner_team:
+                  minLength: 1
+                  title: Owner Team
+                  type: string
+                priority:
+                  enum:
+                  - P0
+                  - P1
+                  - P2
+                  - P3
+                  - P4
+                  title: Priority
+                  type: string
+                exposures:
+                  items:
+                    type: string
+                  title: Exposures
+                  type: array
+                policy_version:
+                  anyOf:
+                  - minLength: 1
+                    type: string
+                  - type: 'null'
+                  title: Policy Version
+                assignee:
+                  anyOf:
+                  - minLength: 1
+                    type: string
+                  - type: 'null'
+                  title: Assignee
+              required:
+              - title
+              - owner_team
+              - priority
+              title: CaseCreateRequest
+              type: object
     get:
       tags:
       - cases

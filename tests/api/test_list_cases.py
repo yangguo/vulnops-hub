@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from vulnops.main import create_app
@@ -84,3 +85,52 @@ def test_list_cases_rejects_bad_params():
     assert client.get("/api/v1/organizations/anyorg/cases?page_size=1000").status_code == 422
     assert client.get("/api/v1/organizations/anyorg/cases?page=0").status_code == 422
     assert client.get("/api/v1/organizations/anyorg/cases?sort=title").status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("invalid_field", "value"),
+    [
+        ("exposures", {"bad": "shape"}),
+        ("unexpected", "must be rejected"),
+        ("priority", "P9"),
+        ("owner_team", ""),
+    ],
+)
+def test_create_case_rejects_invalid_body_without_mutating_cases(invalid_field, value):
+    client = TestClient(create_app())
+    org = f"create-contract-{uuid4().hex[:8]}"
+    before = client.get(f"/api/v1/organizations/{org}/cases").json()["total"]
+
+    payload = {
+        "title": "strict create",
+        "owner_team": "platform",
+        "priority": "P2",
+        invalid_field: value,
+    }
+    response = client.post(f"/api/v1/organizations/{org}/cases", json=payload)
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_request_body"
+    assert detail["fields"] == [invalid_field]
+    after = client.get(f"/api/v1/organizations/{org}/cases").json()["total"]
+    assert after == before
+
+
+def test_create_case_valid_exposures_round_trip_as_typed_detail():
+    client = TestClient(create_app())
+    org = f"create-contract-valid-{uuid4().hex[:8]}"
+    response = client.post(
+        f"/api/v1/organizations/{org}/cases",
+        json={
+            "title": "strict create",
+            "owner_team": "platform",
+            "priority": "P2",
+            "exposures": ["exp-1", "exp-2"],
+        },
+    )
+    assert response.status_code == 200, response.text
+
+    detail = client.get(f"/api/v1/organizations/{org}/cases/{response.json()['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["exposures"] == ["exp-1", "exp-2"]

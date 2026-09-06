@@ -623,6 +623,25 @@ def test_cross_organization_access_is_not_revealed_even_with_admin(
     _problem(cross_org_sbom, 404, "resource_not_found")
 
 
+def test_cross_organization_create_rejects_before_body_validation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    organization_id = f"auth-create-target-{uuid4().hex[:8]}"
+    other_organization_id = f"auth-create-other-{uuid4().hex[:8]}"
+    client = _client(
+        monkeypatch,
+        _claims(organization_ids=[other_organization_id], roles=["admin"]),
+    )
+
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/cases",
+        json={"exposures": {"bad": "shape"}, "unexpected": True},
+        headers=_headers(),
+    )
+
+    _problem(response, 404, "resource_not_found")
+
+
 def test_real_wildcard_organization_claim_does_not_grant_global_access(
     monkeypatch: pytest.MonkeyPatch,
 ):

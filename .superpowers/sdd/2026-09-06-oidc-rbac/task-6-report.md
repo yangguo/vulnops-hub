@@ -219,3 +219,77 @@ The frontend build retains the existing >500 kB chunk warning. Backend output
 retains only the existing Starlette/httpx and Alembic deprecation warnings.
 This fix round is committed separately and intentionally not pushed pending
 controller review.
+
+## Fix round 2/5: strict case creation contract
+
+### RED
+
+The new fresh-database API regressions were run before the implementation:
+
+- `{"exposures": {"bad": "shape"}}` returned `200` and created a case even
+  though the typed detail contract expects a list of exposure identifiers.
+- An unknown `unexpected` field was silently ignored and still created a case.
+- An unsupported priority (`P9`) and blank `owner_team` were not rejected
+  before service mutation.
+
+The cross-organization regression used the same malformed body and remained a
+safe authorization boundary: it returned `404 resource_not_found` before body
+validation. This ordering is preserved by the existing organization-aware
+capability dependency.
+
+### GREEN
+
+- Added `CaseCreateRequest` with `extra="forbid"`, canonical required
+  `title`/`owner_team`/`priority`, a `P0`–`P4` priority literal, string
+  constraints for text fields, and `exposures: list[str]` with nonblank-item
+  validation. Legacy `name`, `owner`, and `exposure_ids` aliases remain
+  accepted at runtime while only canonical fields are published.
+- The create route now rejects client identity fields and validates the body
+  only after principal, organization, and capability dependencies succeed.
+  Invalid bodies return stable `422 invalid_request_body` Problem Details and
+  leave cases unchanged.
+- Added a typed create operation alias and `apiClient.createCase`; generated
+  TypeScript now requires the canonical fields and represents exposures as a
+  string array.
+- Added OpenAPI contract coverage for the create body, including exact
+  supported properties, canonical requiredness, `additionalProperties: false`,
+  and the string-array exposures shape. A valid create plus typed detail GET
+  round-trip is covered by the API tests.
+
+### Fix-round generated commands
+
+```text
+ENVIRONMENT=test AUTH_TEST_BYPASS_ENABLED=true DATABASE_URL=sqlite:///... \
+  OIDC_ISSUER_URL=https://issuer.example OIDC_AUDIENCE=vulnops-api \
+  uv run uvicorn vulnops.main:app --host 127.0.0.1 --port 18080
+curl -fsS http://127.0.0.1:18080/openapi.json \
+  | uv run python -c 'import json,sys,yaml; yaml.safe_dump(json.load(sys.stdin),sys.stdout,sort_keys=False,allow_unicode=True)' \
+  > openapi/openapi.yaml
+PATH=/Users/vyang/.nvm/versions/node/v22.22.2/bin:$PATH \
+  (cd frontend && corepack pnpm openapi)
+```
+
+The runtime equality check confirmed `openapi/openapi.yaml ==
+create_app().openapi()` under explicit test settings. Re-running the Node 22.22.2
+OpenAPI generator and byte-comparing `frontend/src/api/schema.d.ts` confirmed
+deterministic TypeScript output.
+
+### Fix-round verification
+
+```text
+fresh DATABASE_URL + uv run alembic upgrade head
+uv run alembic check
+uv run pytest -q tests/api tests/contract    # passed
+uv run pytest -q                             # 331 collected, all passed
+uv run ruff check src tests                  # passed
+uv run ruff format --check src tests         # passed
+git diff --check                             # passed
+cd frontend && Node v22.22.2 corepack pnpm lint       # passed
+cd frontend && Node v22.22.2 corepack pnpm typecheck  # passed
+cd frontend && Node v22.22.2 corepack pnpm test       # 10 files, 30 tests passed
+cd frontend && Node v22.22.2 corepack pnpm build      # passed
+```
+
+The frontend build retains the existing >500 kB chunk warning, and backend
+output retains only the existing Starlette/httpx and Alembic deprecation
+warnings. This round is intentionally not pushed pending controller review.

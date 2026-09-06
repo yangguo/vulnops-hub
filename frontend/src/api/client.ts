@@ -1,5 +1,7 @@
 import type {
   AllowedTransitionsResponse,
+  CaseCreateRequest,
+  CaseCreateResponse,
   CaseDetail,
   CaseListResponse,
   RiskApprovalRequest,
@@ -108,6 +110,12 @@ function jsonInit(method: string, payload: unknown, headers: Record<string, stri
 }
 
 export const apiClient = {
+  createCase(org: string, payload: CaseCreateRequest): Promise<CaseCreateResponse> {
+    return request(
+      `/api/v1/organizations/${org}/cases`,
+      jsonInit('POST', payload),
+    )
+  },
   listCases(org: string, query = ''): Promise<CaseListResponse> {
     return request(`/api/v1/organizations/${org}/cases${query}`)
   },
