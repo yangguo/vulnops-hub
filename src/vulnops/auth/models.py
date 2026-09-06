@@ -21,7 +21,9 @@ _ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "viewer": frozenset({"case:read", "sbom:read"}),
         "owner": frozenset({"case:write", "risk:request", "verification:write"}),
-        "auditor": frozenset({"audit:read", "provenance:read", "risk:read", "verification:read"}),
+        "auditor": frozenset(
+            {"audit:read", "case:read", "provenance:read", "risk:read", "verification:read"}
+        ),
         "risk_approver": frozenset({"risk:approve"}),
         "security_lead": frozenset(),
         "admin": frozenset(
@@ -34,6 +36,10 @@ _ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = MappingProxyType(
             }
         ),
     }
+)
+
+_SERVICE_SCOPE_CAPABILITIES = frozenset(
+    {"evidence:raw:read", "evidence:write", "sbom:read", "sbom:write"}
 )
 
 
@@ -156,13 +162,21 @@ class Principal(BaseModel):
     def capabilities(self) -> frozenset[str]:
         """Return role-derived capabilities for human principals."""
 
+        if self.is_service:
+            return frozenset()
+
         capabilities: set[str] = set()
         for role in self.roles:
             capabilities.update(_ROLE_CAPABILITIES.get(role, frozenset()))
 
         # These roles are cumulative by design, while keeping the role map
         # itself easy to inspect and extend.
-        if "owner" in self.roles or "security_lead" in self.roles or "admin" in self.roles:
+        if (
+            "owner" in self.roles
+            or "risk_approver" in self.roles
+            or "security_lead" in self.roles
+            or "admin" in self.roles
+        ):
             capabilities.update(_ROLE_CAPABILITIES["viewer"])
         if "risk_approver" in self.roles or "security_lead" in self.roles or "admin" in self.roles:
             capabilities.update(_ROLE_CAPABILITIES["risk_approver"])
@@ -221,5 +235,5 @@ class Principal(BaseModel):
         except ValueError:
             return False
         if self.is_service:
-            return normalized in self.scopes
+            return normalized in _SERVICE_SCOPE_CAPABILITIES and normalized in self.scopes
         return normalized in self.capabilities or normalized in self.permissions

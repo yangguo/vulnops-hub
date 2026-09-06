@@ -63,6 +63,80 @@ def test_principal_checks_organization_membership_and_roles_case_insensitively()
     assert not principal.has_role("owner")
 
 
+@pytest.mark.parametrize(
+    ("role", "expected_capabilities"),
+    [
+        ("viewer", {"case:read", "sbom:read"}),
+        (
+            "owner",
+            {
+                "case:read",
+                "sbom:read",
+                "case:write",
+                "risk:request",
+                "verification:write",
+            },
+        ),
+        (
+            "auditor",
+            {
+                "case:read",
+                "audit:read",
+                "provenance:read",
+                "risk:read",
+                "verification:read",
+            },
+        ),
+        ("risk_approver", {"case:read", "sbom:read", "risk:approve"}),
+        (
+            "security_lead",
+            {
+                "case:read",
+                "sbom:read",
+                "case:write",
+                "risk:request",
+                "verification:write",
+                "risk:approve",
+            },
+        ),
+        (
+            "admin",
+            {
+                "case:read",
+                "sbom:read",
+                "case:write",
+                "risk:request",
+                "verification:write",
+                "risk:approve",
+                "audit:read",
+                "provenance:read",
+                "risk:read",
+                "verification:read",
+                "sbom:write",
+            },
+        ),
+    ],
+)
+def test_human_role_capability_matrix_is_literal(role, expected_capabilities):
+    principal = Principal(subject="user", principal_type="human", roles=[role])
+
+    assert principal.capabilities == frozenset(expected_capabilities)
+
+
+def test_service_principal_never_derives_role_capabilities_or_human_approval():
+    principal = Principal(
+        subject="ci",
+        principal_type="service",
+        roles=["admin"],
+        scopes=["sbom:write", "case:read", "risk:approve"],
+    )
+
+    assert principal.capabilities == frozenset()
+    assert principal.has_capability("sbom:write")
+    assert not principal.has_capability("case:read")
+    assert not principal.has_capability("risk:approve")
+
+
 def test_principal_accepts_explicit_permissions_without_granting_them_to_services():
     human = Principal(
         subject="evidence-reader",
