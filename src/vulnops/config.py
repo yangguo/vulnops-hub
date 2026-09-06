@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -44,6 +45,62 @@ class Settings(BaseSettings):
     # Auth
     oidc_issuer_url: str | None = Field(default=None)
     oidc_audience: str | None = Field(default=None)
+    oidc_allowed_algorithms: Annotated[tuple[str, ...], NoDecode] = Field(default=("RS256",))
+    oidc_organization_claim: str = Field(default="organizations")
+    oidc_role_claim: str = Field(default="roles")
+    oidc_service_scope_claim: str = Field(default="scope")
+    auth_test_bypass_enabled: bool = Field(default=False)
+
+    @field_validator("oidc_allowed_algorithms", mode="before")
+    @classmethod
+    def _normalize_oidc_algorithms(cls, v: tuple[str, ...] | list[str] | str) -> tuple[str, ...]:
+        if isinstance(v, str):
+            text = v.strip()
+            if text.startswith("["):
+                try:
+                    values = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("oidc_allowed_algorithms must be a valid list") from exc
+            else:
+                values = text.replace(",", " ").split()
+        else:
+            values = v
+        normalized = tuple(
+            dict.fromkeys(str(item).strip().upper() for item in values if str(item).strip())
+        )
+        if not normalized:
+            raise ValueError("oidc_allowed_algorithms must contain at least one algorithm")
+        return normalized
+
+    @field_validator(
+        "oidc_organization_claim",
+        "oidc_role_claim",
+        "oidc_service_scope_claim",
+    )
+    @classmethod
+    def _require_claim_name(cls, v: str) -> str:
+        normalized = v.strip()
+        if not normalized:
+            raise ValueError("OIDC claim names must not be empty")
+        return normalized
+
+    @property
+    def oidc_algorithms(self) -> tuple[str, ...]:
+        """Compatibility alias for consumers using the shorter name."""
+
+        return self.oidc_allowed_algorithms
+
+    @property
+    def oidc_org_claim(self) -> str:
+        """Compatibility alias for the configured organization claim."""
+
+        return self.oidc_organization_claim
+
+    @property
+    def oidc_scope_claim(self) -> str:
+        """Compatibility alias for the configured service-scope claim."""
+
+        return self.oidc_service_scope_claim
 
     # Adapters
     vulnerability_lookup_base_url: str | None = Field(default=None)
