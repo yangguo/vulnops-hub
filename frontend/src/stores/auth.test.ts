@@ -3,6 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from './auth'
 import { useOrgStore } from './org'
 import { useSbomHistoryStore } from './sbomHistory'
+import { useCasesStore } from './cases'
+import { useCaseDetailStore } from './caseDetail'
+import { useDashboardStore } from './dashboard'
 
 const oidcDoubles = vi.hoisted(() => {
   const callbacks: {
@@ -297,5 +300,21 @@ describe('auth store', () => {
     expect(localStorage.getItem('vulnops.org')).toBeNull()
     expect(localStorage.getItem('vulnops.sbom-history')).toBeNull()
     expect(useOrgStore().org).toBe('org-demo')
+  })
+
+  it('resets every user-bound live Pinia store on unauthenticated transition', () => {
+    const cases = useCasesStore()
+    const caseDetail = useCaseDetailStore()
+    const dashboard = useDashboardStore()
+    cases.total = 3
+    caseDetail.allowed = ['case:write']
+    dashboard.openCount = 5
+    const store = useAuthStore()
+
+    store.clearUnauthenticatedSession()
+
+    expect(cases.total).toBe(0)
+    expect(caseDetail.allowed).toEqual([])
+    expect(dashboard.openCount).toBe(0)
   })
 })

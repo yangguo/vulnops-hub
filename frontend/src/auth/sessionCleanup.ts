@@ -1,7 +1,18 @@
 import { useOrgStore } from '../stores/org'
 import { SBOM_HISTORY_STORAGE_KEY, useSbomHistoryStore } from '../stores/sbomHistory'
+import { useCasesStore } from '../stores/cases'
+import { useCaseDetailStore } from '../stores/caseDetail'
+import { useDashboardStore } from '../stores/dashboard'
 
 export { SBOM_HISTORY_STORAGE_KEY }
+
+function resetLiveStore(reset: () => void): void {
+  try {
+    reset()
+  } catch {
+    // Pinia may be unavailable in some unit contexts.
+  }
+}
 
 /** Purge browser state that must not survive logout / auth loss across users. */
 export function clearUserBoundBrowserState(): void {
@@ -24,4 +35,7 @@ export function clearUserBoundBrowserState(): void {
       // ignore
     }
   }
+  resetLiveStore(() => useCasesStore().$reset())
+  resetLiveStore(() => useCaseDetailStore().$reset())
+  resetLiveStore(() => useDashboardStore().$reset())
 }
