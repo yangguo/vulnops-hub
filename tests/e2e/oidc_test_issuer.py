@@ -213,21 +213,13 @@ def validate_startup_configuration(host: str, issuer: str | None, port: int) -> 
         _ = parsed.port
     except ValueError:
         raise ValueError("OIDC test issuer must advertise a loopback HTTP URL") from None
-    if (
-        parsed.scheme != "http"
-        or not parsed.netloc
-        or not _is_loopback_host(hostname)
-    ):
+    if parsed.scheme != "http" or not parsed.netloc or not _is_loopback_host(hostname):
         raise ValueError("OIDC test issuer must advertise a loopback HTTP URL")
     return advertised_issuer.rstrip("/")
 
 
 def is_allowed_redirect_uri(uri: str, *, post_logout: bool = False) -> bool:
-    allowed = (
-        {PLAYWRIGHT_POST_LOGOUT_REDIRECT_URI}
-        if post_logout
-        else {PLAYWRIGHT_REDIRECT_URI}
-    )
+    allowed = {PLAYWRIGHT_POST_LOGOUT_REDIRECT_URI} if post_logout else {PLAYWRIGHT_REDIRECT_URI}
     return uri in allowed
 
 

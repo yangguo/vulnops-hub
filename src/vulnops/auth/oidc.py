@@ -186,9 +186,7 @@ class OIDCVerifier:
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
         if not isinstance(allow_insecure_loopback, bool):
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
-        if not _valid_http_url(
-            issuer_url.strip(), allow_insecure_loopback=allow_insecure_loopback
-        ):
+        if not _valid_http_url(issuer_url.strip(), allow_insecure_loopback=allow_insecure_loopback):
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
         if not isinstance(audience, str) or not audience.strip():
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")

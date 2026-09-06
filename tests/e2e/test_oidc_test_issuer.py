@@ -16,10 +16,7 @@ def test_fixture_rejects_non_loopback_bind_hosts(host: str):
 
 
 def test_fixture_accepts_default_loopback_configuration():
-    assert (
-        validate_startup_configuration("127.0.0.1", None, 9000)
-        == "http://127.0.0.1:9000"
-    )
+    assert validate_startup_configuration("127.0.0.1", None, 9000) == "http://127.0.0.1:9000"
 
 
 @pytest.mark.parametrize(
