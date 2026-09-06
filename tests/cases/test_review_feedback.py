@@ -1,7 +1,7 @@
 """Regression tests for PR #1 review feedback (P1 items)."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from threading import Barrier
 
 import pytest
@@ -316,6 +316,57 @@ def test_approval_rejects_expired_decision_without_mutating_workflow():
             actor_provenance="authenticated_claim",
         )
 
+    assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
+    unchanged = svc.get_risk_decision(decision.id)
+    assert unchanged.status == "pending_approval"
+    assert unchanged.approver is None
+    assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
+    session.close()
+
+
+def test_non_utc_expiry_round_trip_rejects_after_true_utc_instant(monkeypatch, tmp_path):
+    engine = _file_engine(tmp_path / "offset-expiry.db")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    svc = CaseService(session)
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    expiry = datetime(2030, 1, 1, 18, 0, tzinfo=timezone(timedelta(hours=8)))
+    decision = svc.create_risk_decision(
+        case.id,
+        type="risk_accepted",
+        reason="offset expiry",
+        expires_at=expiry,
+        evidence_ids=["ev-offset"],
+        requested_by="alice",
+        actor="alice",
+        actor_provenance="authenticated_claim",
+        actor_principal_type="human",
+    )
+    session.expire_all()
+    round_tripped = svc.get_risk_decision(decision.id)
+    before_case = (svc.get_case(case.id).status, svc.get_case(case.id).version)
+    before_audits = session.scalar(select(func.count()).select_from(AuditEvent))
+    before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+    monkeypatch.setattr(
+        "vulnops.cases.service._utcnow",
+        lambda: datetime(2030, 1, 1, 10, 0, 1, tzinfo=UTC),
+    )
+
+    with pytest.raises(ValueError, match="risk decision expires_at must be in the future"):
+        svc.approve_risk_decision(
+            round_tripped.id,
+            outcome="approve",
+            reason="review after true expiry",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
+    assert round_tripped.expires_at == expiry.astimezone(UTC)
     assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
     unchanged = svc.get_risk_decision(decision.id)
     assert unchanged.status == "pending_approval"

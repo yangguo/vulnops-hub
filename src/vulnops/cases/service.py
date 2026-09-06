@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from vulnops.cases.models import (
     ALLOWED_TRANSITIONS,
@@ -32,6 +33,13 @@ def _ensure_aware(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt
+
+
+def _normalize_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    aware = _ensure_aware(dt)
+    return aware.astimezone(UTC) if aware is not None else None
 
 
 def _gen_case_key():
@@ -140,6 +148,16 @@ def _validate_risk_decision_expiry(expires_at: Any) -> None:
         raise ValueError("risk decision expires_at must be timezone-aware")
     if effective_expiry <= _utcnow():
         raise ValueError("risk decision expires_at must be in the future")
+
+
+def _canonicalize_risk_decision_expiry(decision: RiskDecision) -> RiskDecision:
+    """Expose expiry values as UTC without rewriting legacy database rows."""
+
+    if decision.expires_at is not None:
+        canonical = _normalize_utc(decision.expires_at)
+        if canonical != decision.expires_at:
+            set_committed_value(decision, "expires_at", canonical)
+    return decision
 
 
 class CaseService:
@@ -260,7 +278,7 @@ class CaseService:
             .where(RiskDecision.case_id == case_id)
             .order_by(RiskDecision.created_at.desc(), RiskDecision.id.desc())
         )
-        return list(self.session.scalars(stmt).all())
+        return [_canonicalize_risk_decision_expiry(d) for d in self.session.scalars(stmt).all()]
 
     def list_verifications(self, case_id: str) -> list[Verification]:
         stmt = (
@@ -492,7 +510,7 @@ class CaseService:
         decision = self.session.get(RiskDecision, decision_id)
         if not decision:
             raise ValueError(f"decision {decision_id} not found")
-        return decision
+        return _canonicalize_risk_decision_expiry(decision)
 
     def create_risk_decision(
         self,
@@ -532,6 +550,7 @@ class CaseService:
             evidence_ids=evidence_ids,
             expires_at=expires_at,
         )
+        expires_at = _normalize_utc(expires_at)
         actor_fields = _actor_audit_fields(
             actor_provenance=actor_provenance,
             actor_principal_type=actor_principal_type,
@@ -596,6 +615,7 @@ class CaseService:
             self.session.rollback()
             raise
         self.session.refresh(decision)
+        _canonicalize_risk_decision_expiry(decision)
         self.session.refresh(case)
         return decision
 
