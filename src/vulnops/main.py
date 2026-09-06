@@ -11,6 +11,7 @@ from vulnops import __version__
 from vulnops.api.health import router as health_router
 from vulnops.auth.dependencies import (
     AuthenticationError,
+    AuthorizationError,
     build_oidc_verifier,
     build_test_principal,
     get_principal,
@@ -104,6 +105,32 @@ def create_app() -> FastAPI:
             },
             headers={
                 "WWW-Authenticate": "Bearer",
+                "X-Request-ID": req_id,
+                "X-Correlation-ID": correlation_id,
+            },
+        )
+
+    @app.exception_handler(AuthorizationError)
+    async def authorization_error_handler(request: Request, exc: AuthorizationError):
+        req_id = getattr(request.state, "request_id", "-")
+        correlation_id = getattr(request.state, "correlation_id", req_id)
+        if exc.code == "resource_not_found":
+            title = "Resource Not Found"
+            detail = "The requested resource was not found."
+        else:
+            title = "Insufficient Permission"
+            detail = "The authenticated principal lacks the required capability."
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "type": f"https://hub.example/problems/{exc.code}",
+                "title": title,
+                "status": exc.status_code,
+                "code": exc.code,
+                "detail": detail,
+                "correlation_id": correlation_id,
+            },
+            headers={
                 "X-Request-ID": req_id,
                 "X-Correlation-ID": correlation_id,
             },

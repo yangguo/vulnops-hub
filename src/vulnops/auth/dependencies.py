@@ -11,7 +11,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from fastapi import Request
+from fastapi import Depends, Request
 
 from vulnops.auth.models import Principal, PrincipalType
 from vulnops.auth.oidc import OIDCVerificationError, OIDCVerifier
@@ -20,6 +20,7 @@ from vulnops.config import Settings
 logger = logging.getLogger("vulnops.auth")
 
 _AUTHENTICATION_CODES = frozenset({"authentication_required", "invalid_token"})
+_AUTHORIZATION_CODES = frozenset({"insufficient_permission", "resource_not_found"})
 
 
 class AuthenticationConfigurationError(RuntimeError):
@@ -38,6 +39,23 @@ class AuthenticationError(Exception):
         if code not in _AUTHENTICATION_CODES:
             code = "invalid_token"
         self.code = code
+        super().__init__(code)
+
+
+class AuthorizationError(Exception):
+    """Safe request authorization failure.
+
+    Organization membership is checked before capabilities so callers outside
+    an organization receive the same not-found response for every operation.
+    The exception carries only a stable public code; request paths and claims
+    are deliberately left to the application logging boundary.
+    """
+
+    def __init__(self, code: str) -> None:
+        if code not in _AUTHORIZATION_CODES:
+            code = "insufficient_permission"
+        self.code = code
+        self.status_code = 404 if code == "resource_not_found" else 403
         super().__init__(code)
 
 
@@ -155,3 +173,57 @@ async def get_principal(request: Request) -> Principal:
         raise AuthenticationError("invalid_token") from None
 
     return principal_from_claims(claims, settings)
+
+
+def _is_explicit_test_bypass(request: Request, principal: Principal) -> bool:
+    """Allow the configured test principal to exercise all organizations.
+
+    This branch is tied to the application-created principal object and the
+    startup-validated test bypass setting.  A real token containing ``*`` in
+    its organization claim can never enter this branch.
+    """
+
+    settings: Settings = request.app.state.settings
+    return bool(settings.auth_test_bypass_enabled) and principal is getattr(
+        request.app.state, "test_principal", None
+    )
+
+
+async def require_organization(
+    org_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+) -> Principal:
+    """Require trusted membership in the organization path parameter."""
+
+    if _is_explicit_test_bypass(request, principal):
+        return principal
+    # ``*`` is never a valid organization grant.  A real token containing a
+    # wildcard claim must not turn into a global principal, including when a
+    # caller mirrors that wildcard into the path parameter.
+    if org_id.strip() == "*" or "*" in principal.organization_ids:
+        raise AuthorizationError("resource_not_found")
+    if not principal.has_organization(org_id):
+        raise AuthorizationError("resource_not_found")
+    return principal
+
+
+def require_capability(capability: str):
+    """Build a route dependency enforcing organization scope then capability."""
+
+    normalized = capability.strip().lower()
+    if not normalized:
+        raise ValueError("capability must not be empty")
+
+    async def dependency(
+        request: Request,
+        principal: Principal = Depends(require_organization),
+    ) -> Principal:
+        if _is_explicit_test_bypass(request, principal):
+            return principal
+        if not principal.has_capability(normalized):
+            raise AuthorizationError("insufficient_permission")
+        return principal
+
+    dependency.__name__ = f"require_{normalized.replace(':', '_')}"
+    return dependency

@@ -11,6 +11,7 @@ from vulnops.api.schemas import (
     RiskDecisionsResponse,
     VerificationsResponse,
 )
+from vulnops.auth.dependencies import AuthorizationError, require_capability
 from vulnops.cases.models import ALLOWED_TRANSITIONS, RemediationCase
 from vulnops.cases.service import CaseService
 
@@ -93,7 +94,10 @@ def _parse_if_match(if_match: str | None) -> int | None:
         raise ValueError(f"invalid If-Match value: {original}")
 
 
-@router.post("/organizations/{org_id}/cases")
+@router.post(
+    "/organizations/{org_id}/cases",
+    dependencies=[Depends(require_capability("case:write"))],
+)
 async def create_case(org_id: str, request: Request, db: Session = Depends(get_db)):
     data = await request.json()
     title = data.get("title") or data.get("name") or "Untitled case"
@@ -127,7 +131,11 @@ async def create_case(org_id: str, request: Request, db: Session = Depends(get_d
     }
 
 
-@router.get("/organizations/{org_id}/cases", response_model=CaseListResponse)
+@router.get(
+    "/organizations/{org_id}/cases",
+    response_model=CaseListResponse,
+    dependencies=[Depends(require_capability("case:read"))],
+)
 async def list_cases(
     org_id: str,
     status: str | None = None,
@@ -162,30 +170,41 @@ async def list_cases(
     }
 
 
-@router.get("/organizations/{org_id}/cases/{case_id}")
+@router.get(
+    "/organizations/{org_id}/cases/{case_id}",
+    dependencies=[Depends(require_capability("case:read"))],
+)
 async def get_case(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     return _serialize_case(case)
 
 
-@router.get("/organizations/{org_id}/cases/{case_id}/allowed-transitions")
+@router.get(
+    "/organizations/{org_id}/cases/{case_id}/allowed-transitions",
+    dependencies=[Depends(require_capability("case:read"))],
+)
 async def allowed_transitions(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
+    if case.organization_id != org_id:
+        raise AuthorizationError("resource_not_found")
     allowed = ALLOWED_TRANSITIONS.get(case.status, [])
     return {"case_id": case_id, "status": case.status, "allowed": allowed, "current": case.status}
 
 
-@router.post("/organizations/{org_id}/cases/{case_id}/transitions")
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/transitions",
+    dependencies=[Depends(require_capability("case:write"))],
+)
 async def transition_case(
     org_id: str,
     case_id: str,
@@ -220,9 +239,9 @@ async def transition_case(
         # Verify org match
         case = svc.get_case(case_id)
         if case.organization_id != org_id:
-            raise HTTPException(status_code=404, detail="Case not found")
+            raise AuthorizationError("resource_not_found")
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
 
     try:
         updated = svc.transition(
@@ -267,7 +286,10 @@ async def transition_case(
     }
 
 
-@router.post("/organizations/{org_id}/cases/{case_id}/risk-decisions")
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/risk-decisions",
+    dependencies=[Depends(require_capability("risk:request"))],
+)
 async def create_risk_decision(
     org_id: str,
     case_id: str,
@@ -298,9 +320,9 @@ async def create_risk_decision(
     try:
         case = svc.get_case(case_id)
         if case.organization_id != org_id:
-            raise HTTPException(status_code=404, detail="Case not found")
+            raise AuthorizationError("resource_not_found")
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
 
     # Handle If-Match if provided - check version
     if if_match:
@@ -347,15 +369,16 @@ async def create_risk_decision(
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/risk-decisions",
     response_model=RiskDecisionsResponse,
+    dependencies=[Depends(require_capability("case:read"))],
 )
 async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     decisions = svc.list_risk_decisions(case_id)
     return {"items": [_serialize_risk_decision(d) for d in decisions]}
 
@@ -363,20 +386,24 @@ async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(g
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/verifications",
     response_model=VerificationsResponse,
+    dependencies=[Depends(require_capability("case:read"))],
 )
 async def list_verifications(org_id: str, case_id: str, db: Session = Depends(get_db)):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     verifications = svc.list_verifications(case_id)
     return {"items": [_serialize_verification(v) for v in verifications]}
 
 
-@router.post("/organizations/{org_id}/cases/{case_id}/verifications")
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/verifications",
+    dependencies=[Depends(require_capability("verification:write"))],
+)
 async def submit_verification(
     org_id: str,
     case_id: str,
@@ -395,9 +422,9 @@ async def submit_verification(
     try:
         case = svc.get_case(case_id)
         if case.organization_id != org_id:
-            raise HTTPException(status_code=404, detail="Case not found")
+            raise AuthorizationError("resource_not_found")
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
 
     try:
         verification = svc.verify(

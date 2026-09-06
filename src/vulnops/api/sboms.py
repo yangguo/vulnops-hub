@@ -7,12 +7,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.auth.dependencies import AuthorizationError, require_capability
 from vulnops.sbom.service import SBOMService
 
 router = APIRouter(tags=["sboms"])
 
 
-@router.post("/organizations/{org_id}/sboms", status_code=201)
+@router.post(
+    "/organizations/{org_id}/sboms",
+    status_code=201,
+    dependencies=[Depends(require_capability("sbom:write"))],
+)
 async def submit_sbom(
     org_id: str,
     request: Request,
@@ -57,7 +62,10 @@ async def submit_sbom(
     return result
 
 
-@router.get("/organizations/{org_id}/sboms/{sbom_id}")
+@router.get(
+    "/organizations/{org_id}/sboms/{sbom_id}",
+    dependencies=[Depends(require_capability("sbom:read"))],
+)
 async def get_sbom(org_id: str, sbom_id: str, db: Session = Depends(get_db)):
     from sqlalchemy import select
 
@@ -73,7 +81,7 @@ async def get_sbom(org_id: str, sbom_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if not doc:
-        raise HTTPException(status_code=404, detail="SBOM not found")
+        raise AuthorizationError("resource_not_found")
     return {
         "id": doc.id,
         "organization_id": doc.organization_id,
