@@ -1,5 +1,10 @@
 # MVP and Roadmap
 
+> **Current status:** M1 technical preview. Core fixture-level behavior and the
+> remediation console are implemented, but the M1 exit gate is open because
+> OIDC/RBAC, integrated-staging evidence, and several operational capabilities
+> are incomplete. See [the acceptance matrix](acceptance-matrix.md).
+
 ## 1. Product thesis
 
 The first useful release is not a universal security platform. It proves one

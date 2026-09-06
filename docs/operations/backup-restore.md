@@ -1,5 +1,10 @@
 # Backup and Restore
 
+> **Status:** Target procedure, not a completed recovery drill. Commands must be
+> validated against the selected staging topology before being cited as release
+> evidence. The replay CLI and legal-hold enforcement described below are not
+> implemented in the current preview.
+
 ## PostgreSQL
 
 - Enable point-in-time recovery (PITR) for production.
@@ -35,11 +40,14 @@ aws s3api head-object --bucket vulnops-snapshots --key sbom/<digest>.json --quer
 2. Restore/version corresponding object-store bucket.
 3. Rehydrate adapter cursor state (`source_statuses` table).
 4. Verify source snapshot digest consistency (`sha256sum` of stored objects vs DB).
-5. Re-run projections safely through idempotent replay (`python -m vulnops.workers.ingestion --replay --from-snapshot <id>`).
+5. After the replay CLI is implemented, re-run projections safely from the
+   selected source snapshot. Do not use the previously proposed
+   `--replay --from-snapshot` flags until they exist in `--help` and tests.
 6. Confirm no external ticket action is re-emitted without outbox deduplication (check `outbox_events` delivered_at).
 7. Run full E2E fixture: `uv run pytest tests/e2e -q`.
 
 ## Retention and Legal Hold
 
 - Raw payloads may be deleted per retention policy, but a minimal hash/provenance record remains for audit.
-- Legal hold flag on `sbom_documents` and `source_snapshots` prevents deletion.
+- A future legal-hold flag on `sbom_documents` and `source_snapshots` must
+  prevent deletion; the current schema does not enforce this yet.

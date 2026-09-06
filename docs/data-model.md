@@ -1,5 +1,9 @@
 # Data Model
 
+> **Document status:** Canonical target model. Not every entity or constraint in
+> this document has a current migration/API. Verify implemented persistence in
+> `src/vulnops/db/models/`, domain model files, and Alembic revisions.
+
 ## 1. Modeling rule
 
 The model separates five things that are often incorrectly collapsed:

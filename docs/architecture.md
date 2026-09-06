@@ -1,5 +1,10 @@
 # Architecture
 
+> **Document status:** Governing architecture and target-state boundaries. The
+> M1 preview implements the modular core and selected adapters; identity/RBAC,
+> full operational APIs, and several projections remain open as recorded in
+> `acceptance-matrix.md`.
+
 ## 1. Decision
 
 VulnOps Hub is a **modular vulnerability-operations control plane**, not a
@@ -20,7 +25,7 @@ It uses external systems through adapters:
 - **Greenbone/OpenVAS** and other scanners provide network or authenticated
   detection evidence.
 
-The initial implementation should be a modular monolith with asynchronous
+The implementation is a modular monolith with asynchronous
 workers. This keeps the state model transactional and debuggable while avoiding
 microservice coordination before scale proves it necessary.
 

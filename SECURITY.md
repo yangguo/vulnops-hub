@@ -2,14 +2,15 @@
 
 ## Supported versions
 
-The repository currently contains design documentation only; no released
-application version is supported yet. Once code is released, this table will be
-updated with supported branches and security-fix policy.
+The repository currently publishes an untagged M1 technical preview on `main`.
+It is not a supported production release and has no security-fix support window
+yet. Tagged versions and their support policy will be listed here when the
+first release is published.
 
 ## Reporting a vulnerability
 
 Please do **not** open a public issue for a suspected vulnerability in this
-repository or its future implementation.
+repository or its implementation.
 
 Use GitHub's private security advisory/reporting flow for this repository when
 available. If that flow is unavailable, contact the repository owner through

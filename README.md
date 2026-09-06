@@ -88,7 +88,7 @@ built SPA is baked in and available at `http://localhost:8000`.
 make test                   # unit + integration + contract + e2e
 make lint                   # ruff
 make frontend-test          # Vue unit tests (Node 22 + pnpm 9)
-make frontend-build         # type-check and build the production SPA
+make frontend-build         # build the production SPA
 ~~~
 
 ## Using VulnOps Hub: console + API
@@ -268,6 +268,10 @@ reimplements, the systems above.
 
 ## Documentation
 
+- [Development guide](docs/development.md) — supported toolchain, repository
+  layout, local workflow, migrations, OpenAPI generation, and verification.
+- [MVP acceptance matrix](docs/acceptance-matrix.md) — implemented, partial,
+  and open criteria with exact test evidence.
 - [Architecture](docs/architecture.md) — boundaries, data flow, ownership, and
   failure behavior.
 - [Data model](docs/data-model.md) — canonical entities, identities,
@@ -280,10 +284,13 @@ reimplements, the systems above.
   security requirements.
 - [MVP and roadmap](docs/mvp-roadmap.md) — scope gates, acceptance criteria,
   and sequenced milestones.
+- [OIDC and RBAC design](docs/security/oidc-rbac-design.md) — next M1 security
+  slice, trust boundaries, roles, and failure behavior.
 - [Research and architecture decisions](docs/research.md) — evidence behind the
   reuse-first approach and licensing boundaries.
 - [Implementation plan](docs/plans/2026-09-05-vulnops-hub-mvp.md) — a
-  test-first build plan for the proposed MVP.
+  historical test-first build plan with current completion markers.
+- [Changelog](CHANGELOG.md) — technical-preview changes and known limitations.
 
 ## Architecture in one view
 

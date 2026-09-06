@@ -1,8 +1,12 @@
 # Module Design
 
+> **Document status:** Target module boundaries. Rows describe ownership even
+> when the corresponding API, worker, or external projection is not yet
+> implemented; current coverage is tracked in `acceptance-matrix.md`.
+
 ## 1. Module map
 
-The first implementation is a modular monolith. Modules communicate through
+The implementation is a modular monolith. Modules communicate through
 typed commands, domain events, and stable adapter interfaces; they do not
 directly reach into one another's persistence models.
 

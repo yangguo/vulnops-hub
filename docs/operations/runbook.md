@@ -1,18 +1,24 @@
 # VulnOps Hub Operations Runbook
 
+> **Status:** Preview runbook. Health probes and direct database diagnostics are
+> usable today. Metrics, source-health API, replay CLI, alerts, and production
+> drills described here are target capabilities unless explicitly marked as
+> implemented.
+
 ## Health Signals
 
 - API readiness: `GET /health/ready` — checks DB connectivity.
 - Liveness: `GET /health/live` — always 200 when process alive.
-- Metrics: queue depth, job latency, retry rate, dead-letter count.
-- Adapter health: last success, cursor lag, source freshness, parse rejection rate.
-- Matching: throughput, candidate rate, ambiguity rate.
+- Planned metrics: queue depth, job latency, retry rate, dead-letter count.
+- Planned adapter-health API: last success, cursor lag, source freshness, parse rejection rate.
+- Planned matching metrics: throughput, candidate rate, ambiguity rate.
 
 ## Common Alerts
 
 ### Source stale beyond policy threshold
 
-- Check: `GET /api/v1/sources` or `SourceStatus` table.
+- Current check: inspect the `source_statuses` table and adapter logs. The
+  planned `GET /api/v1/sources` endpoint is not implemented.
 - Action: inspect adapter logs, verify egress proxy allowlist, check rate limits, replay from last cursor.
 - A stale feed never downgrades existing exposures — it only blocks automatic closure if policy requires fresh intelligence.
 

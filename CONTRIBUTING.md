@@ -1,8 +1,11 @@
 # Contributing to VulnOps Hub
 
-Thank you for considering a contribution. The repository currently contains an
-implementation-ready reference design; code contributions should start only
-after the MVP contracts and data-ownership decisions are reviewed.
+Thank you for considering a contribution. The repository contains an M1
+technical preview plus target-state design documents. Start with
+[the development guide](docs/development.md), check the current implementation
+status in [the acceptance matrix](docs/acceptance-matrix.md), and treat
+`openapi/openapi.yaml` and executable tests as authoritative for implemented
+behavior.
 
 ## First principles
 
@@ -42,7 +45,7 @@ Please include:
 
 ## Code contribution expectations
 
-Once implementation begins:
+For every code contribution:
 
 1. Start from the approved MVP plan and open an issue for material design
    changes.

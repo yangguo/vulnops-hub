@@ -1,5 +1,9 @@
 # VulnOps Hub MVP Implementation Plan
 
+> **Execution status:** Partially implemented as the M1 technical preview. This
+> is the original plan, not proof that every task or exit gate is complete. Use
+> `docs/acceptance-matrix.md` for current evidence and open work.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Build the smallest self-hosted control plane that turns trusted asset,
@@ -20,8 +24,9 @@ OpenTelemetry, pytest, Testcontainers, Docker Compose, and OpenAPI 3.1.
 docs/modules.md, docs/api.md, docs/deployment.md, docs/mvp-roadmap.md, and
 docs/decisions/0001-reuse-first-orchestration.md.
 
-**Execution note:** The initial repository intentionally contains documentation
-only. Create the files below in a feature worktree after M0 review. Follow
+**Historical execution note:** The initial repository contained documentation
+only. The core implementation described below now exists, but remaining items
+must still be executed from tests in a feature worktree. Follow
 @superpowers:test-driven-development for every behavior change and
 @superpowers:verification-before-completion before each commit/merge claim.
 
@@ -403,14 +408,18 @@ git commit -am "chore: document and verify deployable MVP"
 ## Final verification checklist
 
 - [ ] Every MVP acceptance criterion in docs/mvp-roadmap.md has a named fixture
-  or test.
+  or test; access control remains open.
 - [ ] Every source adapter records provenance, handles replay, and reports
   freshness.
-- [ ] No CPE/name-only candidate creates a case automatically.
-- [ ] No missing/failed scan output closes a case.
-- [ ] Every policy evaluation and state change produces an auditable event.
-- [ ] DefectDojo/Wazuh mappings retain original source IDs and support conflicts.
+- [x] No CPE/name-only candidate creates a case automatically.
+- [x] No missing/failed scan output closes a case.
+- [ ] Policy changes and case state changes produce audit events in the fixture
+  suite; complete audit coverage for every policy evaluation remains open.
+- [ ] DefectDojo/Wazuh fixtures retain original source IDs and DefectDojo covers
+  conflicting hints; complete conflict coverage across both adapters remains
+  open.
 - [ ] OIDC/service scopes, raw-evidence authorization, and secret redaction are
   tested.
 - [ ] Database/object-storage restore and outbox replay are rehearsed.
-- [ ] CI is green from a clean clone.
+- [x] CI is green from a clean clone for commit `ac51721` (run `34003716095`;
+  Security run `34003716213`).

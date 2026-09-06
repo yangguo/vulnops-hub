@@ -1,5 +1,8 @@
 # Adapter Onboarding Checklist
 
+> **Status:** Reusable acceptance template. Unchecked boxes are requirements
+> for each adapter review, not a claim that all current adapters are incomplete.
+
 Every new adapter must prove:
 
 - [ ] Source snapshot capture and content digest (SHA-256)

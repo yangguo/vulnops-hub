@@ -1,5 +1,9 @@
 # Research and Architecture Decisions
 
+> **Document status:** Design evidence captured on the research date, not an
+> inventory of implemented integrations. Current implementation status is
+> maintained in `acceptance-matrix.md`.
+
 **Research date:** 2026-09-05
 
 **Question:** Which mature open-source capabilities should a new vulnerability

@@ -1,5 +1,11 @@
 # Deployment Design
 
+> **Document status:** Target deployment architecture with an as-built preview
+> subsection. Only local SQLite evaluation, the checked Docker Compose/Helm
+> assets, and CI container smoke tests are currently verified. OIDC, production
+> certification, backup/restore drills, and full worker topology remain target
+> requirements.
+
 ## 1. Supported deployment posture
 
 The MVP targets a self-hosted, single-organization deployment. The architecture
@@ -11,9 +17,21 @@ Three modes are defined:
 
 | Mode | Intended use | Components |
 | --- | --- | --- |
-| Local evaluation | Developer/demo, disposable data | API, worker, PostgreSQL, Valkey, MinIO-compatible object storage |
+| Local evaluation | Developer/demo, disposable data | API on SQLite; optional Vite dev server |
 | Integrated staging | Adapter contract tests | Local core plus connected sandbox DefectDojo/Vulnerability-Lookup/Wazuh |
-| Production | Internal enterprise service | Kubernetes/containers, managed PostgreSQL/object store, queue, OIDC, observability |
+| Production target | Internal enterprise service | Kubernetes/containers, managed PostgreSQL/object store, queue, OIDC, observability |
+
+### As-built preview
+
+- Bare local mode runs FastAPI against `vulnops.db`; no external service is
+  required for API and console evaluation.
+- Docker Compose starts the API, ingestion worker, PostgreSQL, Valkey, and
+  MinIO with development credentials.
+- The multi-stage image builds and serves the Vue SPA and is smoke-tested in
+  CI through `/health/live`, `/health/ready`, and `/`.
+- Helm manifests are templates, not evidence of a production deployment.
+- The authentication settings are reserved but unenforced, so none of these
+  modes is currently certified for untrusted network exposure.
 
 DefectDojo, Vulnerability-Lookup, Wazuh, Greenbone, and ITSM platforms are
 external services. A deployment may enable only the adapters it operates.

@@ -1,5 +1,11 @@
 # Frontend Remediation Ops Console Implementation Plan
 
+> **Execution status:** Completed on 2026-09-06. Implemented by commits
+> `c48e75c` through `5bf2b88` and released to `main` with `ac51721`. The
+> unchecked boxes below preserve the original TDD execution sequence and are
+> not the current project backlog. Authentication remains a separate next
+> slice documented in `docs/plans/2026-09-06-oidc-rbac.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Vue 3 + Element Plus remediation ops console (dashboard, case list, case detail with lifecycle actions, SBOM submit) served by the existing FastAPI app from a single container.

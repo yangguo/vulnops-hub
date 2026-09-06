@@ -1,5 +1,11 @@
 # Backend Case Read Endpoints Implementation Plan
 
+> **Execution status:** Completed on 2026-09-05. Implemented by commits
+> `fce23ce` through `87eaf08`; follow-up fixes added deterministic pagination,
+> preserved nullable `exposures`, isolated fixtures, and typed response models.
+> The unchecked boxes below preserve the original execution sequence and are
+> not the current project backlog.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add the three read-only case endpoints the frontend console needs: paginated/filtered case list, per-case risk-decision history, per-case verification history.

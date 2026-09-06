@@ -1,6 +1,33 @@
 # API Design
 
-## 1. API principles
+> **Document status:** Sections labelled **Current implementation** describe
+> the M1 technical preview. Other resource and event contracts are target-state
+> design and must not be assumed to exist. The authoritative implemented
+> contract is `openapi/openapi.yaml`.
+
+## Current implementation
+
+The preview exposes health probes and these organization-scoped resources:
+
+| Method and path | Status |
+| --- | --- |
+| `GET /health/live`, `GET /health/ready` | Implemented |
+| `POST /api/v1/organizations/{org_id}/sboms` | Implemented |
+| `GET /api/v1/organizations/{org_id}/sboms/{sbom_id}` | Implemented |
+| `GET`, `POST /api/v1/organizations/{org_id}/cases` | Implemented |
+| `GET /api/v1/organizations/{org_id}/cases/{case_id}` | Implemented |
+| `GET /api/v1/organizations/{org_id}/cases/{case_id}/allowed-transitions` | Implemented |
+| `POST /api/v1/organizations/{org_id}/cases/{case_id}/transitions` | Implemented |
+| `GET`, `POST /api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions` | Implemented |
+| `GET`, `POST /api/v1/organizations/{org_id}/cases/{case_id}/verifications` | Implemented |
+
+Authentication is not enforced yet. Pagination currently uses `page` and
+`page_size`, not the target opaque-cursor contract. Assets, services,
+observations, components, intelligence/source health, evidence, exposures,
+policies, submissions/jobs, and outbound webhooks below remain planned unless
+added to the checked OpenAPI document.
+
+## 1. Target API principles
 
 The public API is REST/JSON with an OpenAPI 3.1 contract. It is designed for
 automation first; a web UI is a client of the same API.
@@ -24,7 +51,7 @@ The API must not expose raw report payloads without authorization; callers
 receive source metadata and signed/authorized retrieval links where policy
 allows.
 
-## 2. Core resources
+## 2. Target core resources
 
 | Resource | Purpose | Representative endpoints |
 | --- | --- | --- |
