@@ -223,6 +223,7 @@ class OIDCVerifier:
         self._jwks_fetched_at: float | None = None
         self._jwks_generation = 0
         self._kid_refresh_generations: dict[tuple[str, str], int] = {}
+        self._kid_refresh_failures: dict[tuple[str, str], tuple[int, str, str]] = {}
         self._cache_lock = threading.RLock()
 
     @classmethod
@@ -312,13 +313,31 @@ class OIDCVerifier:
             refresh_key = (kid, algorithm)
             with self._cache_lock:
                 if self._kid_refresh_generations.get(refresh_key) == self._jwks_generation:
+                    failure = self._kid_refresh_failures.get(refresh_key)
+                    if failure is not None:
+                        _, category, code = failure
+                        raise OIDCVerificationError(category, code=code)
                     keys = self._jwks or keys
                 else:
-                    keys = self._get_jwks(
-                        force=True,
-                        observed_generation=jwks_generation,
-                    )
+                    try:
+                        keys = self._get_jwks(
+                            force=True,
+                            observed_generation=jwks_generation,
+                        )
+                    except OIDCVerificationError as exc:
+                        # A failed forced refresh is still a completed attempt
+                        # for this generation.  Remember its safe category so
+                        # concurrent/repeated callers do not stampede the
+                        # provider until cache expiry advances the generation.
+                        self._kid_refresh_generations[refresh_key] = self._jwks_generation
+                        self._kid_refresh_failures[refresh_key] = (
+                            self._jwks_generation,
+                            exc.category,
+                            exc.code,
+                        )
+                        raise
                     self._kid_refresh_generations[refresh_key] = self._jwks_generation
+                    self._kid_refresh_failures.pop(refresh_key, None)
             key = self._key_for_token(keys, kid=kid, algorithm=algorithm)
         if key is None:
             raise OIDCVerificationError("key_not_found")
@@ -436,6 +455,7 @@ class OIDCVerifier:
             self._jwks_fetched_at = self._now()
             self._jwks_generation += 1
             self._kid_refresh_generations.clear()
+            self._kid_refresh_failures.clear()
             return self._jwks
 
     def _fetch_json(self, url: str, *, category: str) -> Mapping[str, Any]:

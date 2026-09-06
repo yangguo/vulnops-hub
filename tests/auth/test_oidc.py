@@ -487,6 +487,117 @@ class BlockingUnknownKidClient:
         return httpx.Response(200, json={"keys": [self.key]})
 
 
+class FailedRefreshResponse:
+    status_code = 200
+
+    def json(self) -> dict[str, Any]:
+        raise ValueError("malformed provider response")
+
+
+class FailedRefreshClient:
+    def __init__(
+        self,
+        key: dict[str, Any],
+        failure_mode: str,
+        *,
+        block_first_failure: bool = False,
+    ) -> None:
+        self.key = key
+        self.recovery_keys: list[dict[str, Any]] | None = None
+        self.failure_mode = failure_mode
+        self.block_first_failure = block_first_failure
+        self.discovery_requests = 0
+        self.jwks_requests = 0
+        self._count_lock = threading.Lock()
+        self.first_forced_refresh_started = threading.Event()
+        self.release_first_forced_refresh = threading.Event()
+
+    def get(self, url: str, **kwargs: Any) -> Any:
+        del kwargs
+        if url.endswith("openid-configuration"):
+            with self._count_lock:
+                self.discovery_requests += 1
+            return httpx.Response(
+                200,
+                json={"issuer": ISSUER, "jwks_uri": f"{ISSUER}/keys"},
+            )
+        with self._count_lock:
+            self.jwks_requests += 1
+            request_number = self.jwks_requests
+        if self.recovery_keys is not None:
+            return httpx.Response(200, json={"keys": self.recovery_keys})
+        if request_number == 1:
+            return httpx.Response(200, json={"keys": [self.key]})
+        if self.block_first_failure and request_number == 2:
+            self.first_forced_refresh_started.set()
+            if not self.release_first_forced_refresh.wait(timeout=2):
+                raise RuntimeError("test refresh release timed out")
+        if self.failure_mode == "status":
+            return httpx.Response(503, json={"error": "temporarily unavailable"})
+        return FailedRefreshResponse()
+
+
+@pytest.mark.parametrize("failure_mode", ["status", "malformed"])
+def test_failed_unknown_kid_refresh_is_not_retried_until_cache_expires(failure_mode: str):
+    material = KeyMaterial.create()
+    rotated = KeyMaterial.create(kid="rotated-after-failure")
+    current_time = [NOW]
+    client = FailedRefreshClient(material.public_jwk, failure_mode)
+    verifier, _ = _make_verifier(
+        server=OIDCServer([material.public_jwk]),
+        http_client=client,
+        clock=lambda: current_time[0],
+        cache_age=60,
+    )
+    verifier.verify_token(material.token())
+    unknown_token = material.token(kid="unknown-after-failure")
+
+    with pytest.raises(OIDCVerificationError) as first_error:
+        verifier.verify_token(unknown_token)
+    with pytest.raises(OIDCVerificationError) as second_error:
+        verifier.verify_token(unknown_token)
+
+    assert first_error.value.category == "jwks"
+    assert second_error.value.category == "jwks"
+    assert client.jwks_requests == 2
+
+    client.recovery_keys = [material.public_jwk, rotated.public_jwk]
+    current_time[0] = NOW + 61
+    claims = verifier.verify_token(rotated.token())
+
+    assert claims["sub"] == "user-123"
+    assert client.jwks_requests == 3
+
+
+@pytest.mark.parametrize("failure_mode", ["status", "malformed"])
+def test_concurrent_failed_unknown_kid_refresh_is_single_flight(failure_mode: str):
+    material = KeyMaterial.create()
+    client = FailedRefreshClient(material.public_jwk, failure_mode, block_first_failure=True)
+    verifier, _ = _make_verifier(
+        server=OIDCServer([material.public_jwk]),
+        http_client=client,
+    )
+    verifier.verify_token(material.token())
+    unknown_token = material.token(kid="unknown-concurrent-failure")
+    start = threading.Barrier(3)
+
+    def verify_unknown() -> str:
+        start.wait()
+        with pytest.raises(OIDCVerificationError) as exc_info:
+            verifier.verify_token(unknown_token)
+        return exc_info.value.category
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(verify_unknown) for _ in range(2)]
+        start.wait()
+        assert client.first_forced_refresh_started.wait(timeout=2)
+        client.release_first_forced_refresh.set()
+        categories = [future.result(timeout=3) for future in futures]
+
+    assert categories == ["jwks", "jwks"]
+    assert client.jwks_requests == 2
+
+
 def test_concurrent_unknown_kid_uses_one_forced_jwks_refresh():
     material = KeyMaterial.create()
     client = BlockingUnknownKidClient(material.public_jwk)
