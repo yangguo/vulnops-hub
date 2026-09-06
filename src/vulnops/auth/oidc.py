@@ -9,6 +9,7 @@ mapping belongs to a later layer.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -55,6 +56,18 @@ ASYMMETRIC_ALGORITHMS = frozenset(
 _REQUIRED_CLAIMS = ("iss", "aud", "exp", "sub")
 _MAX_HTTP_TIMEOUT_SECONDS = 30.0
 _MAX_CACHE_AGE_SECONDS = 3_600.0
+_JWK_KEY_OPERATIONS = frozenset(
+    {
+        "sign",
+        "verify",
+        "encrypt",
+        "decrypt",
+        "wrapKey",
+        "unwrapKey",
+        "deriveKey",
+        "deriveBits",
+    }
+)
 _CANONICAL_ALGORITHMS = {
     "RS256": "RS256",
     "RS384": "RS384",
@@ -117,8 +130,15 @@ def _bounded_cache_age(value: float) -> float:
 
 
 def _valid_http_url(value: str) -> bool:
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return False
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _canonical_algorithm(value: str) -> str | None:
+    return _CANONICAL_ALGORITHMS.get(value.strip().upper())
 
 
 class OIDCVerifier:
@@ -201,6 +221,9 @@ class OIDCVerifier:
         self._discovery_fetched_at: float | None = None
         self._jwks: tuple[Mapping[str, Any], ...] | None = None
         self._jwks_fetched_at: float | None = None
+        self._jwks_generation = 0
+        self._kid_refresh_generations: dict[tuple[str, str], int] = {}
+        self._cache_lock = threading.RLock()
 
     @classmethod
     def from_settings(
@@ -272,19 +295,30 @@ class OIDCVerifier:
         algorithm = algorithm.strip().upper()
         if algorithm not in self.allowed_algorithms or algorithm not in ASYMMETRIC_ALGORITHMS:
             raise OIDCVerificationError("unsupported_algorithm")
-        algorithm = _CANONICAL_ALGORITHMS[algorithm]
+        algorithm = _canonical_algorithm(algorithm)
+        if algorithm is None:
+            raise OIDCVerificationError("unsupported_algorithm")
         kid = header.get("kid")
         if not isinstance(kid, str) or not kid.strip():
             raise OIDCVerificationError("missing_key_id")
         kid = kid.strip()
 
-        keys = self._get_jwks()
+        keys, jwks_generation = self._jwks_snapshot()
         key = self._key_for_token(keys, kid=kid, algorithm=algorithm)
         if key is None:
             # A key rotation may race the cache.  Exactly one forced JWKS
             # refresh is allowed for this token; all remaining misses fail
             # closed without trying arbitrary keys or another network loop.
-            keys = self._get_jwks(force=True)
+            refresh_key = (kid, algorithm)
+            with self._cache_lock:
+                if self._kid_refresh_generations.get(refresh_key) == self._jwks_generation:
+                    keys = self._jwks or keys
+                else:
+                    keys = self._get_jwks(
+                        force=True,
+                        observed_generation=jwks_generation,
+                    )
+                    self._kid_refresh_generations[refresh_key] = self._jwks_generation
             key = self._key_for_token(keys, kid=kid, algorithm=algorithm)
         if key is None:
             raise OIDCVerificationError("key_not_found")
@@ -341,45 +375,68 @@ class OIDCVerifier:
         return self._now() - fetched_at < max_age
 
     def _get_discovery(self, *, force: bool = False) -> _DiscoveryDocument:
-        if (
-            not force
-            and self._discovery is not None
-            and self._cache_fresh(self._discovery_fetched_at, self.discovery_cache_age)
-        ):
+        with self._cache_lock:
+            if (
+                not force
+                and self._discovery is not None
+                and self._cache_fresh(self._discovery_fetched_at, self.discovery_cache_age)
+            ):
+                return self._discovery
+
+            payload = self._fetch_json(self.discovery_url, category="discovery")
+            provider_issuer = payload.get("issuer")
+            jwks_uri = payload.get("jwks_uri")
+            if provider_issuer != self.issuer_url:
+                raise OIDCVerificationError("issuer", code="oidc_discovery_error")
+            if not isinstance(jwks_uri, str) or not _valid_http_url(jwks_uri):
+                raise OIDCVerificationError("discovery", code="oidc_discovery_error")
+
+            self._discovery = _DiscoveryDocument(issuer=self.issuer_url, jwks_uri=jwks_uri)
+            self._discovery_fetched_at = self._now()
             return self._discovery
 
-        payload = self._fetch_json(self.discovery_url, category="discovery")
-        provider_issuer = payload.get("issuer")
-        jwks_uri = payload.get("jwks_uri")
-        if provider_issuer != self.issuer_url:
-            raise OIDCVerificationError("issuer", code="oidc_discovery_error")
-        if not isinstance(jwks_uri, str) or not _valid_http_url(jwks_uri):
-            raise OIDCVerificationError("discovery", code="oidc_discovery_error")
+    def _jwks_snapshot(self) -> tuple[tuple[Mapping[str, Any], ...], int]:
+        with self._cache_lock:
+            return self._get_jwks(), self._jwks_generation
 
-        self._discovery = _DiscoveryDocument(issuer=self.issuer_url, jwks_uri=jwks_uri)
-        self._discovery_fetched_at = self._now()
-        return self._discovery
+    def _get_jwks(
+        self,
+        *,
+        force: bool = False,
+        observed_generation: int | None = None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        with self._cache_lock:
+            # Another caller may have completed the forced refresh while this
+            # caller was waiting.  Reuse that generation instead of issuing a
+            # provider request for the same unknown kid.
+            if (
+                force
+                and observed_generation is not None
+                and self._jwks_generation != observed_generation
+                and self._jwks is not None
+            ):
+                return self._jwks
+            if (
+                not force
+                and self._jwks is not None
+                and self._cache_fresh(self._jwks_fetched_at, self.jwks_cache_age)
+            ):
+                return self._jwks
 
-    def _get_jwks(self, *, force: bool = False) -> tuple[Mapping[str, Any], ...]:
-        if (
-            not force
-            and self._jwks is not None
-            and self._cache_fresh(self._jwks_fetched_at, self.jwks_cache_age)
-        ):
+            discovery = self._get_discovery()
+            payload = self._fetch_json(discovery.jwks_uri, category="jwks")
+            raw_keys = payload.get("keys")
+            if not isinstance(raw_keys, list):
+                raise OIDCVerificationError("jwks", code="oidc_jwks_error")
+            keys: list[Mapping[str, Any]] = []
+            for raw_key in raw_keys:
+                if isinstance(raw_key, Mapping):
+                    keys.append(dict(raw_key))
+            self._jwks = tuple(keys)
+            self._jwks_fetched_at = self._now()
+            self._jwks_generation += 1
+            self._kid_refresh_generations.clear()
             return self._jwks
-
-        discovery = self._get_discovery()
-        payload = self._fetch_json(discovery.jwks_uri, category="jwks")
-        raw_keys = payload.get("keys")
-        if not isinstance(raw_keys, list):
-            raise OIDCVerificationError("jwks", code="oidc_jwks_error")
-        keys: list[Mapping[str, Any]] = []
-        for raw_key in raw_keys:
-            if isinstance(raw_key, Mapping):
-                keys.append(dict(raw_key))
-        self._jwks = tuple(keys)
-        self._jwks_fetched_at = self._now()
-        return self._jwks
 
     def _fetch_json(self, url: str, *, category: str) -> Mapping[str, Any]:
         try:
@@ -403,14 +460,23 @@ class OIDCVerifier:
         for jwk in keys:
             if jwk.get("kid") != kid:
                 continue
-            if jwk.get("use") not in (None, "sig"):
+            if "use" in jwk and (not isinstance(jwk["use"], str) or jwk["use"] != "sig"):
                 continue
-            key_ops = jwk.get("key_ops")
-            if key_ops is not None and (not isinstance(key_ops, list) or "verify" not in key_ops):
-                continue
-            jwk_algorithm = jwk.get("alg")
-            if isinstance(jwk_algorithm, str) and jwk_algorithm.strip().upper() != algorithm:
-                continue
+            if "key_ops" in jwk:
+                key_ops = jwk["key_ops"]
+                if (
+                    not isinstance(key_ops, list)
+                    or any(not isinstance(operation, str) for operation in key_ops)
+                    or any(operation not in _JWK_KEY_OPERATIONS for operation in key_ops)
+                    or "verify" not in key_ops
+                ):
+                    continue
+            if "alg" in jwk:
+                jwk_algorithm = jwk["alg"]
+                if not isinstance(jwk_algorithm, str):
+                    continue
+                if _canonical_algorithm(jwk_algorithm) != algorithm:
+                    continue
             try:
                 key = jwt.PyJWK(dict(jwk), algorithm=algorithm).key
             except Exception:
@@ -438,13 +504,18 @@ class OIDCVerifier:
             if not_before > now:
                 raise OIDCVerificationError("not_before")
         if "iat" in claims:
-            self._numeric_date(claims.get("iat"), "iat")
+            issued_at = self._numeric_date(claims.get("iat"), "iat")
+            if issued_at > now:
+                raise OIDCVerificationError("invalid_claim")
 
     @staticmethod
     def _numeric_date(value: Any, claim: str) -> float:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise OIDCVerificationError("invalid_claim")
-        numeric = float(value)
+        try:
+            numeric = float(value)
+        except (OverflowError, ValueError):
+            raise OIDCVerificationError("invalid_claim") from None
         if not math.isfinite(numeric):
             raise OIDCVerificationError("invalid_claim")
         return numeric
