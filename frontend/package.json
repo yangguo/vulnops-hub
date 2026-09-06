@@ -21,6 +21,7 @@
   "dependencies": {
     "echarts": "^6.1.0",
     "element-plus": "^2.8.0",
+    "oidc-client-ts": "3.5.0",
     "pinia": "^2.2.0",
     "vue": "^3.5.0",
     "vue-router": "^4.4.0"

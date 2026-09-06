@@ -5,7 +5,7 @@
       :key="target"
     >
       <el-button
-        v-if="target === 'risk_accepted'"
+        v-if="target === 'risk_accepted' && canPerform(target)"
         type="warning"
         plain
         @click="riskMode = 'risk_accepted'; riskVisible = true"
@@ -13,7 +13,7 @@
         接受风险…
       </el-button>
       <el-button
-        v-else-if="target === 'not_applicable'"
+        v-else-if="target === 'not_applicable' && canPerform(target)"
         type="info"
         plain
         @click="riskMode = 'not_applicable'; riskVisible = true"
@@ -21,7 +21,7 @@
         标记不适用…
       </el-button>
       <el-button
-        v-else
+        v-else-if="canPerform(target)"
         type="primary"
         plain
         :data-test="`transition-${target}`"
@@ -32,7 +32,7 @@
     </template>
 
     <el-button
-      v-if="store.detail?.status === 'awaiting_verification'"
+      v-if="store.detail?.status === 'awaiting_verification' && authStore.hasCapability('verification:write')"
       type="success"
       plain
       @click="$emit('verify')"
@@ -51,12 +51,14 @@
 import { ref } from 'vue'
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus'
 import { useCaseDetailStore } from '../stores/caseDetail'
+import { useAuthStore } from '../stores/auth'
 import { ApiError } from '../api/client'
 import RiskDecisionDrawer from './RiskDecisionDrawer.vue'
 
 defineEmits<{ verify: [] }>()
 
 const store = useCaseDetailStore()
+const authStore = useAuthStore()
 const riskVisible = ref(false)
 const riskMode = ref<'risk_accepted' | 'not_applicable'>('risk_accepted')
 
@@ -67,6 +69,12 @@ const TARGET_LABELS: Record<string, string> = {
   awaiting_verification: '待复测',
   closed: '已关闭',
   reopened: '重开',
+}
+
+function canPerform(target: string) {
+  return target === 'risk_accepted' || target === 'not_applicable'
+    ? authStore.hasCapability('risk:request')
+    : authStore.hasCapability('case:write')
 }
 
 async function doTransition(target: string) {
