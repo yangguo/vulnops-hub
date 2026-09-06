@@ -11,7 +11,8 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from vulnops.auth.models import Principal, PrincipalType
 from vulnops.auth.oidc import OIDCVerificationError, OIDCVerifier
@@ -21,6 +22,12 @@ logger = logging.getLogger("vulnops.auth")
 
 _AUTHENTICATION_CODES = frozenset({"authentication_required", "invalid_token"})
 _AUTHORIZATION_CODES = frozenset({"insufficient_permission", "resource_not_found"})
+_BEARER_SCHEME = HTTPBearer(
+    auto_error=False,
+    bearerFormat="JWT",
+    scheme_name="BearerAuth",
+    description="OIDC access token",
+)
 
 
 class AuthenticationConfigurationError(RuntimeError):
@@ -143,7 +150,10 @@ def principal_from_claims(claims: Mapping[str, Any], settings: Settings) -> Prin
         raise AuthenticationError("invalid_token") from None
 
 
-async def get_principal(request: Request) -> Principal:
+async def get_principal(
+    request: Request,
+    _credentials: HTTPAuthorizationCredentials | None = Security(_BEARER_SCHEME),
+) -> Principal:
     """Authenticate one API request and return its immutable principal."""
 
     settings: Settings = request.app.state.settings

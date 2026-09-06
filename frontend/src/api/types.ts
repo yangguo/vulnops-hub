@@ -1,15 +1,22 @@
 import type { components } from './schema'
 
-// Extract the JSON body of a typed response operation from the generated schema.
-// Note: get_case / transitions / allowed-transitions are not $ref'd in openapi.yaml
-// (schema: {}), so those shapes come from components or the backend handlers directly.
+// Extract typed response shapes from the generated OpenAPI declarations.
 export type CaseDetail = components['schemas']['CaseDetailResponse']
-export type TransitionResponse = {
-  id: string
-  status: string
-  version: number
-  etag: string
+export type TransitionResponse = components['schemas']['TransitionResponse']
+export interface RiskDecisionRequest {
+  type?: string | null
+  reason?: string | null
+  scope?: Record<string, unknown> | null
+  compensating_controls?: string[] | null
+  evidence_ids?: string[] | null
+  expires_at?: string | null
 }
+export interface RiskApprovalRequest {
+  outcome: 'approve' | 'reject'
+  reason: string
+}
+export type RiskApprovalResponse = components['schemas']['RiskApprovalResponse']
+export type RiskDecisionCreateResponse = components['schemas']['RiskDecisionCreateResponse']
 export type AllowedTransitionsResponse = {
   case_id: string
   status: string

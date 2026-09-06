@@ -34,19 +34,19 @@ describe('caseDetailStore actions', () => {
     const store = useCaseDetailStore()
     useOrgStore().setOrg('acme')
     await store.fetchAll('c1')
-    await store.transition('assigned', 'alice', 'ok')
-    expect(apiClient.transition).toHaveBeenCalledWith('acme', 'c1', 2, 'assigned', 'alice', 'ok')
+    await store.transition('assigned', 'ok')
+    expect(apiClient.transition).toHaveBeenCalledWith('acme', 'c1', 2, 'assigned', 'ok')
     expect(apiClient.getCase).toHaveBeenCalledTimes(2) // initial + refetch
   })
 
-  it('submits a risk decision payload with approver fields', async () => {
+  it('submits a risk decision request without client identity fields', async () => {
     vi.mocked(apiClient.createRiskDecision).mockResolvedValue({ id: 'rd1' } as never)
     const store = useCaseDetailStore()
     useOrgStore().setOrg('acme')
     await store.fetchAll('c1')
-    await store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'], requested_by: 'a', approver: 'b', approver_role: 'security_lead' })
+    await store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'] })
     expect(apiClient.createRiskDecision).toHaveBeenCalledWith('acme', 'c1', expect.objectContaining({ type: 'risk_accepted' }))
-    await expect(store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'], requested_by: 'a', approver: 'b', approver_role: 'security_lead' })).resolves.toMatchObject({ id: 'rd1' })
+    await expect(store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'] })).resolves.toMatchObject({ id: 'rd1' })
   })
 
   it('submits verification payload', async () => {

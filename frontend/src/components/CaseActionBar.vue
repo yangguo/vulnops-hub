@@ -71,7 +71,7 @@ const TARGET_LABELS: Record<string, string> = {
 
 async function doTransition(target: string) {
   try {
-    await store.transition(target, 'console-user')
+    await store.transition(target)
     ElMessage.success(`已流转到 ${TARGET_LABELS[target] ?? target}`)
   } catch (err) {
     if (err instanceof ApiError && err.status === 412) {

@@ -8,8 +8,16 @@ from sqlalchemy.orm import Session
 from vulnops.api.deps import get_db
 from vulnops.api.schemas import (
     CaseListResponse,
+    ProblemDetails,
+    RiskApprovalRequest,
+    RiskApprovalResponse,
+    RiskDecisionCreateResponse,
+    RiskDecisionRequest,
     RiskDecisionsResponse,
+    TransitionRequest,
+    TransitionResponse,
     VerificationsResponse,
+    json_request_body,
 )
 from vulnops.auth.dependencies import (
     AuthorizationError,
@@ -22,7 +30,13 @@ from vulnops.auth.models import Principal
 from vulnops.cases.models import ALLOWED_TRANSITIONS, RemediationCase
 from vulnops.cases.service import CaseService
 
-router = APIRouter(tags=["cases"])
+router = APIRouter(
+    tags=["cases"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
 
 
 _CLIENT_IDENTITY_FIELDS = frozenset(
@@ -311,6 +325,8 @@ async def allowed_transitions(
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/transitions",
+    response_model=TransitionResponse,
+    openapi_extra=json_request_body(TransitionRequest),
     dependencies=[Depends(require_organization)],
 )
 async def transition_case(
@@ -403,6 +419,8 @@ async def transition_case(
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/risk-decisions",
+    response_model=RiskDecisionCreateResponse,
+    openapi_extra=json_request_body(RiskDecisionRequest),
     dependencies=[Depends(require_organization)],
 )
 async def create_risk_decision(
@@ -477,6 +495,8 @@ async def create_risk_decision(
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/risk-decisions/{decision_id}/approval",
+    response_model=RiskApprovalResponse,
+    openapi_extra=json_request_body(RiskApprovalRequest),
     dependencies=[Depends(require_organization)],
 )
 async def approve_risk_decision(

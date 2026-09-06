@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.api.schemas import ProblemDetails
 from vulnops.auth.dependencies import (
     AuthorizationError,
     authorize_capability,
@@ -17,7 +18,13 @@ from vulnops.auth.dependencies import (
 from vulnops.auth.models import Principal
 from vulnops.sbom.service import SBOMService
 
-router = APIRouter(tags=["sboms"])
+router = APIRouter(
+    tags=["sboms"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
 
 
 @router.post(

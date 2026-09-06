@@ -159,6 +159,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions/{decision_id}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Risk Decision */
+        post: operations["approve_risk_decision_api_v1_organizations__org_id__cases__case_id__risk_decisions__decision_id__approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{org_id}/cases/{case_id}/verifications": {
         parameters: {
             query?: never;
@@ -234,6 +251,60 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * ProblemDetails
+         * @description Stable error envelope shared by authenticated API operations.
+         */
+        ProblemDetails: {
+            /** Type */
+            type: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: number;
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
+            /** Correlation Id */
+            correlation_id?: string | null;
+            /** Fields */
+            fields?: string[] | null;
+        };
+        /** RiskApprovalResponse */
+        RiskApprovalResponse: {
+            /** Id */
+            id: string;
+            /** Case Id */
+            case_id: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Approver */
+            approver?: string | null;
+            /** Approver Role */
+            approver_role?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Case Status */
+            case_status: string;
+        };
+        /** RiskDecisionCreateResponse */
+        RiskDecisionCreateResponse: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Reason */
+            reason: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Case Status */
+            case_status: string;
+        };
         /** RiskDecisionResponse */
         RiskDecisionResponse: {
             /** Id */
@@ -267,6 +338,17 @@ export interface components {
         RiskDecisionsResponse: {
             /** Items */
             items: components["schemas"]["RiskDecisionResponse"][];
+        };
+        /** TransitionResponse */
+        TransitionResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+            /** Etag */
+            etag: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -379,6 +461,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -409,6 +509,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Validation Error */
@@ -451,6 +569,24 @@ export interface operations {
                     "application/json": components["schemas"]["CaseListResponse"];
                 };
             };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -480,6 +616,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Validation Error */
@@ -514,6 +668,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -546,6 +718,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -570,7 +760,20 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Target */
+                    target?: string | null;
+                    /** To */
+                    to?: string | null;
+                    /** Next Status */
+                    next_status?: string | null;
+                    /** Reason */
+                    reason?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -578,7 +781,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TransitionResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Validation Error */
@@ -613,6 +834,24 @@ export interface operations {
                     "application/json": components["schemas"]["RiskDecisionsResponse"];
                 };
             };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -636,7 +875,26 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Type */
+                    type?: string | null;
+                    /** Reason */
+                    reason?: string | null;
+                    /** Scope */
+                    scope?: {
+                        [key: string]: unknown;
+                    } | null;
+                    /** Compensating Controls */
+                    compensating_controls?: string[] | null;
+                    /** Evidence Ids */
+                    evidence_ids?: string[] | null;
+                    /** Expires At */
+                    expires_at?: string | null;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -644,7 +902,87 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RiskDecisionCreateResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_risk_decision_api_v1_organizations__org_id__cases__case_id__risk_decisions__decision_id__approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+                case_id: string;
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Outcome */
+                    outcome?: string | null;
+                    /** Decision */
+                    decision?: string | null;
+                    /** Reason */
+                    reason?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskApprovalResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Validation Error */
@@ -679,6 +1017,24 @@ export interface operations {
                     "application/json": components["schemas"]["VerificationsResponse"];
                 };
             };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -709,6 +1065,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Validation Error */

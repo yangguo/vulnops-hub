@@ -40,34 +40,6 @@
           placeholder="逗号分隔，如 ev-1,ev-2"
         />
       </el-form-item>
-      <el-form-item label="申请人">
-        <el-input v-model="form.requested_by" />
-      </el-form-item>
-      <el-form-item
-        label="审批人"
-        required
-      >
-        <el-input v-model="form.approver" />
-      </el-form-item>
-      <el-form-item
-        label="审批角色"
-        required
-      >
-        <el-select v-model="form.approver_role">
-          <el-option
-            label="风险审批人"
-            value="risk_approver"
-          />
-          <el-option
-            label="安全负责人"
-            value="security_lead"
-          />
-          <el-option
-            label="策略管理员"
-            value="policy_admin"
-          />
-        </el-select>
-      </el-form-item>
       <el-form-item label="失效时间">
         <el-date-picker
           v-model="form.expires_at"
@@ -114,9 +86,6 @@ const title = computed(() => (props.mode === 'not_applicable' ? '标记不适用
 const form = reactive({
   type: 'risk_accepted',
   reason: '',
-  requested_by: '',
-  approver: '',
-  approver_role: 'security_lead',
   expires_at: '',
 })
 const evidenceText = ref('')
@@ -127,8 +96,8 @@ watch(visible, (v) => {
 })
 
 async function submit() {
-  if (!form.reason.trim() || !form.approver.trim() || !form.approver_role) {
-    ElMessage.warning('原因、审批人与审批角色为必填（否则只会进入待审批状态）')
+  if (!form.reason.trim() || !form.expires_at) {
+    ElMessage.warning('原因和失效时间为必填')
     return
   }
   submitting.value = true
@@ -137,16 +106,9 @@ async function submit() {
       type: form.type,
       reason: form.reason,
       evidence_ids: evidenceText.value.split(',').map((s) => s.trim()).filter(Boolean),
-      requested_by: form.requested_by || 'console-user',
-      approver: form.approver,
-      approver_role: form.approver_role,
-      expires_at: form.expires_at || undefined,
+      expires_at: form.expires_at,
     })
-    if (resp?.status === 'approved') {
-      ElMessage.success('决策已批准并生效')
-    } else {
-      ElMessage.warning('决策已提交，等待审批（需区别于申请人的审批人 + 审批角色 + 证据）')
-    }
+    if (resp) ElMessage.success('决策申请已提交，等待独立审批')
     visible.value = false
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : '提交失败')

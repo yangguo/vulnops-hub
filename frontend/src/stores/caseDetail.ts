@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { apiClient } from '../api/client'
-import type { CaseDetail, RiskDecisionItem, VerificationItem } from '../api/types'
+import type { CaseDetail, RiskDecisionItem, RiskDecisionRequest, VerificationItem } from '../api/types'
 import { useOrgStore } from './org'
 
 export const useCaseDetailStore = defineStore('caseDetail', {
@@ -33,14 +33,14 @@ export const useCaseDetailStore = defineStore('caseDetail', {
     async refresh() {
       if (this.detail) await this.fetchAll(this.detail.id)
     },
-    async transition(target: string, actor: string, reason?: string) {
+    async transition(target: string, reason?: string) {
       const org = useOrgStore().org
       const detail = this.detail
       if (!detail) return
-      await apiClient.transition(org, detail.id, detail.version, target, actor, reason)
+      await apiClient.transition(org, detail.id, detail.version, target, reason)
       await this.fetchAll(detail.id)
     },
-    async decide(payload: Record<string, unknown>) {
+    async decide(payload: RiskDecisionRequest) {
       const org = useOrgStore().org
       if (!this.detail) return
       const decision = await apiClient.createRiskDecision(org, this.detail.id, payload)

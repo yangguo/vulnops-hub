@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: VulnOps Hub
-  description: "Vulnerability-operations control plane \u2014 modular monolith"
+  description: Vulnerability-operations control plane — modular monolith
   version: 0.1.0
 paths:
   /health/live:
@@ -34,6 +34,8 @@ paths:
       - sboms
       summary: Submit Sbom
       operationId: submit_sbom_api_v1_organizations__org_id__sboms_post
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -63,6 +65,18 @@ paths:
           content:
             application/json:
               schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -75,6 +89,8 @@ paths:
       - sboms
       summary: Get Sbom
       operationId: get_sbom_api_v1_organizations__org_id__sboms__sbom_id__get
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -94,6 +110,18 @@ paths:
           content:
             application/json:
               schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -106,6 +134,8 @@ paths:
       - cases
       summary: Create Case
       operationId: create_case_api_v1_organizations__org_id__cases_post
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -119,6 +149,18 @@ paths:
           content:
             application/json:
               schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -130,6 +172,8 @@ paths:
       - cases
       summary: List Cases
       operationId: list_cases_api_v1_organizations__org_id__cases_get
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -209,6 +253,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CaseListResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -221,6 +277,8 @@ paths:
       - cases
       summary: Get Case
       operationId: get_case_api_v1_organizations__org_id__cases__case_id__get
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -240,6 +298,18 @@ paths:
           content:
             application/json:
               schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -252,6 +322,8 @@ paths:
       - cases
       summary: Allowed Transitions
       operationId: allowed_transitions_api_v1_organizations__org_id__cases__case_id__allowed_transitions_get
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -271,6 +343,18 @@ paths:
           content:
             application/json:
               schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -283,6 +367,8 @@ paths:
       - cases
       summary: Transition Case
       operationId: transition_case_api_v1_organizations__org_id__cases__case_id__transitions_post
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -317,19 +403,64 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/TransitionResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              description: Actor-free case transition request contract.
+              properties:
+                target:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Target
+                to:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: To
+                next_status:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Next Status
+                reason:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Reason
+              title: TransitionRequest
+              type: object
   /api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions:
     post:
       tags:
       - cases
       summary: Create Risk Decision
       operationId: create_risk_decision_api_v1_organizations__org_id__cases__case_id__risk_decisions_post
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -356,18 +487,78 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/RiskDecisionCreateResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              description: Actor-free risk decision request contract.
+              properties:
+                type:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Type
+                reason:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Reason
+                scope:
+                  anyOf:
+                  - additionalProperties: true
+                    type: object
+                  - type: 'null'
+                  title: Scope
+                compensating_controls:
+                  anyOf:
+                  - items:
+                      type: string
+                    type: array
+                  - type: 'null'
+                  title: Compensating Controls
+                evidence_ids:
+                  anyOf:
+                  - items:
+                      type: string
+                    type: array
+                  - type: 'null'
+                  title: Evidence Ids
+                expires_at:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Expires At
+              title: RiskDecisionRequest
+              type: object
     get:
       tags:
       - cases
       summary: List Risk Decisions
       operationId: list_risk_decisions_api_v1_organizations__org_id__cases__case_id__risk_decisions_get
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -388,18 +579,110 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RiskDecisionsResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions/{decision_id}/approval:
+    post:
+      tags:
+      - cases
+      summary: Approve Risk Decision
+      operationId: approve_risk_decision_api_v1_organizations__org_id__cases__case_id__risk_decisions__decision_id__approval_post
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: case_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Case Id
+      - name: decision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Decision Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskApprovalResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              description: Actor-free risk approval contract; identity comes from
+                the token.
+              properties:
+                outcome:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Outcome
+                decision:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Decision
+                reason:
+                  anyOf:
+                  - type: string
+                  - type: 'null'
+                  title: Reason
+              title: RiskApprovalRequest
+              type: object
   /api/v1/organizations/{org_id}/cases/{case_id}/verifications:
     get:
       tags:
       - cases
       summary: List Verifications
       operationId: list_verifications_api_v1_organizations__org_id__cases__case_id__verifications_get
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -420,6 +703,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VerificationsResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -431,6 +726,8 @@ paths:
       - cases
       summary: Submit Verification
       operationId: submit_verification_api_v1_organizations__org_id__cases__case_id__verifications_post
+      security:
+      - BearerAuth: []
       parameters:
       - name: org_id
         in: path
@@ -450,6 +747,18 @@ paths:
           content:
             application/json:
               schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -572,6 +881,114 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    ProblemDetails:
+      properties:
+        type:
+          type: string
+          title: Type
+        title:
+          type: string
+          title: Title
+        status:
+          type: integer
+          title: Status
+        code:
+          type: string
+          title: Code
+        detail:
+          type: string
+          title: Detail
+        correlation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Correlation Id
+        fields:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Fields
+      type: object
+      required:
+      - type
+      - title
+      - status
+      - code
+      - detail
+      title: ProblemDetails
+      description: Stable error envelope shared by authenticated API operations.
+    RiskApprovalResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        case_id:
+          type: string
+          title: Case Id
+        type:
+          type: string
+          title: Type
+        status:
+          type: string
+          title: Status
+        approver:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approver
+        approver_role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Approver Role
+        decided_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decided At
+        case_status:
+          type: string
+          title: Case Status
+      type: object
+      required:
+      - id
+      - case_id
+      - type
+      - status
+      - case_status
+      title: RiskApprovalResponse
+    RiskDecisionCreateResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        type:
+          type: string
+          title: Type
+        status:
+          type: string
+          title: Status
+        reason:
+          type: string
+          title: Reason
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+        case_status:
+          type: string
+          title: Case Status
+      type: object
+      required:
+      - id
+      - type
+      - status
+      - reason
+      - case_status
+      title: RiskDecisionCreateResponse
     RiskDecisionResponse:
       properties:
         id:
@@ -653,6 +1070,27 @@ components:
       required:
       - items
       title: RiskDecisionsResponse
+    TransitionResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        status:
+          type: string
+          title: Status
+        version:
+          type: integer
+          title: Version
+        etag:
+          type: string
+          title: Etag
+      type: object
+      required:
+      - id
+      - status
+      - version
+      - etag
+      title: TransitionResponse
     ValidationError:
       properties:
         loc:
@@ -734,3 +1172,9 @@ components:
       required:
       - items
       title: VerificationsResponse
+  securitySchemes:
+    BearerAuth:
+      type: http
+      description: OIDC access token
+      scheme: bearer
+      bearerFormat: JWT
