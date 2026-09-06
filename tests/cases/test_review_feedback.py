@@ -1,6 +1,8 @@
 """Regression tests for PR #1 review feedback (P1 items)."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -10,6 +12,7 @@ from vulnops.cases.models import CaseStatus
 from vulnops.cases.service import CaseService
 from vulnops.db import Base
 from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
 from vulnops.sbom.service import SBOMService
@@ -30,6 +33,19 @@ def _svc():
     Session = sessionmaker(bind=eng)
     session = Session()
     return CaseService(session), session
+
+
+def _file_engine(path):
+    eng = create_engine(
+        f"sqlite:///{path}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    import vulnops.cases.models
+    import vulnops.db.models.audit_event
+    import vulnops.db.models.outbox_event  # noqa
+
+    Base.metadata.create_all(bind=eng)
+    return eng
 
 
 def test_verification_rejected_outside_awaiting_state():
@@ -170,6 +186,7 @@ def test_authenticated_approval_records_claim_actor_and_changes_case_state():
         case.id,
         type="false_positive",
         reason="scanner mis-identified",
+        expires_at=datetime.now(UTC) + timedelta(days=10),
         evidence_ids=["ev1"],
         requested_by="alice",
         actor="alice",
@@ -202,6 +219,241 @@ def test_authenticated_approval_records_claim_actor_and_changes_case_state():
     assert approval_audit is not None
     assert approval_audit.actor == "bob-approver"
     assert approval_audit.actor_provenance == "authenticated_claim"
+    session.close()
+
+
+def test_risk_request_validation_rejects_unsupported_or_incomplete_values():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    valid = {
+        "type": "risk_accepted",
+        "reason": "need window",
+        "expires_at": datetime.now(UTC) + timedelta(days=1),
+        "evidence_ids": ["ev1"],
+    }
+    invalid_cases = [
+        ({**valid, "type": "unsupported"}, "unsupported risk decision type"),
+        ({**valid, "reason": "   "}, "risk decision reason is required"),
+        ({**valid, "evidence_ids": []}, "risk decision evidence_ids must contain at least one"),
+        ({**valid, "evidence_ids": ["  "]}, "risk decision evidence_ids must contain only"),
+        ({**valid, "expires_at": None}, "risk decision expires_at is required"),
+        (
+            {**valid, "expires_at": datetime.now(UTC).replace(tzinfo=None)},
+            "risk decision expires_at must be timezone-aware",
+        ),
+        (
+            {**valid, "expires_at": datetime.now(UTC) - timedelta(seconds=1)},
+            "risk decision expires_at must be in the future",
+        ),
+    ]
+    for payload, message in invalid_cases:
+        with pytest.raises(ValueError, match=message):
+            svc.create_risk_decision(
+                case.id,
+                requested_by="alice",
+                actor="alice",
+                actor_provenance="authenticated_claim",
+                actor_principal_type="human",
+                **payload,
+            )
+    assert svc.list_risk_decisions(case.id) == []
+    session.close()
+
+
+def test_approval_rejects_decision_without_evidence():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    decision.evidence_ids = []
+    session.commit()
+
+    with pytest.raises(ValueError, match="evidence_ids"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="independent review",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
+    assert svc.get_case(case.id).status == CaseStatus.TRIAGE
+    assert (
+        session.scalar(select(OutboxEvent).where(OutboxEvent.aggregate_id == decision.id))
+        is not None
+    )
+    assert (
+        session.scalar(select(AuditEvent).where(AuditEvent.action == "risk.decision.requested"))
+        is not None
+    )
+    session.close()
+
+
+def test_concurrent_approval_has_one_winner_and_one_stable_conflict(tmp_path):
+    engine = _file_engine(tmp_path / "approval-concurrency.db")
+    Session = sessionmaker(bind=engine)
+    setup = Session()
+    setup_svc = CaseService(setup)
+    case = setup_svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    setup_svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(setup_svc, case.id)
+    decision_id = decision.id
+    setup.close()
+    barrier = Barrier(2)
+
+    def approve(actor: str):
+        session = Session()
+        try:
+            barrier.wait(timeout=10)
+            result = CaseService(session).approve_risk_decision(
+                decision_id,
+                outcome="approve",
+                reason=f"review by {actor}",
+                actor=actor,
+                actor_principal_type="human",
+                actor_roles={"risk_approver"},
+                actor_capabilities={"risk:approve"},
+                actor_provenance="authenticated_claim",
+            )
+            return ("success", result.approver)
+        except Exception as exc:
+            return ("error", str(exc))
+        finally:
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(approve, ("bob-1", "bob-2")))
+
+    assert [kind for kind, _ in outcomes].count("success") == 1
+    errors = [message for kind, message in outcomes if kind == "error"]
+    assert len(errors) == 1
+    assert "risk decision conflict" in errors[0]
+
+    verify = Session()
+    final_decision = verify.get(type(decision), decision_id)
+    final_case = verify.get(type(case), case.id)
+    approvals = list(
+        verify.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.subject_id == decision_id)
+            .where(AuditEvent.action.in_(("risk.accepted", "risk.decision.rejected")))
+        )
+    )
+    outbox = list(
+        verify.scalars(
+            select(OutboxEvent)
+            .where(OutboxEvent.aggregate_id == decision_id)
+            .where(OutboxEvent.event_type == "vulnops.risk-decision.accepted.v1")
+        )
+    )
+    assert final_decision.status == "approved"
+    assert final_case.status == CaseStatus.RISK_ACCEPTED
+    assert final_case.version == 3
+    assert len(approvals) == 1
+    assert len(outbox) == 1
+    verify.close()
+
+
+def test_workflow_trace_ids_are_preserved_in_audit_and_outbox(tmp_path):
+    engine = _file_engine(tmp_path / "trace.db")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    svc = CaseService(session)
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(
+        case.id,
+        "triage",
+        actor="alice",
+        actor_provenance="authenticated_claim",
+        actor_principal_type="human",
+        actor_roles={"owner"},
+        actor_scopes={"case:write"},
+        request_id="req-transition",
+        correlation_id="corr-transition",
+    )
+    decision = svc.create_risk_decision(
+        case.id,
+        type="risk_accepted",
+        reason="need window",
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+        evidence_ids=["ev1"],
+        requested_by="alice",
+        actor="alice",
+        actor_provenance="authenticated_claim",
+        actor_principal_type="human",
+        actor_roles={"owner"},
+        actor_scopes={"risk:request"},
+        request_id="req-request",
+        correlation_id="corr-request",
+    )
+    svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="independent review",
+        actor="bob",
+        actor_principal_type="human",
+        actor_roles={"risk_approver"},
+        actor_capabilities={"risk:approve"},
+        actor_provenance="authenticated_claim",
+        actor_scopes={"risk:approve"},
+        request_id="req-approval",
+        correlation_id="corr-approval",
+    )
+    transition_audit = session.scalar(
+        select(AuditEvent).where(AuditEvent.correlation_id == "corr-transition")
+    )
+    request_audit = session.scalar(
+        select(AuditEvent).where(AuditEvent.correlation_id == "corr-request")
+    )
+    approval_audit = session.scalar(
+        select(AuditEvent).where(AuditEvent.correlation_id == "corr-approval")
+    )
+    assert transition_audit.request_id == "req-transition"
+    assert request_audit.request_id == "req-request"
+    assert approval_audit.request_id == "req-approval"
+    assert approval_audit.actor_principal_type == "human"
+    assert approval_audit.actor_roles == ["risk_approver"]
+    assert approval_audit.actor_scopes == ["risk:approve"]
+    approval_outbox = session.scalar(
+        select(OutboxEvent).where(OutboxEvent.correlation_id == "corr-approval")
+    )
+    assert approval_outbox.payload["request_id"] == "req-approval"
+    assert approval_outbox.payload["correlation_id"] == "corr-approval"
+    assert approval_outbox.payload["principal_type"] == "human"
+    assert approval_outbox.payload["roles"] == ["risk_approver"]
+    assert approval_outbox.payload["scopes"] == ["risk:approve"]
+
+    verification_case = svc.create_case(
+        organization_id="org1", title="verification", owner_team="t1", priority="P1"
+    )
+    for target in ("triage", "assigned", "in_progress", "awaiting_verification"):
+        svc.transition(verification_case.id, target, actor="alice")
+    svc.verify(
+        verification_case.id,
+        method="scanner",
+        evidence_ids=["ev-scan"],
+        coverage={"status": "complete", "scope_version": "scan-001"},
+        actor="alice",
+        actor_provenance="authenticated_claim",
+        actor_principal_type="human",
+        actor_roles={"owner"},
+        actor_scopes={"verification:write"},
+        request_id="req-verification",
+        correlation_id="corr-verification",
+    )
+    verification_audit = session.scalar(
+        select(AuditEvent).where(AuditEvent.correlation_id == "corr-verification")
+    )
+    verification_outbox = session.scalar(
+        select(OutboxEvent).where(OutboxEvent.correlation_id == "corr-verification")
+    )
+    assert verification_audit.request_id == "req-verification"
+    assert verification_outbox.payload["principal_type"] == "human"
+    assert verification_outbox.payload["request_id"] == "req-verification"
     session.close()
 
 
@@ -246,6 +498,7 @@ def test_not_affected_maps_to_not_applicable():
         case.id,
         type="not_affected",
         reason="VEX says not affected",
+        expires_at=datetime.now(UTC) + timedelta(days=10),
         evidence_ids=["ev-vex"],
         requested_by="alice",
         actor="alice",

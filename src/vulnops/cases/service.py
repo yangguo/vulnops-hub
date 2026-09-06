@@ -41,6 +41,9 @@ def _gen_case_key():
 _LEGACY_PROVENANCE = "legacy_request"
 _AUTHENTICATED_PROVENANCE = "authenticated_claim"
 _APPROVER_ROLE_ORDER = ("risk_approver", "security_lead", "policy_admin", "admin")
+_SUPPORTED_RISK_DECISION_TYPES = frozenset(
+    {"risk_accepted", "waiver", "compensating_control", "false_positive", "not_affected"}
+)
 
 
 def _actor_audit_fields(
@@ -63,6 +66,56 @@ def _actor_audit_fields(
 def _approval_role(actor_roles: Iterable[str] | None) -> str | None:
     normalized = {role.strip().lower() for role in (actor_roles or ()) if role.strip()}
     return next((role for role in _APPROVER_ROLE_ORDER if role in normalized), None)
+
+
+def _trace_payload(
+    *,
+    actor_fields: dict[str, Any],
+    request_id: str | None,
+    correlation_id: str,
+) -> dict[str, Any]:
+    principal_type = actor_fields["actor_principal_type"]
+    roles = actor_fields["actor_roles"]
+    scopes = actor_fields["actor_scopes"]
+    return {
+        "request_id": request_id,
+        "correlation_id": correlation_id,
+        "principal_type": principal_type,
+        "roles": roles,
+        "scopes": scopes,
+        "actor_principal_type": principal_type,
+        "actor_roles": roles,
+        "actor_scopes": scopes,
+    }
+
+
+def _validate_evidence_ids(evidence_ids: Any) -> None:
+    if not isinstance(evidence_ids, list) or not evidence_ids:
+        raise ValueError("risk decision evidence_ids must contain at least one item")
+    if any(not isinstance(item, str) or not item.strip() for item in evidence_ids):
+        raise ValueError("risk decision evidence_ids must contain only nonblank strings")
+
+
+def _validate_risk_decision_request(
+    *,
+    type: Any,
+    reason: Any,
+    evidence_ids: Any,
+    expires_at: Any,
+) -> None:
+    if type not in _SUPPORTED_RISK_DECISION_TYPES:
+        raise ValueError("unsupported risk decision type")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("risk decision reason is required")
+    _validate_evidence_ids(evidence_ids)
+    if expires_at is None:
+        raise ValueError("risk decision expires_at is required")
+    if not isinstance(expires_at, datetime) or expires_at.tzinfo is None:
+        raise ValueError("risk decision expires_at must be timezone-aware")
+    if expires_at.utcoffset() is None:
+        raise ValueError("risk decision expires_at must be timezone-aware")
+    if expires_at <= _utcnow():
+        raise ValueError("risk decision expires_at must be in the future")
 
 
 class CaseService:
@@ -205,6 +258,8 @@ class CaseService:
         actor_principal_type: str | None = None,
         actor_roles: Iterable[str] | None = None,
         actor_scopes: Iterable[str] | None = None,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> RemediationCase:
         case = self.get_case(case_id)
 
@@ -228,13 +283,15 @@ class CaseService:
             actor_roles=actor_roles,
             actor_scopes=actor_scopes,
         )
+        event_correlation_id = correlation_id or str(uuid.uuid4())
         audit = AuditEvent(
             id=f"aud_{uuid.uuid4().hex[:12]}",
             actor=actor,
             action="case.transitioned",
             subject_type="case",
             subject_id=case_id,
-            correlation_id=str(uuid.uuid4()),
+            correlation_id=event_correlation_id,
+            request_id=request_id,
             prior_state=prior,
             new_state=target,
             reason=reason or f"{prior}->{target}",
@@ -251,6 +308,11 @@ class CaseService:
                 "to": target,
                 "reason": reason,
                 "evidence_ids": extra.get("evidence_ids") if extra else None,
+                **_trace_payload(
+                    actor_fields=actor_fields,
+                    request_id=request_id,
+                    correlation_id=event_correlation_id,
+                ),
             },
             correlation_id=audit.correlation_id,
         )
@@ -311,6 +373,8 @@ class CaseService:
         actor_principal_type: str | None = None,
         actor_roles: Iterable[str] | None = None,
         actor_scopes: Iterable[str] | None = None,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> Verification:
         case = self.get_case(case_id)
         if case.status != CaseStatus.AWAITING_VERIFICATION:
@@ -358,13 +422,15 @@ class CaseService:
             actor_roles=actor_roles,
             actor_scopes=actor_scopes,
         )
+        event_correlation_id = correlation_id or str(uuid.uuid4())
         audit = AuditEvent(
             id=f"aud_{uuid.uuid4().hex[:12]}",
             actor=actor,
             action=audit_action,
             subject_type="case",
             subject_id=case_id,
-            correlation_id=str(uuid.uuid4()),
+            correlation_id=event_correlation_id,
+            request_id=request_id,
             reason=reason,
             organization_id=case.organization_id,
             **actor_fields,
@@ -380,6 +446,11 @@ class CaseService:
                 "coverage": coverage,
                 "status": status,
                 "reason": reason,
+                **_trace_payload(
+                    actor_fields=actor_fields,
+                    request_id=request_id,
+                    correlation_id=event_correlation_id,
+                ),
             },
             correlation_id=audit.correlation_id,
         )
@@ -412,6 +483,8 @@ class CaseService:
         actor_principal_type: str | None = None,
         actor_roles: Iterable[str] | None = None,
         actor_scopes: Iterable[str] | None = None,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> RiskDecision:
         """Create a pending decision request.
 
@@ -425,6 +498,12 @@ class CaseService:
             raise ValueError("risk decision approval must use approve_risk_decision")
         if actor != requested_by:
             raise ValueError("risk request actor must match requested_by")
+        _validate_risk_decision_request(
+            type=type,
+            reason=reason,
+            evidence_ids=evidence_ids,
+            expires_at=expires_at,
+        )
         actor_fields = _actor_audit_fields(
             actor_provenance=actor_provenance,
             actor_principal_type=actor_principal_type,
@@ -432,6 +511,7 @@ class CaseService:
             actor_scopes=actor_scopes,
         )
         case = self.get_case(case_id)
+        event_correlation_id = correlation_id or str(uuid.uuid4())
         decision = RiskDecision(
             id=f"rdec_{uuid.uuid4().hex[:12]}",
             case_id=case_id,
@@ -453,7 +533,8 @@ class CaseService:
             action="risk.decision.requested",
             subject_type="risk_decision",
             subject_id=decision.id,
-            correlation_id=str(uuid.uuid4()),
+            correlation_id=event_correlation_id,
+            request_id=request_id,
             reason=reason,
             organization_id=case.organization_id,
             **actor_fields,
@@ -467,7 +548,12 @@ class CaseService:
                 "decision_id": decision.id,
                 "case_id": case_id,
                 "type": type,
-                "expires_at": expires_at.isoformat() if expires_at else None,
+                "expires_at": expires_at.isoformat(),
+                **_trace_payload(
+                    actor_fields=actor_fields,
+                    request_id=request_id,
+                    correlation_id=event_correlation_id,
+                ),
             },
             correlation_id=audit.correlation_id,
         )
@@ -495,12 +581,14 @@ class CaseService:
         actor_capabilities: Iterable[str] | None = None,
         actor_provenance: str = _AUTHENTICATED_PROVENANCE,
         actor_scopes: Iterable[str] | None = None,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> RiskDecision:
         """Apply an authenticated human approval or rejection to a request."""
 
         decision = self.get_risk_decision(decision_id)
         if decision.status != "pending_approval":
-            raise ValueError("risk decision is not pending approval")
+            raise ValueError("risk decision conflict: decision is no longer pending approval")
         if actor_principal_type != "human":
             raise ValueError("service principals cannot approve risk decisions")
         capabilities = {capability.strip().lower() for capability in (actor_capabilities or ())}
@@ -545,73 +633,83 @@ class CaseService:
         }
         prior = case.status
         if normalized_outcome == "approve":
-            target_state = target_state_map.get(decision.type, CaseStatus.RISK_ACCEPTED)
+            if decision.type not in _SUPPORTED_RISK_DECISION_TYPES:
+                raise ValueError("unsupported risk decision type")
+            if not isinstance(decision.reason, str) or not decision.reason.strip():
+                raise ValueError("risk decision reason is required")
+            _validate_evidence_ids(decision.evidence_ids)
+            target_state = target_state_map[decision.type]
             if target_state not in ALLOWED_TRANSITIONS.get(prior, []):
                 raise ValueError(
                     f"transition {prior} -> {target_state} not allowed for decision type {decision.type}"
                 )
-            decision.approver = actor
-            decision.approver_role = role
-            decision.approver_provenance = actor_provenance
-            decision.approver_principal_type = actor_principal_type
-            decision.decided_at = now
-            decision.status = "approved"
+            audit_action = audit_action_map.get(decision.type, "risk.accepted")
+            outbox_type = "vulnops.risk-decision.accepted.v1"
+            next_status = "approved"
+        else:
+            audit_action = "risk.decision.rejected"
+            outbox_type = "vulnops.risk-decision.rejected.v1"
+            next_status = "rejected"
+
+        event_correlation_id = correlation_id or str(uuid.uuid4())
+        # The conditional UPDATE is the linearization point for an approval.
+        # Every contender may validate the same pending snapshot, but exactly
+        # one transaction can claim the row and create its audit/outbox pair.
+        decision_update = self.session.execute(
+            update(RiskDecision)
+            .where(
+                RiskDecision.id == decision.id,
+                RiskDecision.status == "pending_approval",
+            )
+            .values(
+                status=next_status,
+                approver=actor,
+                approver_role=role,
+                approver_provenance=actor_provenance,
+                approver_principal_type=actor_principal_type,
+                decided_at=now,
+                updated_at=now,
+            )
+        )
+        if decision_update.rowcount != 1:
+            self.session.rollback()
+            raise ValueError("risk decision conflict: decision is no longer pending approval")
+
+        if normalized_outcome == "approve":
             case.status = target_state
             case.version += 1
             case.updated_at = now
-            audit_action = audit_action_map.get(decision.type, "risk.accepted")
-            outbox_type = "vulnops.risk-decision.accepted.v1"
-            audit = AuditEvent(
-                id=f"aud_{uuid.uuid4().hex[:12]}",
-                actor=actor,
-                action=audit_action,
-                subject_type="risk_decision",
-                subject_id=decision.id,
-                correlation_id=str(uuid.uuid4()),
-                prior_state=prior,
-                new_state=target_state,
-                reason=reason,
-                organization_id=case.organization_id,
-                **actor_fields,
-            )
-            payload = {
-                "decision_id": decision.id,
-                "case_id": case.id,
-                "type": decision.type,
-                "outcome": normalized_outcome,
-                "approver": actor,
-                "approver_role": role,
-                "decided_at": now.isoformat(),
-                "expires_at": decision.expires_at.isoformat() if decision.expires_at else None,
-            }
-        else:
-            decision.approver = actor
-            decision.approver_role = role
-            decision.approver_provenance = actor_provenance
-            decision.approver_principal_type = actor_principal_type
-            decision.decided_at = now
-            decision.status = "rejected"
-            audit = AuditEvent(
-                id=f"aud_{uuid.uuid4().hex[:12]}",
-                actor=actor,
-                action="risk.decision.rejected",
-                subject_type="risk_decision",
-                subject_id=decision.id,
-                correlation_id=str(uuid.uuid4()),
-                reason=reason,
-                organization_id=case.organization_id,
-                **actor_fields,
-            )
-            outbox_type = "vulnops.risk-decision.rejected.v1"
-            payload = {
-                "decision_id": decision.id,
-                "case_id": case.id,
-                "type": decision.type,
-                "outcome": normalized_outcome,
-                "approver": actor,
-                "approver_role": role,
-                "decided_at": now.isoformat(),
-            }
+
+        audit = AuditEvent(
+            id=f"aud_{uuid.uuid4().hex[:12]}",
+            actor=actor,
+            action=audit_action,
+            subject_type="risk_decision",
+            subject_id=decision.id,
+            correlation_id=event_correlation_id,
+            request_id=request_id,
+            prior_state=prior if normalized_outcome == "approve" else None,
+            new_state=target_state if normalized_outcome == "approve" else None,
+            reason=reason,
+            organization_id=case.organization_id,
+            **actor_fields,
+        )
+        payload = {
+            "decision_id": decision.id,
+            "case_id": case.id,
+            "type": decision.type,
+            "outcome": normalized_outcome,
+            "approver": actor,
+            "approver_role": role,
+            "decided_at": now.isoformat(),
+            **_trace_payload(
+                actor_fields=actor_fields,
+                request_id=request_id,
+                correlation_id=event_correlation_id,
+            ),
+        }
+        if normalized_outcome == "approve":
+            payload["expires_at"] = decision.expires_at.isoformat() if decision.expires_at else None
 
         outbox = OutboxEvent(
             id=f"evt_{uuid.uuid4().hex[:12]}",
@@ -628,9 +726,8 @@ class CaseService:
         except Exception:
             self.session.rollback()
             raise
-        self.session.refresh(decision)
-        self.session.refresh(case)
-        return decision
+        self.session.expire_all()
+        return self.get_risk_decision(decision_id)
 
     def revoke_decision(self, decision_id: str, actor: str, reason: str):
         decision = self.session.get(RiskDecision, decision_id)

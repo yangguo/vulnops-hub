@@ -138,7 +138,12 @@ def _route_request(
     if route_name == "risk_request":
         return client.post(
             f"/api/v1/organizations/{organization_id}/cases/{case_id}/risk-decisions",
-            json={"type": "risk_accepted", "reason": "matrix request"},
+            json={
+                "type": "risk_accepted",
+                "reason": "matrix request",
+                "evidence_ids": ["ev-matrix"],
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
             headers=_headers(),
         )
     if route_name == "risk_history":
@@ -440,7 +445,12 @@ def test_owner_can_create_transition_request_risk_and_submit_verification(
 
     risk = owner.post(
         f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions",
-        json={"type": "risk_accepted", "reason": "owner request"},
+        json={
+            "type": "risk_accepted",
+            "reason": "owner request",
+            "evidence_ids": ["ev-owner"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
         headers=_headers(),
     )
     assert risk.status_code == 200, risk.text
@@ -493,7 +503,12 @@ def test_non_mutating_roles_cannot_submit_risk_or_verification(
 
     risk = client.post(
         f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions",
-        json={"type": "risk_accepted", "reason": "not permitted"},
+        json={
+            "type": "risk_accepted",
+            "reason": "not permitted",
+            "evidence_ids": ["ev-forbidden"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
         headers=_headers(),
     )
     _problem(risk, 403, "insufficient_permission")
@@ -633,7 +648,12 @@ def test_risk_approver_approves_another_principal_request(
     _transition_case(requester, organization_id, case["id"], "triage")
     requested = requester.post(
         f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions",
-        json={"type": "risk_accepted", "reason": "maintenance window"},
+        json={
+            "type": "risk_accepted",
+            "reason": "maintenance window",
+            "evidence_ids": ["ev-maintenance"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
         headers=_headers(),
     )
     assert requested.status_code == 200, requested.text
@@ -673,7 +693,12 @@ def test_service_principal_cannot_use_risk_approval_endpoint(
     _transition_case(requester, organization_id, case["id"], "triage")
     requested = requester.post(
         f"/api/v1/organizations/{organization_id}/cases/{case['id']}/risk-decisions",
-        json={"type": "risk_accepted", "reason": "maintenance window"},
+        json={
+            "type": "risk_accepted",
+            "reason": "maintenance window",
+            "evidence_ids": ["ev-maintenance"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
         headers=_headers(),
     )
     assert requested.status_code == 200, requested.text
@@ -707,7 +732,12 @@ def test_cross_org_risk_approval_is_hidden_before_capability_and_body_validation
     _transition_case(requester, organization_a, case["id"], "triage")
     requested = requester.post(
         f"/api/v1/organizations/{organization_a}/cases/{case['id']}/risk-decisions",
-        json={"type": "risk_accepted", "reason": "maintenance window"},
+        json={
+            "type": "risk_accepted",
+            "reason": "maintenance window",
+            "evidence_ids": ["ev-maintenance"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
         headers=_headers(),
     )
     assert requested.status_code == 200, requested.text

@@ -1,6 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from vulnops.db import get_engine, get_sessionmaker
+from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.main import create_app
 
 
@@ -79,6 +83,40 @@ def test_case_transition_api_flow():
         assert resp.json()["status"] != "closed"
 
 
+def test_case_transition_api_preserves_request_and_correlation_trace():
+    app = create_app()
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "trace test", "owner_team": "secops", "priority": "P2"},
+    )
+    assert response.status_code == 200, response.text
+    case_id = response.json()["id"]
+    response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+        headers={"X-Request-ID": "req-api-transition", "X-Correlation-ID": "corr-api-transition"},
+    )
+    assert response.status_code == 200, response.text
+
+    session = get_sessionmaker(get_engine())()
+    try:
+        audit = session.scalar(
+            select(AuditEvent).where(AuditEvent.correlation_id == "corr-api-transition")
+        )
+        outbox = session.scalar(
+            select(OutboxEvent).where(OutboxEvent.correlation_id == "corr-api-transition")
+        )
+        assert audit is not None
+        assert audit.request_id == "req-api-transition"
+        assert audit.actor_principal_type == "human"
+        assert outbox is not None
+        assert outbox.payload["request_id"] == "req-api-transition"
+        assert outbox.payload["correlation_id"] == "corr-api-transition"
+    finally:
+        session.close()
+
+
 def test_risk_decision_api_requires_approval():
     app = create_app()
     client = TestClient(app)
@@ -116,17 +154,81 @@ def test_risk_decision_api_requires_approval():
 
 
 @pytest.mark.parametrize(
+    ("field", "value", "detail"),
+    [
+        ("type", "unsupported", "unsupported risk decision type"),
+        ("reason", "   ", "risk decision reason is required"),
+        ("reason", None, "risk decision reason is required"),
+        ("evidence_ids", [], "risk decision evidence_ids must contain at least one item"),
+        ("evidence_ids", [""], "risk decision evidence_ids must contain only nonblank strings"),
+        ("expires_at", "not-a-timestamp", "risk decision expires_at must be an ISO-8601 timestamp"),
+        ("expires_at", "2020-01-01T00:00:00", "risk decision expires_at must be timezone-aware"),
+        ("expires_at", None, "risk decision expires_at is required"),
+    ],
+)
+def test_risk_decision_api_returns_stable_problem_details_for_invalid_request(
+    field: str, value: object, detail: str
+):
+    app = create_app()
+    client = TestClient(app)
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "validation test", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+    transition = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+    )
+    assert transition.status_code == 200, transition.text
+
+    payload = {
+        "type": "risk_accepted",
+        "reason": "valid reason",
+        "evidence_ids": ["ev1"],
+        "expires_at": "2099-01-01T00:00:00Z",
+    }
+    payload[field] = value
+    response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+        json=payload,
+    )
+    assert response.status_code == 422, response.text
+    body = response.json()["detail"]
+    assert body["code"] == "invalid_risk_decision"
+    assert body["status"] == 422
+    assert body["detail"] == detail
+
+
+@pytest.mark.parametrize(
     "identity_field",
     [
         "actor",
+        "actor_id",
+        "actorId",
+        "actor_role",
+        "actorRole",
         "requested_by",
         "requestedBy",
         "requester",
+        "requested_by_id",
+        "requested_by_role",
+        "requestedByRole",
+        "requester_id",
+        "requesterId",
+        "requester_role",
+        "requesterRole",
         "approver",
+        "approver_id",
         "approved_by",
         "approvedBy",
+        "approved_by_id",
+        "approvedById",
         "approver_role",
         "approverRole",
+        "approved_by_role",
+        "approvedByRole",
     ],
 )
 def test_workflow_identity_fields_are_rejected_in_request_json(identity_field: str):
@@ -156,6 +258,8 @@ def test_workflow_identity_fields_are_rejected_in_request_json(identity_field: s
             json={
                 "type": "risk_accepted",
                 "reason": "spoof test",
+                "expires_at": "2099-01-01T00:00:00Z",
+                "evidence_ids": ["ev1"],
                 identity_field: "attacker",
             },
         )
@@ -184,7 +288,12 @@ def test_risk_approval_is_separate_and_self_approval_is_rejected():
 
     request_response = client.post(
         f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
-        json={"type": "risk_accepted", "reason": "approval test"},
+        json={
+            "type": "risk_accepted",
+            "reason": "approval test",
+            "expires_at": "2099-01-01T00:00:00Z",
+            "evidence_ids": ["ev1"],
+        },
     )
     assert request_response.status_code == 200, request_response.text
     decision_id = request_response.json()["id"]

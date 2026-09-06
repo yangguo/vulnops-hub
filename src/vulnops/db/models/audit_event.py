@@ -31,6 +31,7 @@ class AuditEvent(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     evidence_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     organization_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

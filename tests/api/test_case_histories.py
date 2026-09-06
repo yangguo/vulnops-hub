@@ -29,6 +29,7 @@ def test_list_risk_decisions_returns_history():
             "type": "risk_accepted",
             "reason": "waiver until Q4",
             "evidence_ids": ["e1"],
+            "expires_at": "2099-01-01T00:00:00Z",
         },
     )
     assert resp.status_code in (200, 201), resp.text

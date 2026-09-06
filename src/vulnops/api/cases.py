@@ -28,37 +28,88 @@ router = APIRouter(tags=["cases"])
 _CLIENT_IDENTITY_FIELDS = frozenset(
     {
         "actor",
+        "actor_id",
         "actorId",
+        "actor_role",
+        "actorRole",
         "requested_by",
         "requestedBy",
         "requestedById",
+        "requested_by_id",
+        "requested_by_role",
+        "requestedByRole",
         "requester",
         "requesterId",
+        "requester_id",
+        "requester_role",
+        "requesterRole",
         "approver",
         "approverId",
+        "approver_id",
         "approved_by",
         "approvedBy",
         "approvedById",
+        "approved_by_id",
         "approver_role",
         "approverRole",
+        "approved_by_role",
+        "approvedByRole",
     }
 )
 
 
 def _reject_client_identity_fields(data: object) -> dict:
     if not isinstance(data, dict):
-        raise HTTPException(status_code=422, detail="request body must be a JSON object")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "type": "https://hub.example/problems/invalid-request-body",
+                "title": "Invalid Request Body",
+                "status": 422,
+                "code": "invalid_request_body",
+                "detail": "request body must be a JSON object",
+            },
+        )
     supplied = sorted(_CLIENT_IDENTITY_FIELDS.intersection(data))
     if supplied:
         raise HTTPException(
             status_code=422,
             detail={
+                "type": "https://hub.example/problems/identity-fields-forbidden",
+                "title": "Identity Fields Forbidden",
+                "status": 422,
                 "code": "identity_fields_forbidden",
                 "detail": "workflow actor identity is derived from the authenticated principal",
                 "fields": supplied,
             },
         )
     return data
+
+
+def _risk_problem(detail: str, *, code: str = "invalid_risk_decision") -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "type": f"https://hub.example/problems/{code}",
+            "title": "Invalid Risk Decision"
+            if code == "invalid_risk_decision"
+            else "Invalid Risk Approval",
+            "status": 422,
+            "code": code,
+            "detail": detail,
+        },
+    )
+
+
+def _parse_risk_expires_at(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("risk decision expires_at must be an ISO-8601 timestamp")
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("risk decision expires_at must be an ISO-8601 timestamp") from exc
 
 
 def _serialize_case(case: RemediationCase) -> dict:
@@ -313,6 +364,8 @@ async def transition_case(
             actor_principal_type=principal.principal_type.value,
             actor_roles=principal.roles,
             actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
         msg = str(ve).lower()
@@ -371,17 +424,19 @@ async def create_risk_decision(
 
     data = _reject_client_identity_fields(await request.json())
     type_ = data.get("type")
-    reason = data.get("reason") or "no reason"
+    reason = data.get("reason")
     scope = data.get("scope")
-    compensating = data.get("compensating_controls") or data.get("compensatingControls")
-    evidence_ids = data.get("evidence_ids") or data.get("evidenceIds") or []
-    expires_at_str = data.get("expires_at") or data.get("expiresAt")
-    expires_at = None
-    if expires_at_str:
-        try:
-            expires_at = datetime.fromisoformat(expires_at_str)
-        except ValueError:
-            expires_at = None
+    compensating = (
+        data["compensating_controls"]
+        if "compensating_controls" in data
+        else data.get("compensatingControls")
+    )
+    evidence_ids = data["evidence_ids"] if "evidence_ids" in data else data.get("evidenceIds")
+    expires_at_value = data["expires_at"] if "expires_at" in data else data.get("expiresAt")
+    try:
+        expires_at = _parse_risk_expires_at(expires_at_value)
+    except ValueError as exc:
+        raise _risk_problem(str(exc))
 
     # Handle If-Match if provided - check version
     if if_match:
@@ -404,18 +459,11 @@ async def create_risk_decision(
             actor_principal_type=principal.principal_type.value,
             actor_roles=principal.roles,
             actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "type": "https://hub.example/problems/invalid-transition",
-                "title": "Invalid Risk Decision",
-                "status": 422,
-                "code": "invalid_transition",
-                "detail": str(ve),
-            },
-        )
+        raise _risk_problem(str(ve))
 
     return {
         "id": decision.id,
@@ -455,9 +503,9 @@ async def approve_risk_decision(
     outcome = data.get("outcome") or data.get("decision")
     reason = data.get("reason")
     if not isinstance(outcome, str) or not outcome.strip():
-        raise HTTPException(status_code=422, detail="outcome required")
+        raise _risk_problem("outcome required", code="invalid_risk_approval")
     if not isinstance(reason, str) or not reason.strip():
-        raise HTTPException(status_code=422, detail="approval reason required")
+        raise _risk_problem("approval reason required", code="invalid_risk_approval")
 
     try:
         decision = svc.approve_risk_decision(
@@ -470,18 +518,22 @@ async def approve_risk_decision(
             actor_capabilities=principal.capabilities,
             actor_provenance="authenticated_claim",
             actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "type": "https://hub.example/problems/invalid-risk-approval",
-                "title": "Invalid Risk Approval",
-                "status": 422,
-                "code": "invalid_risk_approval",
-                "detail": str(ve),
-            },
-        )
+        if "risk decision conflict" in str(ve).lower():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "type": "https://hub.example/problems/risk-decision-conflict",
+                    "title": "Risk Decision Conflict",
+                    "status": 409,
+                    "code": "risk_decision_conflict",
+                    "detail": str(ve),
+                },
+            )
+        raise _risk_problem(str(ve), code="invalid_risk_approval")
 
     return {
         "id": decision.id,
@@ -583,6 +635,8 @@ async def submit_verification(
             actor_principal_type=principal.principal_type.value,
             actor_roles=principal.roles,
             actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
         msg = str(ve).lower()
