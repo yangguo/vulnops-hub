@@ -1,7 +1,7 @@
 # MVP Acceptance Matrix
 
 > **Status date:** 2026-09-06
-> **Baseline:** M1 technical preview at `ac51721`
+> **Baseline:** Task 8 verification commit on `codex/oidc-rbac`
 > **Purpose:** Separate fixture-level verification from integrated-environment
 > and production evidence. A passing fixture does not by itself satisfy the M1
 > exit gate.
@@ -22,12 +22,14 @@
 | KEV escalation | Verified | `tests/risk/test_kev_escalation.py::test_kev_critical_internet_asset_selects_p0_policy`; explainability tests in `test_policy_simulation.py` | Repeat against a configured KEV source in integrated staging |
 | SBOM match | Verified | CycloneDX/SPDX parser tests; `tests/matching/test_purl_range_match.py::test_purl_in_osv_range_creates_deterministic_exposure` | Demonstrate an uploaded SBOM through asynchronous evaluation in integrated staging |
 | Ambiguous mapping | Verified | `tests/matching/test_candidate_cpe_match.py::test_cpe_name_only_is_candidate_not_case`; asset reconciliation tests | Add operator review workflow when the candidate API/UI is implemented |
-| Risk acceptance | Verified | `tests/cases/test_risk_acceptance_expiry.py`; self-approval and role tests in `test_review_feedback.py` | Bind approver identity and role to authenticated claims instead of request fields |
+| Risk acceptance | Verified | `tests/cases/test_risk_acceptance_expiry.py`; `tests/cases/test_review_feedback.py::test_self_approval_rejected`; `tests/cases/test_review_feedback.py::test_authenticated_approval_records_claim_actor_and_changes_case_state`; `tests/api/test_authorization.py::test_risk_approver_approves_another_principal_request` | Demonstrate authenticated approval claims against a configured IdP in integrated staging |
 | Verification | Verified | `tests/cases/test_verification_coverage.py` covers incomplete, failed, Wazuh, and manual evidence | Demonstrate real Wazuh/scanner observations with recorded coverage |
 | Reopen | Verified | `tests/cases/test_state_machine.py::test_new_confirmed_evidence_reopens_closed_case`; expiry test | Demonstrate new real scanner evidence against an existing closed case |
 | Source outage | Partial | KEV, EPSS, OSV, and Vulnerability-Lookup contract tests preserve state and mark stale/degraded | Implement source-health API/UI and prove the status is visible to operators |
 | Replay | Partial | Source snapshot, SBOM, DefectDojo, and Wazuh idempotency tests | Add durable cursor recovery, external projection deduplication, and replay drill evidence |
-| Access | Open | Case list/detail tests cover organization filters without an authenticated actor | Implement OIDC/service authentication, RBAC, raw-evidence authorization, and owner/auditor tests |
+| Access | Partial | Implemented API and console access is covered by the OIDC and RBAC rows below, including the Playwright owner/auditor/cross-org flows | Add raw-evidence authorization when that resource is implemented and demonstrate access with a configured IdP in integrated staging |
+| OIDC authentication boundary | Verified | `tests/auth/test_oidc.py::test_valid_rsa_access_token_returns_verified_claims`; `tests/auth/test_oidc.py::test_registered_issuer_and_audience_are_checked`; `tests/auth/test_oidc.py::test_expired_token_is_rejected_using_injected_clock`; `tests/auth/test_oidc.py::test_unknown_kid_refreshes_jwks_once_then_fails_closed`; `tests/api/test_authentication.py::test_missing_bearer_token_returns_problem_details_401`; `tests/api/test_authentication.py::test_expired_bearer_token_returns_safe_invalid_token`; `tests/api/test_authentication.py::test_oidc_configuration_is_required_outside_explicit_test_bypass`; `frontend/e2e/cases.spec.ts::OIDC login authenticates the console`; `frontend/e2e/cases.spec.ts::expired access tokens are rejected by the API and login callback` | Demonstrate a real configured production/staging IdP; the checked-in issuer is test-only |
+| Organization RBAC | Verified | `tests/api/test_authorization.py::test_all_business_routes_have_literal_principal_status_matrix`; `tests/api/test_authorization.py::test_cross_org_resource_is_hidden_before_capability_and_validation`; `tests/api/test_authorization.py::test_viewer_reads_cases_but_cannot_create_or_transition`; `tests/api/test_authorization.py::test_owner_can_create_transition_request_risk_and_submit_verification`; `tests/api/test_authorization.py::test_service_scope_is_limited_to_named_sbom_capability`; `frontend/e2e/cases.spec.ts::auditor can read a case but cannot mutate it`; `frontend/e2e/cases.spec.ts::owner can perform a permitted transition`; `frontend/e2e/cases.spec.ts::cross-organization access is denied without disclosing the case` | Demonstrate organization claims and role mapping with the configured IdP in integrated staging |
 
 ## MVP scope coverage
 
@@ -41,14 +43,14 @@
 | Exposure generation/candidate queue | Partial | Matching behavior exists; operator-facing candidate queue is not exposed |
 | Transparent risk policy | Verified in fixtures | Version, simulation, KEV escalation, and factors are tested |
 | Case/SLA/audit/notifications | Partial | Workflow, SLA, audit, and outbox writes exist; notification and external-ticket delivery are open |
-| Risk acceptance | Partial | Domain behavior exists; authenticated approval identity is open |
+| Risk acceptance | Verified in fixtures | Domain behavior, separation of request/approval, and authenticated approval provenance are tested; integrated IdP evidence remains open |
 | Verification and reopen | Verified in fixtures | Conservative closure and reopen behavior are tested |
 | Source health and coverage gaps | Partial | Adapter status models exist; API/UI and operational visibility are open |
-| Secure self-hosted deployment | Partial | Compose, Helm, CI, SBOM, scan, and Docker smoke exist; authentication and production certification are open |
+| Secure self-hosted deployment | Partial | Compose, Helm, CI, SBOM, scan, Docker smoke, and fail-closed OIDC configuration exist; production certification remains open |
 
 ## Evidence required to close M1
 
-- [ ] OIDC/service authentication and organization-scoped RBAC tests pass.
+- [x] OIDC/service authentication and organization-scoped RBAC tests pass; exact evidence is listed above.
 - [ ] The full fixture suite is mapped to this matrix without unsupported
   claims.
 - [ ] A non-production environment connects to configured sandbox instances of

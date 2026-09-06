@@ -11,9 +11,21 @@ export const useDashboardStore = defineStore('dashboard', {
     avgCloseDays: null as number | null,
     slaTrend: [] as Array<{ date: string; rate: number }>,
     loading: false,
+    generation: 0,
   }),
   actions: {
+    clear() {
+      this.byPriority = { P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 }
+      this.breached = 0
+      this.openCount = 0
+      this.p0p1Open = 0
+      this.avgCloseDays = null
+      this.slaTrend = []
+      this.loading = false
+      this.generation += 1
+    },
     async fetch() {
+      const generation = this.generation
       this.loading = true
       try {
         const org = useOrgStore().org
@@ -22,6 +34,7 @@ export const useDashboardStore = defineStore('dashboard', {
 
         const priorities = ['P0', 'P1', 'P2', 'P3', 'P4'] as const
         const counts = await Promise.all(priorities.map((p) => count(`priority=${p}`)))
+        if (generation !== this.generation) return
         priorities.forEach((p, i) => {
           this.byPriority[p] = counts[i]
         })
@@ -32,8 +45,11 @@ export const useDashboardStore = defineStore('dashboard', {
           count('status=risk_accepted'),
           count('status=not_applicable'),
         ])
+        if (generation !== this.generation) return
         this.openCount = all - closed - riskAccepted - notApplicable
-        this.breached = await count('sla_breached=true')
+        const breached = await count('sla_breached=true')
+        if (generation !== this.generation) return
+        this.breached = breached
 
         // P0/P1 未关闭 = 各自总数 − 已关闭 − 风险接受 − 不适用
         const highPriOpen = async (p: string) => {
@@ -46,10 +62,12 @@ export const useDashboardStore = defineStore('dashboard', {
           return total - c - r - n
         }
         const [p0, p1] = await Promise.all([highPriOpen('P0'), highPriOpen('P1')])
+        if (generation !== this.generation) return
         this.p0p1Open = p0 + p1
 
         // 平均关闭时长：从最近 100 条已关闭工单估算（spec §5.2 的 MVP 简化）
         const recent = await apiClient.listCases(org, '?page_size=100&status=closed&sort=-updated_at')
+        if (generation !== this.generation) return
         const durations = recent.items
           .filter((c) => c.created_at && c.updated_at)
           .map((c) => (new Date(c.updated_at!).getTime() - new Date(c.created_at!).getTime()) / 86_400_000)
@@ -72,7 +90,7 @@ export const useDashboardStore = defineStore('dashboard', {
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([date, b]) => ({ date, rate: Math.round((b.onTime / b.total) * 100) }))
       } finally {
-        this.loading = false
+        if (generation === this.generation) this.loading = false
       }
     },
   },

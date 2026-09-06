@@ -81,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -97,18 +97,26 @@ import {
 import type { UploadFile } from 'element-plus'
 import { apiClient, ApiError } from '../api/client'
 import { useOrgStore } from '../stores/org'
-
-const HISTORY_KEY = 'vulnops.sbom-history'
+import { useSbomHistoryStore } from '../stores/sbomHistory'
+import { storeToRefs } from 'pinia'
 
 const text = ref('')
 const submitting = ref(false)
 const error = ref('')
 const result = ref<Record<string, string> | null>(null)
-const history = ref<Array<{ at: string; org: string; sbom_id: string; sha: string }>>([])
+const orgStore = useOrgStore()
+const historyStore = useSbomHistoryStore()
+const { history } = storeToRefs(historyStore)
 
-function loadHistory() {
-  history.value = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
-}
+watch(
+  () => historyStore.generation,
+  () => {
+    text.value = ''
+    submitting.value = false
+    error.value = ''
+    result.value = null
+  },
+)
 
 function onFile(file: UploadFile) {
   file.raw?.text().then((t) => (text.value = t))
@@ -125,35 +133,37 @@ async function submit() {
     return
   }
   submitting.value = true
+  const org = orgStore.org
+  const requestGeneration = historyStore.generation
   try {
     const key =
       globalThis.crypto?.randomUUID?.() ??
       `sbom-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const resp = await apiClient.submitSbom(useOrgStore().org, payload, key)
-    result.value = {
+    const resp = await apiClient.submitSbom(org, payload, key)
+    const submittedResult = {
       sbom_id: String(resp.sbom_id ?? ''),
       content_sha256: String(resp.content_sha256 ?? ''),
       status: String(resp.status ?? ''),
     }
-    history.value = [
+    const recorded = historyStore.record(
       {
         at: new Date().toLocaleString(),
-        org: useOrgStore().org,
-        sbom_id: result.value.sbom_id,
-        sha: result.value.content_sha256,
+        org,
+        sbom_id: submittedResult.sbom_id,
+        sha: submittedResult.content_sha256,
       },
-      ...history.value,
-    ].slice(0, 20)
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value))
+      requestGeneration,
+    )
+    if (!recorded) return
+    result.value = submittedResult
     ElMessage.success('SBOM 已接受')
   } catch (err) {
+    if (requestGeneration !== historyStore.generation) return
     error.value = err instanceof ApiError ? `后端拒绝（${err.status}）：${err.message}` : '提交失败'
   } finally {
     submitting.value = false
   }
 }
-
-onMounted(loadHistory)
 </script>
 
 <style scoped>

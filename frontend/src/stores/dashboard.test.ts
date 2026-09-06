@@ -28,6 +28,14 @@ function totalFor(query: string): number {
   return 20
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePending) => {
+    resolve = resolvePending
+  })
+  return { promise, resolve }
+}
+
 describe('dashboardStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -58,5 +66,36 @@ describe('dashboardStore', () => {
       { date: '2026-09-02', rate: 100 },
       { date: '2026-09-04', rate: 0 },
     ])
+  })
+
+  it('ignores a response that resolves after the store is cleared', async () => {
+    type ListCasesResponse = Awaited<ReturnType<typeof apiClient.listCases>>
+    const requests: Array<ReturnType<typeof deferred<ListCasesResponse>>> = []
+    vi.mocked(apiClient.listCases).mockClear()
+    vi.mocked(apiClient.listCases).mockImplementation(() => {
+      const request = deferred<ListCasesResponse>()
+      requests.push(request)
+      return request.promise
+    })
+
+    const store = useDashboardStore()
+    const fetchPromise = store.fetch()
+    expect(requests).toHaveLength(5)
+    const generationBeforeClear = store.generation
+    store.clear()
+
+    const aliceResponse = { items: [], total: 42, page: 1, page_size: 1 } as ListCasesResponse
+    requests.forEach((request) => request.resolve(aliceResponse))
+    await fetchPromise
+
+    expect(store.generation).toBe(generationBeforeClear + 1)
+    expect(store.byPriority).toEqual({ P0: 0, P1: 0, P2: 0, P3: 0, P4: 0 })
+    expect(store.breached).toBe(0)
+    expect(store.openCount).toBe(0)
+    expect(store.p0p1Open).toBe(0)
+    expect(store.avgCloseDays).toBeNull()
+    expect(store.slaTrend).toEqual([])
+    expect(store.loading).toBe(false)
+    expect(apiClient.listCases).toHaveBeenCalledTimes(5)
   })
 })

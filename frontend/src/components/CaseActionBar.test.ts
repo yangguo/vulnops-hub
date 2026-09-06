@@ -5,6 +5,7 @@ import { ElMessageBox } from 'element-plus'
 import CaseActionBar from './CaseActionBar.vue'
 import RiskDecisionDrawer from './RiskDecisionDrawer.vue'
 import { useCaseDetailStore } from '../stores/caseDetail'
+import { useAuthStore } from '../stores/auth'
 import { ApiError } from '../api/client'
 
 vi.mock('element-plus', async (importOriginal) => ({
@@ -14,8 +15,18 @@ vi.mock('element-plus', async (importOriginal) => ({
 }))
 
 describe('CaseActionBar', () => {
+  function setRoles(roles: string[]) {
+    useAuthStore().user = {
+      access_token: 'access-token',
+      token_type: 'Bearer',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      profile: { sub: 'user-1', roles, principal_type: 'human' },
+    } as never
+  }
+
   it('renders exactly one button per allowed transition', () => {
     setActivePinia(createPinia())
+    setRoles(['owner'])
     const store = useCaseDetailStore()
     store.allowed = ['assigned', 'risk_accepted', 'not_applicable']
     const w = mount(CaseActionBar)
@@ -25,6 +36,7 @@ describe('CaseActionBar', () => {
 
   it('renders nothing when no transitions allowed', () => {
     setActivePinia(createPinia())
+    setRoles(['owner'])
     useCaseDetailStore().allowed = []
     const w = mount(CaseActionBar)
     expect(w.findAll('button.el-button')).toHaveLength(0)
@@ -32,6 +44,7 @@ describe('CaseActionBar', () => {
 
   it('resets drawer mode when opening risk acceptance after not-applicable', async () => {
     setActivePinia(createPinia())
+    setRoles(['owner'])
     const store = useCaseDetailStore()
     store.allowed = ['not_applicable', 'risk_accepted']
     const w = mount(CaseActionBar)
@@ -43,6 +56,7 @@ describe('CaseActionBar', () => {
 
   it('412 confirm triggers refresh', async () => {
     setActivePinia(createPinia())
+    setRoles(['owner'])
     const store = useCaseDetailStore()
     store.detail = { id: 'c1', version: 1, status: 'new' } as never
     store.allowed = ['assigned']
@@ -57,6 +71,7 @@ describe('CaseActionBar', () => {
 
   it('412 cancel does not refresh', async () => {
     setActivePinia(createPinia())
+    setRoles(['owner'])
     const store = useCaseDetailStore()
     store.detail = { id: 'c1', version: 1, status: 'new' } as never
     store.allowed = ['assigned']
@@ -67,5 +82,17 @@ describe('CaseActionBar', () => {
     await w.find('button.el-button').trigger('click')
     await flushPromises()
     expect(refreshSpy).not.toHaveBeenCalled()
+  })
+
+  it.each(['viewer', 'auditor'])('hides mutation controls for %s roles', (role) => {
+    setActivePinia(createPinia())
+    setRoles([role])
+    const store = useCaseDetailStore()
+    store.allowed = ['assigned', 'risk_accepted', 'not_applicable']
+    store.detail = { id: 'c1', version: 1, status: 'awaiting_verification' } as never
+
+    const w = mount(CaseActionBar)
+
+    expect(w.findAll('button.el-button')).toHaveLength(0)
   })
 })

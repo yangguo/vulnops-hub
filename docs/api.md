@@ -19,13 +19,62 @@ The preview exposes health probes and these organization-scoped resources:
 | `GET /api/v1/organizations/{org_id}/cases/{case_id}/allowed-transitions` | Implemented |
 | `POST /api/v1/organizations/{org_id}/cases/{case_id}/transitions` | Implemented |
 | `GET`, `POST /api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions` | Implemented |
+| `POST /api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions/{decision_id}/approval` | Implemented |
 | `GET`, `POST /api/v1/organizations/{org_id}/cases/{case_id}/verifications` | Implemented |
 
-Authentication is not enforced yet. Pagination currently uses `page` and
-`page_size`, not the target opaque-cursor contract. Assets, services,
+Authentication is enforced on every business `/api/v1` operation; the
+compatibility `/api/v1/health` alias remains public like the health probes.
+Pagination currently
+uses `page` and `page_size`, not the target opaque-cursor contract. Assets, services,
 observations, components, intelligence/source health, evidence, exposures,
 policies, submissions/jobs, and outbound webhooks below remain planned unless
 added to the checked OpenAPI document.
+
+### Authentication and authorization
+
+Business requests require an OIDC access token:
+
+~~~http
+Authorization: Bearer <OIDC access token>
+~~~
+
+The API validates the token signature through the configured issuer's discovery
+and JWKS endpoints, then checks `iss`, `aud`, `exp`, `sub`, the configured
+`organizations` claim, and the configured human `roles` or service `scope`.
+`OIDC_ISSUER_URL` and `OIDC_AUDIENCE` are required whenever
+`AUTH_TEST_BYPASS_ENABLED=false`; the test bypass is accepted only with
+`ENVIRONMENT=test` and is not a local or deployment authentication mode.
+
+Current route capabilities are enforced server-side:
+
+| Operation | Required capability | Cross-organization result |
+| --- | --- | --- |
+| List/read cases and histories | `case:read` | `404 resource_not_found` |
+| Create or transition a case | `case:write` | `404 resource_not_found` |
+| Request a risk decision | `risk:request` | `404 resource_not_found` |
+| Approve a risk decision | `risk:approve` | `404 resource_not_found` |
+| Submit verification | `verification:write` | `404 resource_not_found` |
+| Submit/read SBOM metadata | `sbom:write` / `sbom:read` | `404 resource_not_found` |
+
+An authenticated principal without the required capability receives
+`403 insufficient_permission`. Workflow actor, requester, and approver fields
+are derived from the authenticated principal; they are not accepted from JSON.
+The approval endpoint also rejects self-approval and service-token approval.
+
+For local and CI browser verification, run the loopback-only fixture issuer and
+point both the API and the frontend at it:
+
+~~~bash
+uv run python tests/e2e/oidc_test_issuer.py --port 9000
+export OIDC_ISSUER_URL=http://127.0.0.1:9000
+export OIDC_AUDIENCE=vulnops-api
+export VITE_OIDC_AUTHORITY=http://127.0.0.1:9000
+export VITE_OIDC_CLIENT_ID=vulnops-e2e
+~~~
+
+The issuer exposes fixed owner, auditor, expired-token, and cross-organization
+test identities for Playwright only. It is not a production IdP and its tokens
+must never be used as deployment credentials.
 
 ## 1. Target API principles
 
@@ -75,6 +124,7 @@ allows.
 
 ~~~http
 POST /api/v1/organizations/acme/sboms
+Authorization: Bearer <OIDC access token with sbom:write>
 Content-Type: application/vnd.cyclonedx+json
 Idempotency-Key: 52e4f7cb-...
 
@@ -162,6 +212,7 @@ GET /api/v1/organizations/acme/exposures?state=active&priority=P0,P1&include=cas
 
 ~~~http
 POST /api/v1/organizations/acme/cases/case_01J.../risk-decisions
+Authorization: Bearer <OIDC access token with risk:request>
 If-Match: "case-version-12"
 Idempotency-Key: 71809c5c-...
 ~~~
@@ -173,8 +224,7 @@ Idempotency-Key: 71809c5c-...
   "reason": "Vendor patch requires a maintenance window.",
   "compensating_controls": ["WAF rule 314", "network segment restricted"],
   "expires_at": "2026-10-05T00:00:00Z",
-  "evidence_ids": ["ev_change_459", "ev_waf_22"],
-  "requested_by": "user_01J..."
+  "evidence_ids": ["ev_change_459", "ev_waf_22"]
 }
 ~~~
 
@@ -185,6 +235,7 @@ decision. It never removes the Exposure or stops future evidence reevaluation.
 
 ~~~http
 POST /api/v1/organizations/acme/cases/case_01J.../verifications
+Authorization: Bearer <OIDC access token with verification:write>
 ~~~
 
 ~~~json
@@ -216,7 +267,9 @@ GET /api/v1/organizations/acme/cases/case_01J.../allowed-transitions
 
 Transition requests include target state, reason, evidence references, optional
 owner, and an idempotency key. The API enforces role, SLA, approval, and
-evidence rules on the server. Direct PATCH of a status field is not supported.
+evidence rules on the server. The transition actor is taken from the bearer
+principal; clients must not send an actor field. Direct PATCH of a status field
+is not supported.
 
 ## 5. Events and outbound webhooks
 

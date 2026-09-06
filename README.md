@@ -1,10 +1,12 @@
 # VulnOps Hub
 
 > **Status: M1 technical preview.** The core FastAPI vertical slice and Vue 3
-> operations console are implemented and locally verified. The broader MVP
-> exit gate in the [roadmap](docs/mvp-roadmap.md) is not complete: OIDC/RBAC,
-> first-adopter integration evidence, and several operational capabilities are
-> still pending. Deploy this preview only behind an isolated intranet boundary.
+> operations console are implemented and locally verified. OIDC bearer
+> authentication and organization-scoped RBAC are enforced and covered by the
+> automated verification suite. The broader MVP exit gate in the
+> [roadmap](docs/mvp-roadmap.md) is not complete: first-adopter integration
+> evidence and several operational capabilities are still pending. Configure a
+> real OIDC provider before exposing the service beyond a trusted test network.
 
 VulnOps Hub is an open-source vulnerability-operations control plane. It
 correlates public vulnerability intelligence, asset and software inventories,
@@ -16,21 +18,24 @@ SBOMs, and scanner evidence into explainable **exposures** and auditable
 生命周期闭环：发现 → 匹配 → 分派 → SLA → 风险接受 → 整改 → 复测 → 关闭或重开。
 M1 技术预览版已可运行：后端为 FastAPI 服务（含 Swagger UI），另有后台
 ingestion worker，并附带 Vue 3 整改运营控制台（frontend/），单容器随 API
-一同部署。OIDC/RBAC、首个采用方的集成验收和部分运营能力尚未完成，因此还未
-达到 roadmap 定义的完整 MVP 退出条件。运行方式见下文 Quick start。
+一同部署。OIDC 身份认证和组织级 RBAC 已由服务端强制执行并纳入自动化验证；
+首个采用方的集成验收和部分运营能力仍未完成，因此还未达到 roadmap 定义的完整
+MVP 退出条件。运行方式见下文 Quick start。
 
 ## Quick start
 
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22.22.2,
 and pnpm 9. The Node baseline is recorded in `.nvmrc` and `.node-version`, and pnpm
-rejects unsupported Node versions during install. No external services are
-needed for local evaluation — the API falls back to a SQLite file
-(`vulnops.db`). A web console is available: run `make frontend-install` once,
-then `make frontend-dev` in a second terminal and open `http://localhost:5173`
-(the Vite dev server proxies `/api` to `:8000`).
+rejects unsupported Node versions during install. The API can use a SQLite file
+(`vulnops.db`) for local evaluation, but an OIDC issuer and audience are required
+for every non-test server. Configure them in `.env` before starting the API. A
+web console is available: run `make frontend-install` once, then
+`make frontend-dev` in a second terminal and open `http://localhost:5173` (the
+Vite dev server proxies `/api` to `:8000`).
 
 ~~~bash
-# 1. Install dependencies
+# 1. Install dependencies and configure OIDC_ISSUER_URL/OIDC_AUDIENCE in .env
+cp .env.example .env
 make install                # uv sync --extra dev
 
 # 2. Apply database migrations (creates ./vulnops.db)
@@ -51,20 +56,28 @@ Once it is running:
 Drive it end to end:
 
 ~~~bash
+# Supply an access token whose claims include org-demo and the capabilities
+# required below (for example, an appropriately scoped admin token).
+export ACCESS_TOKEN='<OIDC access token>'
+AUTH=(-H "Authorization: Bearer ${ACCESS_TOKEN}")
+
 # Create a remediation case (SLA clock starts; P1 due in 3 days)
 curl -s -X POST http://localhost:8000/api/v1/organizations/org-demo/cases \
+  "${AUTH[@]}" \
   -H "Content-Type: application/json" \
   -d '{"title": "Patch openssl on demo host", "owner_team": "platform", "priority": "P1"}'
 
 # Submit a CycloneDX SBOM
 curl -s -X POST http://localhost:8000/api/v1/organizations/org-demo/sboms \
+  "${AUTH[@]}" \
   -H "Content-Type: application/json" -H "Idempotency-Key: demo-001" \
   -d '{"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []}'
 
 # Move the case through its state machine (If-Match enforces optimistic locking)
 curl -s -X POST http://localhost:8000/api/v1/organizations/org-demo/cases/<case_id>/transitions \
+  "${AUTH[@]}" \
   -H "Content-Type: application/json" -H 'If-Match: "1"' \
-  -d '{"target": "triage", "actor": "me"}'
+  -d '{"target": "triage"}'
 ~~~
 
 Reset the local database with `make clean`.
@@ -73,11 +86,14 @@ Reset the local database with `make clean`.
 
 ~~~bash
 cp .env.example .env        # adjust defaults if needed
+# Set OIDC_ISSUER_URL and OIDC_AUDIENCE in .env. Configure the frontend build
+# through frontend/.env (copy frontend/.env.example first).
+cp frontend/.env.example frontend/.env
 docker compose up --build
 ~~~
 
-This starts the API (`:8000`), the ingestion worker, PostgreSQL, Valkey, and
-MinIO (`:9001` console). `make health` smoke-tests the probes.
+This starts the authenticated API (`:8000`), the ingestion worker, PostgreSQL,
+Valkey, and MinIO (`:9001` console). `make health` smoke-tests the probes.
 
 The API image also serves the web console — after `make frontend-build`, the
 built SPA is baked in and available at `http://localhost:8000`.
@@ -90,6 +106,33 @@ make lint                   # ruff
 make frontend-test          # Vue unit tests (Node 22 + pnpm 9)
 make frontend-build         # build the production SPA
 ~~~
+
+### Local and CI OIDC verification
+
+The checked-in Playwright configuration starts the loopback-only test issuer in
+`tests/e2e/oidc_test_issuer.py`, starts the API with real OIDC verification, and
+uses fixed owner, auditor, expired-token, and cross-organization identities.
+It is test infrastructure only and must not be exposed or configured as a
+production identity provider. To run the same browser suite locally, build the
+SPA with the test issuer settings before invoking Playwright:
+
+~~~bash
+export E2E_OIDC_ISSUER=http://127.0.0.1:9000
+export E2E_OIDC_AUDIENCE=vulnops-api
+cd frontend
+VITE_OIDC_AUTHORITY="$E2E_OIDC_ISSUER" \
+VITE_OIDC_CLIENT_ID=vulnops-e2e \
+VITE_OIDC_REDIRECT_URI=http://127.0.0.1:4173/auth/callback \
+VITE_OIDC_POST_LOGOUT_REDIRECT_URI=http://127.0.0.1:4173/login \
+VITE_OIDC_SCOPE='openid profile email' \
+pnpm build
+pnpm exec playwright test
+~~~
+
+CI uses these same issuer settings and builds the SPA with them. The browser
+flows cover login, auditor read-only rendering, an owner transition, expired
+tokens, and cross-organization 404 denial; they do not represent production
+IdP integration evidence.
 
 ## Using VulnOps Hub: console + API
 
@@ -131,35 +174,42 @@ Step by step, tested with curl against a fresh database:
 
 ~~~bash
 ORG=http://localhost:8000/api/v1/organizations/org-demo
+export ACCESS_TOKEN='<OIDC access token with the required capability>'
+AUTH=(-H "Authorization: Bearer ${ACCESS_TOKEN}")
 
 # 1. Submit a CycloneDX SBOM (idempotent via Idempotency-Key)
-curl -s -X POST $ORG/sboms -H "Content-Type: application/json" \
+curl -s -X POST $ORG/sboms "${AUTH[@]}" -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[{"type":"library","name":"openssl","version":"3.0.2"}]}'
 
 # 2. Create a case — priority starts the SLA clock (P0=1d P1=3d P2=7d P3=30d P4=90d)
-curl -s -X POST $ORG/cases -H "Content-Type: application/json" \
+curl -s -X POST $ORG/cases "${AUTH[@]}" -H "Content-Type: application/json" \
   -d '{"title":"Patch openssl on demo host","owner_team":"platform","priority":"P1"}'
 # -> {"id":"case_...","status":"new","due_at":"<created + 3 days>","etag":"\"1\""}
 
 # 3. Walk the lifecycle. Ask what is legal, then transition with If-Match
 #    (optimistic locking on the case version).
-curl -s $ORG/cases/<case_id>/allowed-transitions
+curl -s $ORG/cases/<case_id>/allowed-transitions "${AUTH[@]}"
 curl -s -X POST $ORG/cases/<case_id>/transitions -H 'If-Match: "1"' \
-  -H "Content-Type: application/json" -d '{"target":"triage","actor":"alice"}'
+  "${AUTH[@]}" -H "Content-Type: application/json" -d '{"target":"triage"}'
 # repeat with the new etag: triage -> assigned -> in_progress -> awaiting_verification
 
 # 4. Or accept the risk instead of patching. An *approved* decision requires a
 #    distinct approver holding an approver role (risk_approver / security_lead /
 #    policy_admin), evidence ids, and a reason — otherwise it stays pending.
 curl -s -X POST $ORG/cases/<case_id>/risk-decisions -H "Content-Type: application/json" \
+  "${AUTH[@]}" \
   -d '{"type":"risk_accepted","reason":"compensating WAF rule","evidence_ids":["ev-1"],
-       "requested_by":"alice","approver":"bob","approver_role":"security_lead",
        "expires_at":"2026-12-31T00:00:00Z"}'
+# Approval is a separate request made with a distinct approver token:
+# curl -s -X POST $ORG/cases/<case_id>/risk-decisions/<decision_id>/approval \
+#   -H "Authorization: Bearer ${APPROVER_TOKEN}" -H "Content-Type: application/json" \
+#   -d '{"outcome":"approved","reason":"reviewed compensating control"}'
 
 # 5. Prove remediation. status=complete coverage with a valid method closes the
 #    case; failed/partial/stale evidence never does ("never close on missing data").
 curl -s -X POST $ORG/cases/<case_id>/verifications -H "Content-Type: application/json" \
+  "${AUTH[@]}" \
   -d '{"method":"scanner","coverage":{"status":"complete","scope_version":"v2"}}'
 ~~~
 
@@ -176,7 +226,7 @@ Three supported modes (full design: [docs/deployment.md](docs/deployment.md)):
 
 | Mode | Intended use | Stack |
 | --- | --- | --- |
-| Local evaluation | development, demo | `make dev` — API on SQLite, no external services |
+| Local evaluation | development, demo | `make dev` — API on SQLite with a configured OIDC issuer |
 | Docker Compose | single-host evaluation, small teams | API + worker + PostgreSQL + Valkey + MinIO |
 | Production target (not yet certified) | internal enterprise service | Containers on Kubernetes, managed PostgreSQL / object store / queue, OIDC, OpenTelemetry |
 
@@ -189,7 +239,7 @@ Key variables (full list in `.env.example`, parsed in `src/vulnops/config.py`):
 | `REDIS_URL` | – | Ingestion queue; the worker idles when unset |
 | `OBJECT_STORAGE_ENDPOINT` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | – | S3/MinIO for raw source snapshots |
 | `PUBLIC_URL`, `ENVIRONMENT`, `LOG_LEVEL` | `http://localhost:8000`, `development`, `INFO` | Core posture |
-| `OIDC_ISSUER_URL` / `OIDC_AUDIENCE` | – | Reserved for production identity (token enforcement is not wired in the MVP yet — do not expose the API unauthenticated) |
+| `OIDC_ISSUER_URL` / `OIDC_AUDIENCE` | required | OIDC discovery/JWKS issuer and access-token audience; all business `/api/v1` routes require a valid bearer token (health probes remain public) |
 | `DEFECTDOJO_BASE_URL` / `WAZUH_BASE_URL` / `VULNERABILITY_LOOKUP_BASE_URL` | – | Adapter endpoints; disabled while unset |
 
 Production hardening requirements (identity, secrets, network isolation,

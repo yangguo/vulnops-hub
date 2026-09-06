@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/*, fix/*]
+    branches: [main, feat/*, fix/*, codex/*]
   pull_request:
     branches: [main]
 
@@ -10,14 +10,14 @@ jobs:
   lint-type-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install uv
         run: pip install uv
       - name: Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/uv
           key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml', 'uv.lock') }}
@@ -36,6 +36,9 @@ jobs:
       - name: E2E fixture test
         run: uv run pytest tests/e2e -q
       - name: Validate OpenAPI
+        env:
+          ENVIRONMENT: test
+          AUTH_TEST_BYPASS_ENABLED: "true"
         run: |
           uv run python -c "from vulnops.main import create_app; app=create_app(); print(app.openapi()['openapi'])"
           test -f openapi/openapi.yaml
@@ -50,12 +53,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-type-test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t vulnops-hub:test .
       - name: Smoke health
         run: |
-          docker run -d --name hub -p 8000:8000 -e DATABASE_URL=sqlite:///./vulnops.db vulnops-hub:test
+          docker run -d --name hub -p 8000:8000 \
+            -e DATABASE_URL=sqlite:///./vulnops.db \
+            -e ENVIRONMENT=test \
+            -e AUTH_TEST_BYPASS_ENABLED=false \
+            -e OIDC_ISSUER_URL=https://issuer.invalid \
+            -e OIDC_AUDIENCE=vulnops-api \
+            vulnops-hub:test
           sleep 5
           curl -f http://localhost:8000/health/live
           curl -f http://localhost:8000/health/ready
@@ -65,11 +74,11 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22.22.2"
           cache: pnpm
@@ -93,24 +102,35 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: [lint-type-test, frontend]
+    env:
+      E2E_API_URL: http://127.0.0.1:8010
+      E2E_OIDC_ISSUER: http://127.0.0.1:9000
+      E2E_OIDC_AUDIENCE: vulnops-api
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install uv && uv sync --extra dev
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22.22.2"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      - run: pnpm build
+      - name: Build frontend with CI OIDC settings
+        run: pnpm build
         working-directory: frontend
+        env:
+          VITE_OIDC_AUTHORITY: http://127.0.0.1:9000
+          VITE_OIDC_CLIENT_ID: vulnops-e2e
+          VITE_OIDC_REDIRECT_URI: http://127.0.0.1:4173/auth/callback
+          VITE_OIDC_POST_LOGOUT_REDIRECT_URI: http://127.0.0.1:4173/login
+          VITE_OIDC_SCOPE: openid profile email
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: frontend
       - name: E2E smoke

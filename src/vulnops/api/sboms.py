@@ -7,12 +7,32 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.api.schemas import ProblemDetails, SbomResponse, SbomSubmitResponse
+from vulnops.auth.dependencies import (
+    AuthorizationError,
+    authorize_capability,
+    get_principal,
+    require_capability,
+    require_organization,
+)
+from vulnops.auth.models import Principal
 from vulnops.sbom.service import SBOMService
 
-router = APIRouter(tags=["sboms"])
+router = APIRouter(
+    tags=["sboms"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
 
 
-@router.post("/organizations/{org_id}/sboms", status_code=201)
+@router.post(
+    "/organizations/{org_id}/sboms",
+    status_code=201,
+    response_model=SbomSubmitResponse,
+    dependencies=[Depends(require_capability("sbom:write"))],
+)
 async def submit_sbom(
     org_id: str,
     request: Request,
@@ -57,8 +77,18 @@ async def submit_sbom(
     return result
 
 
-@router.get("/organizations/{org_id}/sboms/{sbom_id}")
-async def get_sbom(org_id: str, sbom_id: str, db: Session = Depends(get_db)):
+@router.get(
+    "/organizations/{org_id}/sboms/{sbom_id}",
+    response_model=SbomResponse,
+    dependencies=[Depends(require_organization)],
+)
+async def get_sbom(
+    org_id: str,
+    sbom_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     from sqlalchemy import select
 
     from vulnops.sbom.models import SbomDocument
@@ -73,7 +103,8 @@ async def get_sbom(org_id: str, sbom_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if not doc:
-        raise HTTPException(status_code=404, detail="SBOM not found")
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "sbom:read")
     return {
         "id": doc.id,
         "organization_id": doc.organization_id,

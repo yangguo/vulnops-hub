@@ -1,10 +1,11 @@
 # Deployment Design
 
 > **Document status:** Target deployment architecture with an as-built preview
-> subsection. Only local SQLite evaluation, the checked Docker Compose/Helm
-> assets, and CI container smoke tests are currently verified. OIDC, production
-> certification, backup/restore drills, and full worker topology remain target
-> requirements.
+> subsection. Local SQLite evaluation, the checked Docker Compose/Helm assets,
+> CI container smoke tests, and automated OIDC/RBAC enforcement verification are
+> currently covered. Real production IdP integration, production
+> certification, backup/restore drills, and the full worker topology remain
+> open.
 
 ## 1. Supported deployment posture
 
@@ -17,21 +18,24 @@ Three modes are defined:
 
 | Mode | Intended use | Components |
 | --- | --- | --- |
-| Local evaluation | Developer/demo, disposable data | API on SQLite; optional Vite dev server |
+| Local evaluation | Developer/demo, disposable data | Authenticated API on SQLite; optional Vite dev server |
 | Integrated staging | Adapter contract tests | Local core plus connected sandbox DefectDojo/Vulnerability-Lookup/Wazuh |
 | Production target | Internal enterprise service | Kubernetes/containers, managed PostgreSQL/object store, queue, OIDC, observability |
 
 ### As-built preview
 
-- Bare local mode runs FastAPI against `vulnops.db`; no external service is
-  required for API and console evaluation.
+- Bare local mode runs FastAPI against `vulnops.db`; it requires a configured
+  OIDC issuer for API and console evaluation.
 - Docker Compose starts the API, ingestion worker, PostgreSQL, Valkey, and
-  MinIO with development credentials.
+  MinIO with development credentials; the API remains bearer-token protected.
 - The multi-stage image builds and serves the Vue SPA and is smoke-tested in
   CI through `/health/live`, `/health/ready`, and `/`.
 - Helm manifests are templates, not evidence of a production deployment.
-- The authentication settings are reserved but unenforced, so none of these
-  modes is currently certified for untrusted network exposure.
+- OIDC bearer validation, organization scope, and route capabilities are
+  enforced server-side. Missing issuer configuration fails startup closed.
+- The loopback-only `tests/e2e/oidc_test_issuer.py` provides CI/local browser
+  verification identities; it is test infrastructure and is not a deployment
+  identity provider.
 
 DefectDojo, Vulnerability-Lookup, Wazuh, Greenbone, and ITSM platforms are
 external services. A deployment may enable only the adapters it operates.
@@ -74,7 +78,7 @@ or raw source snapshots.
 | Configuration group | Examples |
 | --- | --- |
 | Core | public URL, timezone, database/object-store endpoints, queue limits |
-| Identity | issuer URL, audience, group-to-role mapping, service-token issuers |
+| Identity | issuer URL, audience, claim names, group-to-role mapping, service-token issuers |
 | Source adapters | base URL, schedule, cursor policy, rate limit, enabled source families |
 | External platforms | DefectDojo, Vulnerability-Lookup, Wazuh, Greenbone, Jira endpoints and mappings |
 | Risk/SLA | active policy version, escalation routes, calendar, exception approval policy |
@@ -84,6 +88,42 @@ or raw source snapshots.
 Credentials live in a secret manager, Kubernetes Secrets synchronized from it,
 or an equivalent secret-injection mechanism. Rotate adapter tokens without
 redeploying code and make all access scopes minimal.
+
+### Authentication configuration
+
+Set these values in the API environment for local, staging, and production
+deployments:
+
+| Variable | Requirement | Purpose |
+| --- | --- | --- |
+| `OIDC_ISSUER_URL` | required | HTTPS issuer URL used for discovery and JWKS retrieval (HTTP is only for the loopback test fixture) |
+| `OIDC_AUDIENCE` | required | Audience accepted on API access tokens |
+| `OIDC_ALLOWED_ALGORITHMS` | default `RS256` | Allowed asymmetric signing algorithms |
+| `OIDC_ORGANIZATION_CLAIM` | default `organizations` | Claim containing organization IDs |
+| `OIDC_ROLE_CLAIM` | default `roles` | Human role claim |
+| `OIDC_SERVICE_SCOPE_CLAIM` | default `scope` | Named service-token scope claim |
+| `OIDC_PRINCIPAL_TYPE_CLAIM` | default `principal_type` | Required `human` or `service` claim |
+
+The API fails startup when the issuer or audience is absent. The explicit
+`AUTH_TEST_BYPASS_ENABLED=true` mode is accepted only with
+`ENVIRONMENT=test`; it is reserved for backend test fixtures and must not be
+enabled in a deployed environment. The server is the
+authorization authority even when the console hides controls based on token
+claims.
+
+The frontend receives its non-secret OIDC client settings at build time through
+`frontend/.env` (see `frontend/.env.example`). The redirect URI must be
+registered with the configured provider. Docker Compose passes the API OIDC
+settings from the root `.env`; a blank value intentionally causes the API to
+fail closed rather than starting an unauthenticated service.
+
+For reproducible browser verification, the Playwright configuration starts the
+loopback test issuer, configures the API with `AUTH_TEST_BYPASS_ENABLED=false`,
+and builds the SPA with `VITE_OIDC_AUTHORITY=http://127.0.0.1:9000`, client ID
+`vulnops-e2e`, and the Playwright callback URL. The resulting tests prove login,
+auditor read-only behavior, owner transition authorization, expired-token
+rejection, and cross-organization 404 denial. This fixture evidence does not
+claim integration with a production IdP.
 
 ## 4. Storage and recovery
 

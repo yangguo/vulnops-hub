@@ -1,20 +1,122 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
 from vulnops.api.schemas import (
+    AllowedTransitionsResponse,
+    CaseCreateRequest,
+    CaseCreateResponse,
+    CaseDetailResponse,
     CaseListResponse,
+    ProblemDetails,
+    RiskApprovalRequest,
+    RiskApprovalResponse,
+    RiskDecisionCreateResponse,
+    RiskDecisionRequest,
     RiskDecisionsResponse,
+    TransitionRequest,
+    TransitionResponse,
     VerificationsResponse,
+    VerificationSubmitResponse,
+    json_request_body,
+    validate_request_body,
 )
+from vulnops.auth.dependencies import (
+    AuthorizationError,
+    authorize_capability,
+    get_principal,
+    require_capability,
+    require_organization,
+)
+from vulnops.auth.models import Principal
 from vulnops.cases.models import ALLOWED_TRANSITIONS, RemediationCase
 from vulnops.cases.service import CaseService
 
-router = APIRouter(tags=["cases"])
+router = APIRouter(
+    tags=["cases"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
+
+
+_CLIENT_IDENTITY_FIELDS = frozenset(
+    {
+        "actor",
+        "actor_id",
+        "actorId",
+        "actor_role",
+        "actorRole",
+        "requested_by",
+        "requestedBy",
+        "requestedById",
+        "requested_by_id",
+        "requested_by_role",
+        "requestedByRole",
+        "requester",
+        "requesterId",
+        "requester_id",
+        "requester_role",
+        "requesterRole",
+        "approver",
+        "approverId",
+        "approver_id",
+        "approved_by",
+        "approvedBy",
+        "approvedById",
+        "approved_by_id",
+        "approver_role",
+        "approverRole",
+        "approved_by_role",
+        "approvedByRole",
+    }
+)
+
+
+def _reject_client_identity_fields(data: object) -> dict:
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "type": "https://hub.example/problems/invalid-request-body",
+                "title": "Invalid Request Body",
+                "status": 422,
+                "code": "invalid_request_body",
+                "detail": "request body must be a JSON object",
+            },
+        )
+    supplied = sorted(_CLIENT_IDENTITY_FIELDS.intersection(data))
+    if supplied:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "type": "https://hub.example/problems/identity-fields-forbidden",
+                "title": "Identity Fields Forbidden",
+                "status": 422,
+                "code": "identity_fields_forbidden",
+                "detail": "workflow actor identity is derived from the authenticated principal",
+                "fields": supplied,
+            },
+        )
+    return data
+
+
+def _risk_problem(detail: str, *, code: str = "invalid_risk_decision") -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={
+            "type": f"https://hub.example/problems/{code}",
+            "title": "Invalid Risk Decision"
+            if code == "invalid_risk_decision"
+            else "Invalid Risk Approval",
+            "status": 422,
+            "code": code,
+            "detail": detail,
+        },
+    )
 
 
 def _serialize_case(case: RemediationCase) -> dict:
@@ -93,25 +195,25 @@ def _parse_if_match(if_match: str | None) -> int | None:
         raise ValueError(f"invalid If-Match value: {original}")
 
 
-@router.post("/organizations/{org_id}/cases")
+@router.post(
+    "/organizations/{org_id}/cases",
+    response_model=CaseCreateResponse,
+    openapi_extra=json_request_body(CaseCreateRequest),
+    dependencies=[Depends(require_capability("case:write"))],
+)
 async def create_case(org_id: str, request: Request, db: Session = Depends(get_db)):
-    data = await request.json()
-    title = data.get("title") or data.get("name") or "Untitled case"
-    owner_team = data.get("owner_team") or data.get("owner") or "unassigned"
-    priority = data.get("priority", "P2")
-    exposures = data.get("exposures") or data.get("exposure_ids") or []
-    policy_version = data.get("policy_version")
-    assignee = data.get("assignee")
+    data = _reject_client_identity_fields(await request.json())
+    payload = validate_request_body(CaseCreateRequest, data, code="invalid_request_body")
 
     svc = CaseService(db)
     case = svc.create_case(
         organization_id=org_id,
-        title=title,
-        owner_team=owner_team,
-        priority=priority,
-        exposures=exposures,
-        policy_version=policy_version,
-        assignee=assignee,
+        title=payload.title,
+        owner_team=payload.owner_team,
+        priority=payload.priority,
+        exposures=payload.exposures,
+        policy_version=payload.policy_version,
+        assignee=payload.assignee,
     )
     return {
         "id": case.id,
@@ -127,7 +229,11 @@ async def create_case(org_id: str, request: Request, db: Session = Depends(get_d
     }
 
 
-@router.get("/organizations/{org_id}/cases", response_model=CaseListResponse)
+@router.get(
+    "/organizations/{org_id}/cases",
+    response_model=CaseListResponse,
+    dependencies=[Depends(require_capability("case:read"))],
+)
 async def list_cases(
     org_id: str,
     status: str | None = None,
@@ -162,45 +268,82 @@ async def list_cases(
     }
 
 
-@router.get("/organizations/{org_id}/cases/{case_id}")
-async def get_case(org_id: str, case_id: str, db: Session = Depends(get_db)):
+@router.get(
+    "/organizations/{org_id}/cases/{case_id}",
+    response_model=CaseDetailResponse,
+    dependencies=[Depends(require_organization)],
+)
+async def get_case(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     return _serialize_case(case)
 
 
-@router.get("/organizations/{org_id}/cases/{case_id}/allowed-transitions")
-async def allowed_transitions(org_id: str, case_id: str, db: Session = Depends(get_db)):
+@router.get(
+    "/organizations/{org_id}/cases/{case_id}/allowed-transitions",
+    response_model=AllowedTransitionsResponse,
+    dependencies=[Depends(require_organization)],
+)
+async def allowed_transitions(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
+    if case.organization_id != org_id:
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     allowed = ALLOWED_TRANSITIONS.get(case.status, [])
     return {"case_id": case_id, "status": case.status, "allowed": allowed, "current": case.status}
 
 
-@router.post("/organizations/{org_id}/cases/{case_id}/transitions")
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/transitions",
+    response_model=TransitionResponse,
+    openapi_extra=json_request_body(TransitionRequest),
+    dependencies=[Depends(require_organization)],
+)
 async def transition_case(
     org_id: str,
     case_id: str,
     request: Request,
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
     if_match: str | None = Header(default=None, alias="If-Match"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
-    data = await request.json()
-    target = data.get("target") or data.get("to") or data.get("next_status")
-    if not target:
-        raise HTTPException(status_code=400, detail="target required")
-    reason = data.get("reason")
-    actor = data.get("actor") or data.get("requested_by") or "api"
-    extra = {k: v for k, v in data.items() if k not in ("target", "reason", "actor")}
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+        if case.organization_id != org_id:
+            raise AuthorizationError("resource_not_found")
+    except ValueError:
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:write")
+
+    data = _reject_client_identity_fields(await request.json())
+    payload = validate_request_body(TransitionRequest, data, code="invalid_request_body")
+    target = payload.target
+    reason = payload.reason
+    extra = {}
 
     try:
         expected_version = _parse_if_match(if_match)
@@ -215,23 +358,21 @@ async def transition_case(
                 "detail": str(ve),
             },
         )
-    svc = CaseService(db)
-    try:
-        # Verify org match
-        case = svc.get_case(case_id)
-        if case.organization_id != org_id:
-            raise HTTPException(status_code=404, detail="Case not found")
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
 
     try:
         updated = svc.transition(
             case_id,
             target,
-            actor=actor,
+            actor=principal.subject,
             reason=reason,
             extra=extra,
             expected_version=expected_version,
+            actor_provenance="authenticated_claim",
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
         msg = str(ve).lower()
@@ -267,40 +408,37 @@ async def transition_case(
     }
 
 
-@router.post("/organizations/{org_id}/cases/{case_id}/risk-decisions")
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/risk-decisions",
+    response_model=RiskDecisionCreateResponse,
+    openapi_extra=json_request_body(RiskDecisionRequest),
+    dependencies=[Depends(require_organization)],
+)
 async def create_risk_decision(
     org_id: str,
     case_id: str,
     request: Request,
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
     if_match: str | None = Header(default=None, alias="If-Match"),
 ):
-    data = await request.json()
-    type_ = data.get("type")
-    reason = data.get("reason") or "no reason"
-    scope = data.get("scope")
-    compensating = data.get("compensating_controls") or data.get("compensatingControls")
-    evidence_ids = data.get("evidence_ids") or data.get("evidenceIds") or []
-    requested_by = (
-        data.get("requested_by") or data.get("requestedBy") or data.get("requester") or "unknown"
-    )
-    approver = data.get("approver") or data.get("approved_by")
-    approver_role = data.get("approver_role") or data.get("approverRole")
-    expires_at_str = data.get("expires_at") or data.get("expiresAt")
-    expires_at = None
-    if expires_at_str:
-        try:
-            expires_at = datetime.fromisoformat(expires_at_str)
-        except ValueError:
-            expires_at = None
-
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
         if case.organization_id != org_id:
-            raise HTTPException(status_code=404, detail="Case not found")
+            raise AuthorizationError("resource_not_found")
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "risk:request")
+
+    data = _reject_client_identity_fields(await request.json())
+    payload = validate_request_body(RiskDecisionRequest, data, code="invalid_risk_decision")
+    type_ = payload.type
+    reason = payload.reason
+    scope = payload.scope
+    compensating = payload.compensating_controls
+    evidence_ids = payload.evidence_ids
+    expires_at = payload.expires_at
 
     # Handle If-Match if provided - check version
     if if_match:
@@ -316,23 +454,18 @@ async def create_risk_decision(
             expires_at=expires_at,
             compensating_controls=compensating,
             evidence_ids=evidence_ids,
-            requested_by=requested_by,
-            approver=approver,
-            approver_role=approver_role,
-            actor=requested_by,
+            requested_by=principal.subject,
+            actor=principal.subject,
             scope=scope,
+            actor_provenance="authenticated_claim",
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "type": "https://hub.example/problems/invalid-transition",
-                "title": "Invalid Risk Decision",
-                "status": 422,
-                "code": "invalid_transition",
-                "detail": str(ve),
-            },
-        )
+        raise _risk_problem(str(ve))
 
     return {
         "id": decision.id,
@@ -344,18 +477,97 @@ async def create_risk_decision(
     }
 
 
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/risk-decisions/{decision_id}/approval",
+    response_model=RiskApprovalResponse,
+    openapi_extra=json_request_body(RiskApprovalRequest),
+    dependencies=[Depends(require_organization)],
+)
+async def approve_risk_decision(
+    org_id: str,
+    case_id: str,
+    decision_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+        if case.organization_id != org_id:
+            raise AuthorizationError("resource_not_found")
+        decision = svc.get_risk_decision(decision_id)
+        if decision.case_id != case_id:
+            raise AuthorizationError("resource_not_found")
+    except ValueError:
+        raise AuthorizationError("resource_not_found")
+
+    authorize_capability(request, principal, "risk:approve")
+    data = _reject_client_identity_fields(await request.json())
+    payload = validate_request_body(RiskApprovalRequest, data, code="invalid_risk_approval")
+    outcome = payload.outcome
+    reason = payload.reason
+
+    try:
+        decision = svc.approve_risk_decision(
+            decision.id,
+            outcome=outcome,
+            reason=reason,
+            actor=principal.subject,
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_capabilities=principal.capabilities,
+            actor_provenance="authenticated_claim",
+            actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
+        )
+    except ValueError as ve:
+        if "risk decision conflict" in str(ve).lower():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "type": "https://hub.example/problems/risk-decision-conflict",
+                    "title": "Risk Decision Conflict",
+                    "status": 409,
+                    "code": "risk_decision_conflict",
+                    "detail": str(ve),
+                },
+            )
+        raise _risk_problem(str(ve), code="invalid_risk_approval")
+
+    return {
+        "id": decision.id,
+        "case_id": decision.case_id,
+        "type": decision.type,
+        "status": decision.status,
+        "approver": decision.approver,
+        "approver_role": decision.approver_role,
+        "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
+        "case_status": svc.get_case(case_id).status,
+    }
+
+
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/risk-decisions",
     response_model=RiskDecisionsResponse,
+    dependencies=[Depends(require_organization)],
 )
-async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(get_db)):
+async def list_risk_decisions(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     decisions = svc.list_risk_decisions(case_id)
     return {"items": [_serialize_risk_decision(d) for d in decisions]}
 
@@ -363,27 +575,49 @@ async def list_risk_decisions(org_id: str, case_id: str, db: Session = Depends(g
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/verifications",
     response_model=VerificationsResponse,
+    dependencies=[Depends(require_organization)],
 )
-async def list_verifications(org_id: str, case_id: str, db: Session = Depends(get_db)):
+async def list_verifications(
+    org_id: str,
+    case_id: str,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
     svc = CaseService(db)
     try:
         case = svc.get_case(case_id)
     except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
     if case.organization_id != org_id:
-        raise HTTPException(status_code=404, detail="Case not found")
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "case:read")
     verifications = svc.list_verifications(case_id)
     return {"items": [_serialize_verification(v) for v in verifications]}
 
 
-@router.post("/organizations/{org_id}/cases/{case_id}/verifications")
+@router.post(
+    "/organizations/{org_id}/cases/{case_id}/verifications",
+    response_model=VerificationSubmitResponse,
+    dependencies=[Depends(require_organization)],
+)
 async def submit_verification(
     org_id: str,
     case_id: str,
     request: Request,
+    principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ):
-    data = await request.json()
+    svc = CaseService(db)
+    try:
+        case = svc.get_case(case_id)
+        if case.organization_id != org_id:
+            raise AuthorizationError("resource_not_found")
+    except ValueError:
+        raise AuthorizationError("resource_not_found")
+    authorize_capability(request, principal, "verification:write")
+
+    data = _reject_client_identity_fields(await request.json())
     method = data.get("method") or data.get("type") or "unknown"
     evidence_ids = (
         data.get("evidence_ids") or data.get("evidenceIds") or data.get("evidence_ids") or []
@@ -391,22 +625,20 @@ async def submit_verification(
     coverage = data.get("coverage")
     asserted = data.get("asserted_result") or data.get("assertedResult")
 
-    svc = CaseService(db)
-    try:
-        case = svc.get_case(case_id)
-        if case.organization_id != org_id:
-            raise HTTPException(status_code=404, detail="Case not found")
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Case not found")
-
     try:
         verification = svc.verify(
             case_id,
             method=method,
             evidence_ids=evidence_ids,
             coverage=coverage,
-            actor=data.get("actor") or "api",
+            actor=principal.subject,
             asserted_result=asserted,
+            actor_provenance="authenticated_claim",
+            actor_principal_type=principal.principal_type.value,
+            actor_roles=principal.roles,
+            actor_scopes=principal.scopes,
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
         )
     except ValueError as ve:
         msg = str(ve).lower()

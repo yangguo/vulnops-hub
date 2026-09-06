@@ -17,4 +17,12 @@ describe('orgStore', () => {
     expect(localStorage.getItem('vulnops.org')).toBe('acme')
     expect(useOrgStore().org).toBe('acme')
   })
+
+  it('clears persisted org back to the default', () => {
+    const store = useOrgStore()
+    store.setOrg('acme')
+    store.clear()
+    expect(store.org).toBe('org-demo')
+    expect(localStorage.getItem('vulnops.org')).toBeNull()
+  })
 })

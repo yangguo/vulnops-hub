@@ -47,13 +47,16 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      ENVIRONMENT: development
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: postgresql+psycopg2://vulnops:vulnops@postgres:5432/vulnops
       REDIS_URL: redis://valkey:6379/0
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_BUCKET: vulnops-snapshots
       OBJECT_STORAGE_ACCESS_KEY: minioadmin
       OBJECT_STORAGE_SECRET_KEY: minioadmin
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      AUTH_TEST_BYPASS_ENABLED: ${AUTH_TEST_BYPASS_ENABLED:-false}
     ports:
       - "8000:8000"
     depends_on:
