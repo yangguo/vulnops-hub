@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from './auth'
+import { useOrgStore } from './org'
 
 const oidcDoubles = vi.hoisted(() => {
   const callbacks: {
@@ -63,6 +64,8 @@ function makeUser(overrides: Record<string, unknown> = {}) {
 describe('auth store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    localStorage.clear()
+    sessionStorage.clear()
     vi.clearAllMocks()
     oidcDoubles.manager.getUser.mockResolvedValue(null)
     oidcDoubles.manager.signinRedirect.mockResolvedValue(undefined)
@@ -150,5 +153,56 @@ describe('auth store', () => {
 
     expect(store.hasCapability('case:write')).toBe(false)
     expect(store.hasCapability('sbom:write')).toBe(true)
+  })
+
+  it('purges org and SBOM history on logout so a second user cannot inherit prior state', async () => {
+    const org = useOrgStore()
+    org.setOrg('acme-user-a')
+    localStorage.setItem(
+      'vulnops.sbom-history',
+      JSON.stringify([{ at: '2026-01-01T00:00:00Z', org: 'acme-user-a', sbom_id: 'sbom-a', sha: 'abc' }]),
+    )
+
+    const userA = useAuthStore()
+    await userA.handleCallback()
+    expect(userA.isAuthenticated).toBe(true)
+
+    await userA.logout()
+
+    expect(localStorage.getItem('vulnops.org')).toBeNull()
+    expect(localStorage.getItem('vulnops.sbom-history')).toBeNull()
+    expect(useOrgStore().org).toBe('org-demo')
+    expect(userA.isAuthenticated).toBe(false)
+
+    // Second user starts from a clean browser-bound workspace.
+    setActivePinia(createPinia())
+    const userB = useAuthStore()
+    oidcDoubles.manager.signinCallback.mockResolvedValueOnce(
+      makeUser({
+        profile: {
+          sub: 'user-b',
+          name: 'User B',
+          organizations: ['other-org'],
+          roles: ['viewer'],
+          principal_type: 'human',
+        },
+      }),
+    )
+    await userB.handleCallback()
+    expect(useOrgStore().org).toBe('org-demo')
+    expect(localStorage.getItem('vulnops.sbom-history')).toBeNull()
+  })
+
+  it('also purges org and SBOM history on unauthorized/expiry handling', async () => {
+    useOrgStore().setOrg('acme-user-a')
+    localStorage.setItem('vulnops.sbom-history', JSON.stringify([{ sbom_id: 'sbom-a' }]))
+    const store = useAuthStore()
+    await store.handleCallback()
+
+    store.handleUnauthorized()
+
+    expect(localStorage.getItem('vulnops.org')).toBeNull()
+    expect(localStorage.getItem('vulnops.sbom-history')).toBeNull()
+    expect(useOrgStore().org).toBe('org-demo')
   })
 })

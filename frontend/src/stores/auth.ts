@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import type { User } from 'oidc-client-ts'
 import { oidcUserManager } from '../auth/oidc'
+import { returnToFromState } from '../auth/safeReturnTo'
+import { clearUserBoundBrowserState } from '../auth/sessionCleanup'
 
 const ROLE_CAPABILITIES: Record<string, readonly string[]> = {
   viewer: ['case:read', 'sbom:read'],
@@ -107,13 +109,6 @@ function isExpired(user: User | null): boolean {
   return typeof user.expires_at === 'number' && user.expires_at <= Math.floor(Date.now() / 1000)
 }
 
-function returnToFromState(state: unknown): string | null {
-  if (!state || typeof state !== 'object' || !('returnTo' in state)) return null
-  const returnTo = state.returnTo
-  return typeof returnTo === 'string' && returnTo.startsWith('/') && !returnTo.startsWith('//')
-    ? returnTo
-    : null
-}
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -195,12 +190,14 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       this.initialized = true
       this.error = ''
+      clearUserBoundBrowserState()
       await oidcUserManager.signoutRedirect()
     },
     handleUnauthorized() {
       this.user = null
       this.initialized = true
       this.error = '登录已失效，请重新登录'
+      clearUserBoundBrowserState()
       void oidcUserManager.removeUser().catch(() => undefined)
     },
     bindEvents() {

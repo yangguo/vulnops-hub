@@ -42,6 +42,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElCard } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { safeReturnTo } from '../auth/safeReturnTo'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,11 +50,6 @@ const auth = useAuthStore()
 const loading = ref(false)
 const errorMessage = ref('')
 const isCallback = computed(() => route.path === '/auth/callback')
-
-function safeReturnTo(value: unknown): string {
-  if (typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')) return value
-  return '/'
-}
 
 async function startLogin() {
   loading.value = true

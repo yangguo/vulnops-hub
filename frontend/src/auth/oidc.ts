@@ -13,9 +13,22 @@ function currentOrigin(): string {
   return typeof window === 'undefined' ? '' : window.location.origin
 }
 
+/** Drop leftover oidc-client state/user keys from localStorage (pre-sessionStorage default). */
+export function clearStaleOidcLocalStorageState(): void {
+  if (typeof localStorage === 'undefined') return
+  const stale: string[] = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (!key) continue
+    if (key.startsWith('oidc.') || key.includes('oidc.user:')) stale.push(key)
+  }
+  for (const key of stale) localStorage.removeItem(key)
+}
+
 /** Build the browser OIDC settings without putting credentials in browser storage. */
 export function getOidcSettings(env: OidcEnvironment = runtimeEnvironment): UserManagerSettings {
   const origin = currentOrigin()
+  clearStaleOidcLocalStorageState()
 
   return {
     authority: env.VITE_OIDC_AUTHORITY?.trim() ?? '',
@@ -28,6 +41,8 @@ export function getOidcSettings(env: OidcEnvironment = runtimeEnvironment): User
     // The authorization request state must survive the full-page provider redirect;
     // the user (and its access/refresh tokens) must not.
     userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    // Prefer sessionStorage over the library localStorage default for transient OIDC state.
+    stateStore: new WebStorageStateStore({ store: sessionStorage }),
     automaticSilentRenew: false,
     monitorSession: false,
     disablePKCE: false,

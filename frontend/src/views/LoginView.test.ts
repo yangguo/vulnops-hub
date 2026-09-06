@@ -59,4 +59,12 @@ describe('LoginView', () => {
     expect(authDouble.handleCallback).toHaveBeenCalledWith()
     expect(router.currentRoute.value.fullPath).toBe('/cases/c1')
   })
+
+  it('rejects open-redirect query values and falls back to /', async () => {
+    const { wrapper } = await mountAt('/login?redirect=https%3A%2F%2Fevil.example%2Fphish')
+
+    await wrapper.get('button.el-button').trigger('click')
+
+    expect(authDouble.login).toHaveBeenCalledWith('/')
+  })
 })

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { User, WebStorageStateStore } from 'oidc-client-ts'
-import { createOidcUserManager, getOidcSettings } from './oidc'
+import { clearStaleOidcLocalStorageState, createOidcUserManager, getOidcSettings } from './oidc'
 
 const oidcEnv = {
   VITE_OIDC_AUTHORITY: 'https://idp.example.test/realms/vulnops',
@@ -30,6 +30,31 @@ describe('OIDC configuration', () => {
     expect(settings.client_id).toBe(oidcEnv.VITE_OIDC_CLIENT_ID)
     expect(settings.redirect_uri).toBe(oidcEnv.VITE_OIDC_REDIRECT_URI)
     expect(settings.userStore).toBeInstanceOf(WebStorageStateStore)
+    expect(settings.stateStore).toBeInstanceOf(WebStorageStateStore)
+  })
+
+  it('stores transient OIDC state in sessionStorage, not localStorage', async () => {
+    const settings = getOidcSettings(oidcEnv)
+    await settings.stateStore!.set('oidc.regression.state', 'state-value')
+
+    expect(sessionStorage.length).toBeGreaterThan(0)
+    expect([...Array(localStorage.length)].map((_, i) => localStorage.key(i))).not.toContain(
+      'oidc.regression.test',
+    )
+    const values = [...Array(localStorage.length)].map((_, i) => localStorage.getItem(localStorage.key(i)!))
+    expect(values).not.toContain('state-value')
+  })
+
+  it('clears stale oidc.* keys left in localStorage from older defaults', () => {
+    localStorage.setItem('oidc.user:https://idp/client', '{"access_token":"leak"}')
+    localStorage.setItem('oidc.123.state', 'stale')
+    localStorage.setItem('vulnops.org', 'keep-me')
+
+    clearStaleOidcLocalStorageState()
+
+    expect(localStorage.getItem('oidc.user:https://idp/client')).toBeNull()
+    expect(localStorage.getItem('oidc.123.state')).toBeNull()
+    expect(localStorage.getItem('vulnops.org')).toBe('keep-me')
   })
 
   it('keeps access and refresh tokens out of browser storage', async () => {
@@ -55,7 +80,13 @@ describe('OIDC configuration', () => {
       refresh_token: 'refresh-token',
     })
     expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
+    // userStore is in-memory; sessionStorage may only hold OIDC state, never tokens
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const key = sessionStorage.key(index)!
+      const value = sessionStorage.getItem(key) || ''
+      expect(value).not.toContain('access-token')
+      expect(value).not.toContain('refresh-token')
+    }
 
     await manager.removeUser()
   })
