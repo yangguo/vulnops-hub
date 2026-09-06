@@ -99,6 +99,11 @@ def test_authenticated_operations_publish_bearer_security_and_problem_schemas():
         assert "401" not in operation["responses"]
         assert "403" not in operation["responses"]
 
+    # Compatibility health alias is intentionally hidden from the contract
+    # and remains public, like the canonical health probes.
+    assert "/api/v1/health" not in schema["paths"]
+    assert TestClient(create_app()).get("/api/v1/health").status_code == 200
+
 
 def test_authenticated_contract_publishes_actor_free_workflow_requests():
     schema = create_app().openapi()
@@ -144,6 +149,50 @@ def test_authenticated_contract_publishes_actor_free_workflow_requests():
         assert forbidden.isdisjoint(body.get("properties", {}))
         assert body["additionalProperties"] is False
 
+    assert transition_body["required"] == ["target"]
     assert "target" in transition_body["properties"]
+    assert "to" not in transition_body["properties"]
+    assert "next_status" not in transition_body["properties"]
+    assert risk_request_body["required"] == ["type", "reason", "evidence_ids", "expires_at"]
     assert "type" in risk_request_body["properties"]
+    assert risk_request_body["properties"]["type"]["enum"] == [
+        "risk_accepted",
+        "waiver",
+        "compensating_control",
+        "false_positive",
+        "not_affected",
+    ]
+    assert approval_body["required"] == ["outcome", "reason"]
     assert "outcome" in approval_body["properties"]
+    assert "decision" not in approval_body["properties"]
+
+
+def test_checked_in_openapi_matches_runtime_schema():
+    checked_in = yaml.safe_load(pathlib.Path("openapi/openapi.yaml").read_text())
+    assert checked_in == create_app().openapi()
+
+
+def test_bounded_console_responses_are_typed():
+    schema = create_app().openapi()
+    expected = {
+        ("/api/v1/organizations/{org_id}/cases/{case_id}", "get", "200", "CaseDetailResponse"),
+        (
+            "/api/v1/organizations/{org_id}/cases/{case_id}/allowed-transitions",
+            "get",
+            "200",
+            "AllowedTransitionsResponse",
+        ),
+        (
+            "/api/v1/organizations/{org_id}/cases/{case_id}/verifications",
+            "post",
+            "200",
+            "VerificationSubmitResponse",
+        ),
+        ("/api/v1/organizations/{org_id}/sboms", "post", "201", "SbomSubmitResponse"),
+        ("/api/v1/organizations/{org_id}/sboms/{sbom_id}", "get", "200", "SbomResponse"),
+    }
+    for path, method, status, name in expected:
+        response = schema["paths"][path][method]["responses"][status]
+        assert response["content"]["application/json"]["schema"] == {
+            "$ref": f"#/components/schemas/{name}"
+        }

@@ -7,8 +7,10 @@ import type {
   RiskDecisionCreateResponse,
   RiskDecisionRequest,
   RiskDecisionsResponse,
+  SbomResponse,
+  SbomSubmitResponse,
   TransitionResponse,
-  VerificationItem,
+  VerificationSubmitResponse,
   VerificationsResponse,
 } from './types'
 
@@ -40,34 +42,36 @@ export function configureApiClient(config: ApiClientConfig = {}): void {
   unauthorizedHandler = config.onUnauthorized
 }
 
-function headersRecord(headers: HeadersInit | undefined): Record<string, string> {
-  if (!headers) return {}
-  if (headers instanceof Headers) {
-    const result: Record<string, string> = {}
-    headers.forEach((value, key) => {
-      result[key] = value
-    })
-    return result
-  }
-  if (Array.isArray(headers)) return Object.fromEntries(headers)
-  return { ...headers }
+interface RequestContext {
+  accessTokenProvider: AccessTokenProvider
+  unauthorizedHandler?: UnauthorizedHandler
 }
 
-async function authenticatedInit(init: RequestInit): Promise<RequestInit> {
-  const token = await accessTokenProvider()
-  const headers = headersRecord(init.headers)
+async function authenticatedInit(init: RequestInit, provider: AccessTokenProvider): Promise<RequestInit> {
+  const token = await provider()
+  const headers = new Headers(init.headers)
+  for (const name of headers.keys()) {
+    if (name.toLowerCase() === 'authorization') headers.delete(name)
+  }
   if (typeof token === 'string' && token.trim()) {
-    headers.Authorization = `Bearer ${token.trim()}`
+    headers.set('Authorization', `Bearer ${token.trim()}`)
   }
   return { ...init, headers }
 }
 
-async function request<T>(path: string, init: RequestInit = {}, allowRetry = true): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  allowRetry = true,
+  context?: RequestContext,
+): Promise<T> {
+  const requestContext =
+    context ?? { accessTokenProvider, unauthorizedHandler }
   let resp: Response
   try {
-    resp = await fetch(path, await authenticatedInit(init))
+    resp = await fetch(path, await authenticatedInit(init, requestContext.accessTokenProvider))
   } catch {
-    if (allowRetry) return request<T>(path, init, false)
+    if (allowRetry) return request<T>(path, init, false, requestContext)
     throw new ApiError(0, 'network_error', '无法连接服务器，请检查后端是否运行')
   }
   if (resp.status === 204) return undefined as T
@@ -77,15 +81,19 @@ async function request<T>(path: string, init: RequestInit = {}, allowRetry = tru
   if (!resp.ok) {
     const raw = body && (body.detail ?? body.title)
     const nested = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : null
+    const fallback =
+      resp.status === 401
+        ? { code: 'authentication_required', message: 'Authentication required' }
+        : { code: 'error', message: resp.statusText || 'Request failed' }
     const message =
       nested != null
         ? String(nested.detail ?? nested.title ?? JSON.stringify(nested))
         : typeof raw === 'string' && raw
           ? raw
-          : resp.statusText
-    const code = body?.code ?? (nested?.code as string | undefined) ?? 'error'
+          : fallback.message
+    const code = body?.code ?? (nested?.code as string | undefined) ?? fallback.code
     const error = new ApiError(resp.status, code, message)
-    if (resp.status === 401) unauthorizedHandler?.(error)
+    if (resp.status === 401) requestContext.unauthorizedHandler?.(error)
     throw error
   }
   return body as T
@@ -141,7 +149,7 @@ export const apiClient = {
   listRiskDecisions(org: string, caseId: string): Promise<RiskDecisionsResponse> {
     return request(`/api/v1/organizations/${org}/cases/${caseId}/risk-decisions`)
   },
-  submitVerification(org: string, caseId: string, payload: Record<string, unknown>): Promise<VerificationItem> {
+  submitVerification(org: string, caseId: string, payload: Record<string, unknown>): Promise<VerificationSubmitResponse> {
     return request(
       `/api/v1/organizations/${org}/cases/${caseId}/verifications`,
       jsonInit('POST', payload),
@@ -150,11 +158,14 @@ export const apiClient = {
   listVerifications(org: string, caseId: string): Promise<VerificationsResponse> {
     return request(`/api/v1/organizations/${org}/cases/${caseId}/verifications`)
   },
-  submitSbom(org: string, body: unknown, idempotencyKey: string): Promise<Record<string, unknown>> {
+  submitSbom(org: string, body: unknown, idempotencyKey: string): Promise<SbomSubmitResponse> {
     return request(
       `/api/v1/organizations/${org}/sboms`,
       jsonInit('POST', body, { 'Idempotency-Key': idempotencyKey }),
     )
+  },
+  getSbom(org: string, sbomId: string): Promise<SbomResponse> {
+    return request(`/api/v1/organizations/${org}/sboms/${sbomId}`)
   },
   getHealthLive(): Promise<{ service: string; version: string }> {
     return request('/health/live')

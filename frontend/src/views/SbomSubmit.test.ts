@@ -16,7 +16,14 @@ describe('SbomSubmitView', () => {
 
   it('submits parsed JSON with an idempotency key and records history', async () => {
     vi.mocked(apiClient.submitSbom).mockResolvedValue({
-      sbom_id: 'sbom_1', content_sha256: 'abc', status: 'accepted',
+      id: 'sbom_1',
+      sbom_id: 'sbom_1',
+      submission_id: 'sub_sbom_1',
+      content_sha256: 'abc',
+      content_hash: 'abc',
+      digest: 'abc',
+      status: 'accepted',
+      received_at: '2099-01-01T00:00:00Z',
     })
     useOrgStore().setOrg('acme')
     const w = mount(SbomSubmitView)

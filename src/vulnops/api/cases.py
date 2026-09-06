@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
 from vulnops.api.schemas import (
+    AllowedTransitionsResponse,
+    CaseCreateResponse,
+    CaseDetailResponse,
     CaseListResponse,
     ProblemDetails,
     RiskApprovalRequest,
@@ -17,7 +18,9 @@ from vulnops.api.schemas import (
     TransitionRequest,
     TransitionResponse,
     VerificationsResponse,
+    VerificationSubmitResponse,
     json_request_body,
+    validate_request_body,
 )
 from vulnops.auth.dependencies import (
     AuthorizationError,
@@ -115,17 +118,6 @@ def _risk_problem(detail: str, *, code: str = "invalid_risk_decision") -> HTTPEx
     )
 
 
-def _parse_risk_expires_at(value: object) -> datetime | None:
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("risk decision expires_at must be an ISO-8601 timestamp")
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError as exc:
-        raise ValueError("risk decision expires_at must be an ISO-8601 timestamp") from exc
-
-
 def _serialize_case(case: RemediationCase) -> dict:
     return {
         "id": case.id,
@@ -204,6 +196,7 @@ def _parse_if_match(if_match: str | None) -> int | None:
 
 @router.post(
     "/organizations/{org_id}/cases",
+    response_model=CaseCreateResponse,
     dependencies=[Depends(require_capability("case:write"))],
 )
 async def create_case(org_id: str, request: Request, db: Session = Depends(get_db)):
@@ -280,6 +273,7 @@ async def list_cases(
 
 @router.get(
     "/organizations/{org_id}/cases/{case_id}",
+    response_model=CaseDetailResponse,
     dependencies=[Depends(require_organization)],
 )
 async def get_case(
@@ -302,6 +296,7 @@ async def get_case(
 
 @router.get(
     "/organizations/{org_id}/cases/{case_id}/allowed-transitions",
+    response_model=AllowedTransitionsResponse,
     dependencies=[Depends(require_organization)],
 )
 async def allowed_transitions(
@@ -348,11 +343,10 @@ async def transition_case(
     authorize_capability(request, principal, "case:write")
 
     data = _reject_client_identity_fields(await request.json())
-    target = data.get("target") or data.get("to") or data.get("next_status")
-    if not target:
-        raise HTTPException(status_code=400, detail="target required")
-    reason = data.get("reason")
-    extra = {k: v for k, v in data.items() if k not in ("target", "to", "next_status", "reason")}
+    payload = validate_request_body(TransitionRequest, data, code="invalid_request_body")
+    target = payload.target
+    reason = payload.reason
+    extra = {}
 
     try:
         expected_version = _parse_if_match(if_match)
@@ -441,20 +435,13 @@ async def create_risk_decision(
     authorize_capability(request, principal, "risk:request")
 
     data = _reject_client_identity_fields(await request.json())
-    type_ = data.get("type")
-    reason = data.get("reason")
-    scope = data.get("scope")
-    compensating = (
-        data["compensating_controls"]
-        if "compensating_controls" in data
-        else data.get("compensatingControls")
-    )
-    evidence_ids = data["evidence_ids"] if "evidence_ids" in data else data.get("evidenceIds")
-    expires_at_value = data["expires_at"] if "expires_at" in data else data.get("expiresAt")
-    try:
-        expires_at = _parse_risk_expires_at(expires_at_value)
-    except ValueError as exc:
-        raise _risk_problem(str(exc))
+    payload = validate_request_body(RiskDecisionRequest, data, code="invalid_risk_decision")
+    type_ = payload.type
+    reason = payload.reason
+    scope = payload.scope
+    compensating = payload.compensating_controls
+    evidence_ids = payload.evidence_ids
+    expires_at = payload.expires_at
 
     # Handle If-Match if provided - check version
     if if_match:
@@ -520,12 +507,9 @@ async def approve_risk_decision(
 
     authorize_capability(request, principal, "risk:approve")
     data = _reject_client_identity_fields(await request.json())
-    outcome = data.get("outcome") or data.get("decision")
-    reason = data.get("reason")
-    if not isinstance(outcome, str) or not outcome.strip():
-        raise _risk_problem("outcome required", code="invalid_risk_approval")
-    if not isinstance(reason, str) or not reason.strip():
-        raise _risk_problem("approval reason required", code="invalid_risk_approval")
+    payload = validate_request_body(RiskApprovalRequest, data, code="invalid_risk_approval")
+    outcome = payload.outcome
+    reason = payload.reason
 
     try:
         decision = svc.approve_risk_decision(
@@ -617,6 +601,7 @@ async def list_verifications(
 
 @router.post(
     "/organizations/{org_id}/cases/{case_id}/verifications",
+    response_model=VerificationSubmitResponse,
     dependencies=[Depends(require_organization)],
 )
 async def submit_verification(

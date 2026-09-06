@@ -143,3 +143,79 @@ corepack pnpm build                          # passed; existing >500 kB chunk wa
 - Generated frontend build retains the pre-existing large-chunk warning.
 - The full suite retains only the existing Starlette/httpx and Alembic
   deprecation warnings.
+
+## Fix round 1/5: enforce request schemas and tighten typed client
+
+### RED
+
+Reviewer regressions were added before the implementation changes:
+
+- The actor-free contract test failed because required fields were optional in
+  the published schemas, and route-level `extra="forbid"` was not enforced:
+  transition and risk request bodies with an `unexpected` field still returned
+  200, while approval validation returned the wrong stable error code.
+- The runtime request tests also confirmed that identity aliases must be
+  rejected before model validation so they retain `identity_fields_forbidden`.
+- Frontend client tests failed for a non-JSON 401 (`error` code and empty
+  message), and an in-flight request used the reconfigured handler/token
+  context. Existing header assertions also exposed that the client was still
+  passing a plain object instead of `Headers`.
+- The generated declaration had `unknown` response bodies for case detail,
+  allowed transitions, verification submission, and SBOM operations.
+
+### GREEN
+
+- Workflow routes now validate a Pydantic model after principal, organization,
+  resource, and capability checks. Identity-field rejection remains first;
+  unknown fields become stable 422 `invalid_request_body` Problem Details with
+  a deterministic `fields` list and no workflow mutation.
+- Canonical request fields are required in OpenAPI and generated types:
+  transition `target`, risk `type`/`reason`/nonempty `evidence_ids`/aware
+  `expires_at`, and approval `outcome`/`reason`. `Literal` enums and aliases
+  (`to`/`next_status`, `decision`, plus retained camel-case risk aliases) are
+  accepted only at runtime; the published schema exposes canonical names.
+  Future-expiry comparison remains domain-owned by `CaseService`.
+- Added typed response models for case creation/detail, allowed transitions,
+  verification submission, SBOM submission/detail, and generated frontend
+  aliases for all bounded console response/request types. The client now also
+  exposes typed `getSbom`.
+- API client auth snapshots the token provider and unauthorized callback per
+  request (including the single network retry), uses `Headers` with one
+  case-insensitive Authorization value, omits blank tokens, and normalizes a
+  body-less/non-JSON 401 to `authentication_required` / `Authentication
+  required` without retry.
+- The contract suite explicitly classifies hidden `/api/v1/health` as a public
+  compatibility health alias and checks checked-in OpenAPI equality with the
+  runtime app schema, providing a reproducibility guard in Task 6 tests.
+
+### Fix-round generated commands
+
+```text
+ENVIRONMENT=test AUTH_TEST_BYPASS_ENABLED=true DATABASE_URL=sqlite:///... \
+  OIDC_ISSUER_URL=https://issuer.example OIDC_AUDIENCE=vulnops-api \
+  uv run uvicorn vulnops.main:app --host 127.0.0.1 --port 18080
+curl -fsS http://127.0.0.1:18080/openapi.json \
+  | uv run python -c 'import json,sys,yaml; yaml.safe_dump(json.load(sys.stdin),sys.stdout,sort_keys=False,allow_unicode=True)' \
+  > openapi/openapi.yaml
+cd frontend && corepack pnpm openapi
+```
+
+### Fix-round verification
+
+```text
+fresh DATABASE_URL + uv run alembic upgrade head
+uv run alembic check
+uv run pytest -q                         # full backend suite passed
+uv run ruff check src tests
+uv run ruff format --check src tests
+git diff --check
+cd frontend && corepack pnpm lint
+cd frontend && corepack pnpm typecheck
+cd frontend && corepack pnpm test       # 10 files, 30 tests passed
+cd frontend && corepack pnpm build
+```
+
+The frontend build retains the existing >500 kB chunk warning. Backend output
+retains only the existing Starlette/httpx and Alembic deprecation warnings.
+This fix round is committed separately and intentionally not pushed pending
+controller review.

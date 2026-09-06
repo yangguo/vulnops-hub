@@ -44,9 +44,21 @@ describe('caseDetailStore actions', () => {
     const store = useCaseDetailStore()
     useOrgStore().setOrg('acme')
     await store.fetchAll('c1')
-    await store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'] })
+    await store.decide({
+      type: 'risk_accepted',
+      reason: 'waf',
+      evidence_ids: ['e1'],
+      expires_at: '2099-01-01T00:00:00Z',
+    })
     expect(apiClient.createRiskDecision).toHaveBeenCalledWith('acme', 'c1', expect.objectContaining({ type: 'risk_accepted' }))
-    await expect(store.decide({ type: 'risk_accepted', reason: 'waf', evidence_ids: ['e1'] })).resolves.toMatchObject({ id: 'rd1' })
+    await expect(
+      store.decide({
+        type: 'risk_accepted',
+        reason: 'waf',
+        evidence_ids: ['e1'],
+        expires_at: '2099-01-01T00:00:00Z',
+      }),
+    ).resolves.toMatchObject({ id: 'rd1' })
   })
 
   it('submits verification payload', async () => {

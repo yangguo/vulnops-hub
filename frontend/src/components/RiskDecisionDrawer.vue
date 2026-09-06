@@ -74,6 +74,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import { useCaseDetailStore } from '../stores/caseDetail'
+import type { RiskDecisionRequest } from '../api/types'
 
 const props = defineProps<{ mode: 'risk_accepted' | 'not_applicable' }>()
 const visible = defineModel<boolean>({ default: false })
@@ -83,7 +84,7 @@ const submitting = ref(false)
 
 const title = computed(() => (props.mode === 'not_applicable' ? '标记不适用' : '风险接受申请'))
 
-const form = reactive({
+const form = reactive<Pick<RiskDecisionRequest, 'type' | 'reason' | 'expires_at'> & { type: NonNullable<RiskDecisionRequest['type']> }>({
   type: 'risk_accepted',
   reason: '',
   expires_at: '',

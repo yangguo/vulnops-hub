@@ -64,7 +64,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/SbomSubmitResponse'
         '401':
           description: Authentication required
           content:
@@ -109,7 +110,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/SbomResponse'
         '401':
           description: Authentication required
           content:
@@ -148,7 +150,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CaseCreateResponse'
         '401':
           description: Authentication required
           content:
@@ -297,7 +300,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CaseDetailResponse'
         '401':
           description: Authentication required
           content:
@@ -342,7 +346,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/AllowedTransitionsResponse'
         '401':
           description: Authentication required
           content:
@@ -432,25 +437,16 @@ paths:
               description: Actor-free case transition request contract.
               properties:
                 target:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
+                  minLength: 1
                   title: Target
-                to:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
-                  title: To
-                next_status:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
-                  title: Next Status
+                  type: string
                 reason:
                   anyOf:
                   - type: string
                   - type: 'null'
                   title: Reason
+              required:
+              - target
               title: TransitionRequest
               type: object
   /api/v1/organizations/{org_id}/cases/{case_id}/risk-decisions:
@@ -516,15 +512,18 @@ paths:
               description: Actor-free risk decision request contract.
               properties:
                 type:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
+                  enum:
+                  - risk_accepted
+                  - waiver
+                  - compensating_control
+                  - false_positive
+                  - not_affected
                   title: Type
+                  type: string
                 reason:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
+                  minLength: 1
                   title: Reason
+                  type: string
                 scope:
                   anyOf:
                   - additionalProperties: true
@@ -539,17 +538,22 @@ paths:
                   - type: 'null'
                   title: Compensating Controls
                 evidence_ids:
-                  anyOf:
-                  - items:
-                      type: string
-                    type: array
-                  - type: 'null'
+                  items:
+                    type: string
+                  minItems: 1
                   title: Evidence Ids
+                  type: array
                 expires_at:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
+                  description: Timezone-aware timestamp in the future; final future
+                    validation is domain-owned.
+                  format: date-time
                   title: Expires At
+                  type: string
+              required:
+              - type
+              - reason
+              - evidence_ids
+              - expires_at
               title: RiskDecisionRequest
               type: object
     get:
@@ -659,20 +663,18 @@ paths:
                 the token.
               properties:
                 outcome:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
+                  enum:
+                  - approve
+                  - reject
                   title: Outcome
-                decision:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
-                  title: Decision
+                  type: string
                 reason:
-                  anyOf:
-                  - type: string
-                  - type: 'null'
+                  minLength: 1
                   title: Reason
+                  type: string
+              required:
+              - outcome
+              - reason
               title: RiskApprovalRequest
               type: object
   /api/v1/organizations/{org_id}/cases/{case_id}/verifications:
@@ -746,7 +748,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/VerificationSubmitResponse'
         '401':
           description: Authentication required
           content:
@@ -767,6 +770,75 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AllowedTransitionsResponse:
+      properties:
+        case_id:
+          type: string
+          title: Case Id
+        status:
+          type: string
+          title: Status
+        allowed:
+          items:
+            type: string
+          type: array
+          title: Allowed
+        current:
+          type: string
+          title: Current
+      type: object
+      required:
+      - case_id
+      - status
+      - allowed
+      - current
+      title: AllowedTransitionsResponse
+    CaseCreateResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        case_key:
+          type: string
+          title: Case Key
+        title:
+          type: string
+          title: Title
+        status:
+          type: string
+          title: Status
+        priority:
+          type: string
+          title: Priority
+        owner_team:
+          type: string
+          title: Owner Team
+        organization_id:
+          type: string
+          title: Organization Id
+        version:
+          type: integer
+          title: Version
+        etag:
+          type: string
+          title: Etag
+        due_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Due At
+      type: object
+      required:
+      - id
+      - case_key
+      - title
+      - status
+      - priority
+      - owner_team
+      - organization_id
+      - version
+      - etag
+      title: CaseCreateResponse
     CaseDetailResponse:
       properties:
         id:
@@ -1070,6 +1142,77 @@ components:
       required:
       - items
       title: RiskDecisionsResponse
+    SbomResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        organization_id:
+          type: string
+          title: Organization Id
+        format:
+          type: string
+          title: Format
+        spec_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Spec Version
+        content_sha256:
+          type: string
+          title: Content Sha256
+        object_uri:
+          type: string
+          title: Object Uri
+        created_at:
+          type: string
+          title: Created At
+      type: object
+      required:
+      - id
+      - organization_id
+      - format
+      - content_sha256
+      - object_uri
+      - created_at
+      title: SbomResponse
+    SbomSubmitResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        sbom_id:
+          type: string
+          title: Sbom Id
+        submission_id:
+          type: string
+          title: Submission Id
+        content_sha256:
+          type: string
+          title: Content Sha256
+        content_hash:
+          type: string
+          title: Content Hash
+        digest:
+          type: string
+          title: Digest
+        status:
+          type: string
+          title: Status
+        received_at:
+          type: string
+          title: Received At
+      type: object
+      required:
+      - id
+      - sbom_id
+      - submission_id
+      - content_sha256
+      - content_hash
+      - digest
+      - status
+      - received_at
+      title: SbomSubmitResponse
     TransitionResponse:
       properties:
         id:
@@ -1161,6 +1304,29 @@ components:
       - method
       - status
       title: VerificationResponse
+    VerificationSubmitResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        status:
+          type: string
+          title: Status
+        case_status:
+          type: string
+          title: Case Status
+        coverage:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Coverage
+      type: object
+      required:
+      - id
+      - status
+      - case_status
+      title: VerificationSubmitResponse
     VerificationsResponse:
       properties:
         items:

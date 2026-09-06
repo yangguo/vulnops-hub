@@ -593,6 +593,7 @@ def test_workflow_identity_fields_are_rejected_in_request_json(identity_field: s
         )
 
     assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "identity_fields_forbidden"
     current = client.get(f"/api/v1/organizations/acme/cases/{case_id}")
     assert current.status_code == 200, current.text
     assert current.json()["status"] == ("new" if identity_field == "actor" else "triage")
@@ -634,6 +635,99 @@ def test_risk_approval_is_separate_and_self_approval_is_rejected():
 
     current = client.get(f"/api/v1/organizations/acme/cases/{case_id}")
     assert current.json()["status"] == "triage"
+
+
+@pytest.mark.parametrize("workflow", ["transition", "risk", "approval"])
+def test_unknown_workflow_fields_are_rejected_after_authorization(workflow: str):
+    app = create_app()
+    client = TestClient(app)
+
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "unknown field test", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+
+    if workflow in {"risk", "approval"}:
+        transition = client.post(
+            f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+            json={"target": "triage"},
+        )
+        assert transition.status_code == 200, transition.text
+
+    if workflow == "transition":
+        response = client.post(
+            f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+            json={"target": "triage", "unexpected": "reject me"},
+        )
+    elif workflow == "risk":
+        response = client.post(
+            f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+            json={
+                "type": "risk_accepted",
+                "reason": "unknown field test",
+                "evidence_ids": ["ev1"],
+                "expires_at": "2099-01-01T00:00:00Z",
+                "unexpected": "reject me",
+            },
+        )
+    else:
+        request_response = client.post(
+            f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+            json={
+                "type": "risk_accepted",
+                "reason": "unknown field test",
+                "evidence_ids": ["ev1"],
+                "expires_at": "2099-01-01T00:00:00Z",
+            },
+        )
+        assert request_response.status_code == 200, request_response.text
+        response = client.post(
+            f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions/"
+            f"{request_response.json()['id']}/approval",
+            json={"outcome": "approve", "reason": "unknown field test", "unexpected": True},
+        )
+
+    assert response.status_code == 422, response.text
+    body = response.json()["detail"]
+    assert body["code"] == "invalid_request_body"
+    assert body["fields"] == ["unexpected"]
+
+
+def test_approval_identity_alias_keeps_identity_fields_forbidden_contract():
+    app = create_app()
+    client = TestClient(app)
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "approval identity test", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+    transition = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+    )
+    assert transition.status_code == 200, transition.text
+    request_response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+        json={
+            "type": "risk_accepted",
+            "reason": "approval identity test",
+            "evidence_ids": ["ev1"],
+            "expires_at": "2099-01-01T00:00:00Z",
+        },
+    )
+    assert request_response.status_code == 200, request_response.text
+    decision_id = request_response.json()["id"]
+    response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions/{decision_id}/approval",
+        json={"outcome": "approve", "reason": "spoof", "approver": "attacker"},
+    )
+    assert response.status_code == 422, response.text
+    body = response.json()["detail"]
+    assert body["code"] == "identity_fields_forbidden"
+    assert body["fields"] == ["approver"]
 
 
 def test_verification_actor_identity_field_is_rejected():

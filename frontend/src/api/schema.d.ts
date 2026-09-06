@@ -198,6 +198,40 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AllowedTransitionsResponse */
+        AllowedTransitionsResponse: {
+            /** Case Id */
+            case_id: string;
+            /** Status */
+            status: string;
+            /** Allowed */
+            allowed: string[];
+            /** Current */
+            current: string;
+        };
+        /** CaseCreateResponse */
+        CaseCreateResponse: {
+            /** Id */
+            id: string;
+            /** Case Key */
+            case_key: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Priority */
+            priority: string;
+            /** Owner Team */
+            owner_team: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Version */
+            version: number;
+            /** Etag */
+            etag: string;
+            /** Due At */
+            due_at?: string | null;
+        };
         /** CaseDetailResponse */
         CaseDetailResponse: {
             /** Id */
@@ -339,6 +373,42 @@ export interface components {
             /** Items */
             items: components["schemas"]["RiskDecisionResponse"][];
         };
+        /** SbomResponse */
+        SbomResponse: {
+            /** Id */
+            id: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Format */
+            format: string;
+            /** Spec Version */
+            spec_version?: string | null;
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Object Uri */
+            object_uri: string;
+            /** Created At */
+            created_at: string;
+        };
+        /** SbomSubmitResponse */
+        SbomSubmitResponse: {
+            /** Id */
+            id: string;
+            /** Sbom Id */
+            sbom_id: string;
+            /** Submission Id */
+            submission_id: string;
+            /** Content Sha256 */
+            content_sha256: string;
+            /** Content Hash */
+            content_hash: string;
+            /** Digest */
+            digest: string;
+            /** Status */
+            status: string;
+            /** Received At */
+            received_at: string;
+        };
         /** TransitionResponse */
         TransitionResponse: {
             /** Id */
@@ -383,6 +453,19 @@ export interface components {
             status: string;
             /** Created At */
             created_at?: string | null;
+        };
+        /** VerificationSubmitResponse */
+        VerificationSubmitResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Case Status */
+            case_status: string;
+            /** Coverage */
+            coverage?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** VerificationsResponse */
         VerificationsResponse: {
@@ -458,7 +541,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SbomSubmitResponse"];
                 };
             };
             /** @description Authentication required */
@@ -508,7 +591,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SbomResponse"];
                 };
             };
             /** @description Authentication required */
@@ -615,7 +698,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CaseCreateResponse"];
                 };
             };
             /** @description Authentication required */
@@ -665,7 +748,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CaseDetailResponse"];
                 };
             };
             /** @description Authentication required */
@@ -715,7 +798,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AllowedTransitionsResponse"];
                 };
             };
             /** @description Authentication required */
@@ -764,11 +847,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** Target */
-                    target?: string | null;
-                    /** To */
-                    to?: string | null;
-                    /** Next Status */
-                    next_status?: string | null;
+                    target: string;
                     /** Reason */
                     reason?: string | null;
                 };
@@ -878,10 +957,13 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Type */
-                    type?: string | null;
+                    /**
+                     * Type
+                     * @enum {string}
+                     */
+                    type: "risk_accepted" | "waiver" | "compensating_control" | "false_positive" | "not_affected";
                     /** Reason */
-                    reason?: string | null;
+                    reason: string;
                     /** Scope */
                     scope?: {
                         [key: string]: unknown;
@@ -889,9 +971,13 @@ export interface operations {
                     /** Compensating Controls */
                     compensating_controls?: string[] | null;
                     /** Evidence Ids */
-                    evidence_ids?: string[] | null;
-                    /** Expires At */
-                    expires_at?: string | null;
+                    evidence_ids: string[];
+                    /**
+                     * Expires At
+                     * Format: date-time
+                     * @description Timezone-aware timestamp in the future; final future validation is domain-owned.
+                     */
+                    expires_at: string;
                 };
             };
         };
@@ -948,12 +1034,13 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Outcome */
-                    outcome?: string | null;
-                    /** Decision */
-                    decision?: string | null;
+                    /**
+                     * Outcome
+                     * @enum {string}
+                     */
+                    outcome: "approve" | "reject";
                     /** Reason */
-                    reason?: string | null;
+                    reason: string;
                 };
             };
         };
@@ -1064,7 +1151,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["VerificationSubmitResponse"];
                 };
             };
             /** @description Authentication required */

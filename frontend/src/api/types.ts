@@ -1,59 +1,23 @@
-import type { components } from './schema'
+import type { components, operations } from './schema'
 
 // Extract typed response shapes from the generated OpenAPI declarations.
 export type CaseDetail = components['schemas']['CaseDetailResponse']
+export type CaseCreateResponse = components['schemas']['CaseCreateResponse']
+export type CaseListResponse = components['schemas']['CaseListResponse']
+export type AllowedTransitionsResponse = components['schemas']['AllowedTransitionsResponse']
 export type TransitionResponse = components['schemas']['TransitionResponse']
-export interface RiskDecisionRequest {
-  type?: string | null
-  reason?: string | null
-  scope?: Record<string, unknown> | null
-  compensating_controls?: string[] | null
-  evidence_ids?: string[] | null
-  expires_at?: string | null
-}
-export interface RiskApprovalRequest {
-  outcome: 'approve' | 'reject'
-  reason: string
-}
+type TransitionOperation = operations['transition_case_api_v1_organizations__org_id__cases__case_id__transitions_post']
+type RiskDecisionOperation = operations['create_risk_decision_api_v1_organizations__org_id__cases__case_id__risk_decisions_post']
+type RiskApprovalOperation = operations['approve_risk_decision_api_v1_organizations__org_id__cases__case_id__risk_decisions__decision_id__approval_post']
+export type TransitionRequest = NonNullable<TransitionOperation['requestBody']>['content']['application/json']
+export type RiskDecisionRequest = NonNullable<RiskDecisionOperation['requestBody']>['content']['application/json']
+export type RiskApprovalRequest = NonNullable<RiskApprovalOperation['requestBody']>['content']['application/json']
 export type RiskApprovalResponse = components['schemas']['RiskApprovalResponse']
 export type RiskDecisionCreateResponse = components['schemas']['RiskDecisionCreateResponse']
-export type AllowedTransitionsResponse = {
-  case_id: string
-  status: string
-  allowed: string[]
-  current: string
-}
-
-export interface CaseListResponse {
-  items: CaseDetail[]
-  total: number
-  page: number
-  page_size: number
-}
-export interface RiskDecisionItem {
-  id: string
-  case_id: string
-  type: string
-  status: string
-  scope_exposure_ids: string[]
-  reason: string
-  compensating_controls: string[]
-  evidence_ids: string[]
-  requested_by: string
-  approver: string | null
-  approver_role: string | null
-  expires_at: string | null
-  created_at: string | null
-}
-export interface VerificationItem {
-  id: string
-  case_id: string
-  method: string
-  asserted_result: string | null
-  evidence_ids: string[]
-  coverage: Record<string, unknown>
-  status: string
-  created_at: string | null
-}
-export interface RiskDecisionsResponse { items: RiskDecisionItem[] }
-export interface VerificationsResponse { items: VerificationItem[] }
+export type RiskDecisionItem = components['schemas']['RiskDecisionResponse']
+export type RiskDecisionsResponse = components['schemas']['RiskDecisionsResponse']
+export type VerificationItem = components['schemas']['VerificationResponse']
+export type VerificationSubmitResponse = components['schemas']['VerificationSubmitResponse']
+export type VerificationsResponse = components['schemas']['VerificationsResponse']
+export type SbomResponse = components['schemas']['SbomResponse']
+export type SbomSubmitResponse = components['schemas']['SbomSubmitResponse']

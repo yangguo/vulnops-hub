@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
-from vulnops.api.schemas import ProblemDetails
+from vulnops.api.schemas import ProblemDetails, SbomResponse, SbomSubmitResponse
 from vulnops.auth.dependencies import (
     AuthorizationError,
     authorize_capability,
@@ -30,6 +30,7 @@ router = APIRouter(
 @router.post(
     "/organizations/{org_id}/sboms",
     status_code=201,
+    response_model=SbomSubmitResponse,
     dependencies=[Depends(require_capability("sbom:write"))],
 )
 async def submit_sbom(
@@ -78,6 +79,7 @@ async def submit_sbom(
 
 @router.get(
     "/organizations/{org_id}/sboms/{sbom_id}",
+    response_model=SbomResponse,
     dependencies=[Depends(require_organization)],
 )
 async def get_sbom(
