@@ -8,6 +8,7 @@ mapping belongs to a later layer.
 
 from __future__ import annotations
 
+import ipaddress
 import math
 import threading
 import time
@@ -129,12 +130,29 @@ def _bounded_cache_age(value: float) -> float:
     return min(age, _MAX_CACHE_AGE_SECONDS)
 
 
-def _valid_http_url(value: str) -> bool:
+def _is_loopback_hostname(hostname: str | None) -> bool:
+    if not hostname:
+        return False
     try:
-        parsed = urlparse(value)
+        return ipaddress.ip_address(hostname).is_loopback
     except ValueError:
         return False
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _valid_http_url(value: str, *, allow_insecure_loopback: bool = False) -> bool:
+    try:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        # Accessing port validates malformed port syntax without exposing the
+        # input in an exception that crosses this boundary.
+        _ = parsed.port
+    except ValueError:
+        return False
+    if not bool(parsed.netloc) or not hostname:
+        return False
+    if parsed.scheme == "https":
+        return True
+    return parsed.scheme == "http" and allow_insecure_loopback and _is_loopback_hostname(hostname)
 
 
 def _canonical_algorithm(value: str) -> str | None:
@@ -162,10 +180,15 @@ class OIDCVerifier:
         cache_age: float = 300.0,
         discovery_cache_age: float | None = None,
         jwks_cache_age: float | None = None,
+        allow_insecure_loopback: bool = False,
     ) -> None:
         if not isinstance(issuer_url, str) or not issuer_url.strip():
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
-        if not _valid_http_url(issuer_url.strip()):
+        if not isinstance(allow_insecure_loopback, bool):
+            raise OIDCVerificationError("configuration", code="oidc_configuration_error")
+        if not _valid_http_url(
+            issuer_url.strip(), allow_insecure_loopback=allow_insecure_loopback
+        ):
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
         if not isinstance(audience, str) or not audience.strip():
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
@@ -192,6 +215,7 @@ class OIDCVerifier:
         self.issuer_url = issuer_url.strip()
         self.audience = audience.strip()
         self.allowed_algorithms = tuple(algorithms)
+        self.allow_insecure_loopback = allow_insecure_loopback
         # Short aliases keep the boundary convenient for dependency wiring
         # while the explicit names remain the canonical configuration API.
         self.issuer = self.issuer_url
@@ -240,10 +264,17 @@ class OIDCVerifier:
         if not issuer_url or not audience:
             raise OIDCVerificationError("configuration", code="oidc_configuration_error")
         algorithms = getattr(settings, "oidc_allowed_algorithms", ("RS256",))
+        allow_insecure_loopback = kwargs.pop("allow_insecure_loopback", None)
+        if allow_insecure_loopback is None:
+            allow_insecure_loopback = getattr(settings, "environment", None) in {
+                "development",
+                "test",
+            }
         return cls(
             issuer_url=issuer_url,
             audience=audience,
             allowed_algorithms=algorithms,
+            allow_insecure_loopback=allow_insecure_loopback,
             **kwargs,
         )
 
@@ -407,7 +438,15 @@ class OIDCVerifier:
             jwks_uri = payload.get("jwks_uri")
             if provider_issuer != self.issuer_url:
                 raise OIDCVerificationError("issuer", code="oidc_discovery_error")
-            if not isinstance(jwks_uri, str) or not _valid_http_url(jwks_uri):
+            issuer = urlparse(self.issuer_url)
+            allow_insecure_jwks = (
+                self.allow_insecure_loopback
+                and issuer.scheme == "http"
+                and _is_loopback_hostname(issuer.hostname)
+            )
+            if not isinstance(jwks_uri, str) or not _valid_http_url(
+                jwks_uri, allow_insecure_loopback=allow_insecure_jwks
+            ):
                 raise OIDCVerificationError("discovery", code="oidc_discovery_error")
 
             self._discovery = _DiscoveryDocument(issuer=self.issuer_url, jwks_uri=jwks_uri)

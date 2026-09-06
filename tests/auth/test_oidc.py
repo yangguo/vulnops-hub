@@ -4,6 +4,7 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -65,10 +66,12 @@ class OIDCServer:
         keys: list[dict[str, Any]],
         refreshed_keys: list[dict[str, Any]] | None = None,
         discovery_jwks_uri: str | None = None,
+        issuer: str = ISSUER,
     ) -> None:
         self.keys = keys
         self.refreshed_keys = refreshed_keys
-        self.discovery_jwks_uri = discovery_jwks_uri or f"{ISSUER}/keys"
+        self.issuer = issuer
+        self.discovery_jwks_uri = discovery_jwks_uri or f"{self.issuer}/keys"
         self.discovery_requests = 0
         self.jwks_requests = 0
         self.requests: list[httpx.Request] = []
@@ -79,7 +82,7 @@ class OIDCServer:
             self.discovery_requests += 1
             return httpx.Response(
                 200,
-                json={"issuer": ISSUER, "jwks_uri": self.discovery_jwks_uri},
+                json={"issuer": self.issuer, "jwks_uri": self.discovery_jwks_uri},
                 request=request,
             )
         if request.url.path == "/keys":
@@ -299,6 +302,88 @@ def test_malformed_issuer_url_is_reported_as_safe_configuration_error():
 
     assert exc_info.value.category == "configuration"
     assert "::1" not in str(exc_info.value)
+
+
+def test_remote_http_issuer_is_rejected_at_startup():
+    _require_implementation()
+
+    with pytest.raises(OIDCVerificationError) as exc_info:
+        OIDCVerifier(
+            issuer_url="http://issuer.example",
+            audience=AUDIENCE,
+            allowed_algorithms=("RS256",),
+        )
+
+    assert exc_info.value.category == "configuration"
+
+
+def test_loopback_http_issuer_requires_explicit_exception_mode():
+    _require_implementation()
+
+    with pytest.raises(OIDCVerificationError) as exc_info:
+        OIDCVerifier(
+            issuer_url="http://127.0.0.1:9000",
+            audience=AUDIENCE,
+            allowed_algorithms=("RS256",),
+        )
+
+    assert exc_info.value.category == "configuration"
+
+
+@pytest.mark.parametrize("environment", ["development", "test"])
+def test_loopback_http_fixture_is_allowed_in_explicit_development_or_test_mode(environment: str):
+    material = KeyMaterial.create()
+    loopback_issuer = "http://127.0.0.1:9000"
+    server = OIDCServer([material.public_jwk], issuer=loopback_issuer)
+    client = httpx.Client(transport=httpx.MockTransport(server.handler))
+    settings = SimpleNamespace(
+        oidc_issuer_url=loopback_issuer,
+        oidc_audience=AUDIENCE,
+        oidc_allowed_algorithms=("RS256",),
+        environment=environment,
+    )
+    verifier = OIDCVerifier.from_settings(
+        settings,
+        http_client=client,
+        clock=lambda: NOW,
+    )
+    try:
+        claims = verifier.verify_token(material.token(payload={"iss": loopback_issuer}))
+
+        assert claims["iss"] == loopback_issuer
+        assert server.discovery_requests == 1
+        assert server.jwks_requests == 1
+    finally:
+        client.close()
+
+
+def test_remote_http_issuer_is_rejected_even_in_loopback_exception_mode():
+    _require_implementation()
+
+    with pytest.raises(OIDCVerificationError) as exc_info:
+        OIDCVerifier(
+            issuer_url="http://issuer.example",
+            audience=AUDIENCE,
+            allowed_algorithms=("RS256",),
+            allow_insecure_loopback=True,
+        )
+
+    assert exc_info.value.category == "configuration"
+
+
+@pytest.mark.parametrize("jwks_uri", ["http://issuer.example/keys", "http://127.0.0.1:9000/keys"])
+def test_https_issuer_rejects_http_discovered_jwks_downgrade(jwks_uri: str):
+    material = KeyMaterial.create()
+    server = OIDCServer([material.public_jwk], discovery_jwks_uri=jwks_uri)
+    verifier, client = _make_verifier(server)
+    try:
+        with pytest.raises(OIDCVerificationError) as exc_info:
+            verifier.verify_token(material.token())
+
+        assert exc_info.value.category == "discovery"
+        assert server.jwks_requests == 0
+    finally:
+        client.close()
 
 
 def test_malformed_discovery_jwks_url_is_reported_as_safe_provider_error():
