@@ -71,7 +71,7 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.22.2"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install
@@ -104,7 +104,7 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.22.2"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile

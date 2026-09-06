@@ -1,10 +1,10 @@
 # VulnOps Hub
 
-> **Status: MVP implemented and verified.** FastAPI modular monolith with a
-> stable REST API — A Vue 3 ops console ships in `frontend/` (dashboard, case
-> lifecycle, SBOM submission). OIDC is not enforced yet — deploy only behind
-> your intranet. CI runs lint, tests, OpenAPI validation, fresh-database
-> migration checks, and a Docker image smoke test on every push.
+> **Status: M1 technical preview.** The core FastAPI vertical slice and Vue 3
+> operations console are implemented and locally verified. The broader MVP
+> exit gate in the [roadmap](docs/mvp-roadmap.md) is not complete: OIDC/RBAC,
+> first-adopter integration evidence, and several operational capabilities are
+> still pending. Deploy this preview only behind an isolated intranet boundary.
 
 VulnOps Hub is an open-source vulnerability-operations control plane. It
 correlates public vulnerability intelligence, asset and software inventories,
@@ -14,16 +14,20 @@ SBOMs, and scanner evidence into explainable **exposures** and auditable
 中文简介：VulnOps Hub 不是另一个扫描器，也不复制一份 CVE 数据库。它把
 公开漏洞情报、本地资产和 SBOM、各类漏扫结果，以及整改工单串成一个可追溯的
 生命周期闭环：发现 → 匹配 → 分派 → SLA → 风险接受 → 整改 → 复测 → 关闭或重开。
-MVP 已可运行：后端为 FastAPI 服务（含 Swagger UI），另有后台 ingestion
-worker，并附带 Vue 3 整改运营控制台（frontend/），单容器随 API 一同部署。
-运行方式见下文 Quick start。
+M1 技术预览版已可运行：后端为 FastAPI 服务（含 Swagger UI），另有后台
+ingestion worker，并附带 Vue 3 整改运营控制台（frontend/），单容器随 API
+一同部署。OIDC/RBAC、首个采用方的集成验收和部分运营能力尚未完成，因此还未
+达到 roadmap 定义的完整 MVP 退出条件。运行方式见下文 Quick start。
 
 ## Quick start
 
-Requirements: Python 3.11+ and [uv](https://docs.astral.sh/uv/). No external services are needed for local evaluation — the API falls back to a
-SQLite file (`vulnops.db`). A web console is available: run `make
-frontend-install` once, then `make frontend-dev` in a second terminal and open
-`http://localhost:5173` (the Vite dev server proxies `/api` to `:8000`).
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22.22.2,
+and pnpm 9. The Node baseline is recorded in `.nvmrc` and `.node-version`, and pnpm
+rejects unsupported Node versions during install. No external services are
+needed for local evaluation — the API falls back to a SQLite file
+(`vulnops.db`). A web console is available: run `make frontend-install` once,
+then `make frontend-dev` in a second terminal and open `http://localhost:5173`
+(the Vite dev server proxies `/api` to `:8000`).
 
 ~~~bash
 # 1. Install dependencies
@@ -83,6 +87,8 @@ built SPA is baked in and available at `http://localhost:8000`.
 ~~~bash
 make test                   # unit + integration + contract + e2e
 make lint                   # ruff
+make frontend-test          # Vue unit tests (Node 22 + pnpm 9)
+make frontend-build         # type-check and build the production SPA
 ~~~
 
 ## Using VulnOps Hub: console + API
@@ -172,7 +178,7 @@ Three supported modes (full design: [docs/deployment.md](docs/deployment.md)):
 | --- | --- | --- |
 | Local evaluation | development, demo | `make dev` — API on SQLite, no external services |
 | Docker Compose | single-host evaluation, small teams | API + worker + PostgreSQL + Valkey + MinIO |
-| Production | internal enterprise service | Containers on Kubernetes, managed PostgreSQL / object store / queue, OIDC, OpenTelemetry |
+| Production target (not yet certified) | internal enterprise service | Containers on Kubernetes, managed PostgreSQL / object store / queue, OIDC, OpenTelemetry |
 
 Configuration is environment-driven — copy `.env.example` to `.env` and adjust.
 Key variables (full list in `.env.example`, parsed in `src/vulnops/config.py`):
@@ -325,7 +331,7 @@ affected-range evaluation.
 
 ## Repository status and contribution
 
-The MVP is implemented as a modular monolith (FastAPI + SQLAlchemy + Alembic):
+The implemented M1 technical preview is a modular monolith (FastAPI + SQLAlchemy + Alembic):
 SBOM ingestion (CycloneDX/SPDX) with content hashing and idempotency, the
 remediation-case lifecycle with SLA clocks, state-machine transitions, and
 optimistic locking (`If-Match`), evidence-adapter contracts for DefectDojo and
@@ -333,7 +339,9 @@ Wazuh, and an ingestion worker. The web console (`frontend/`, Vue 3 + Element
 Plus) covers the remediation workflow: dashboard, case list/detail with
 state-machine actions, risk decisions, verification, and SBOM submission. See
 the [MVP roadmap](docs/mvp-roadmap.md) before proposing new scanners, feeds, or
-UI features.
+UI features. It is not yet the roadmap's complete MVP: authentication and
+authorization enforcement, first-adopter integration evidence, source and
+coverage operations, and external ticket/notification projections remain open.
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md)
 before opening an issue or pull request.
