@@ -27,6 +27,31 @@ def _utcnow():
     return datetime.now(UTC)
 
 
+_TIMEZONE_ERRORS = (OverflowError, RuntimeError, TypeError, ValueError)
+_INVALID_EXPIRY_TIMEZONE = "risk decision expires_at must be timezone-aware"
+
+
+class _InvalidExpiryTimezone(ValueError):
+    """Internal marker for malformed timezone data at the domain boundary."""
+
+
+def _safe_utcoffset(dt: datetime):
+    """Return a datetime offset, translating malformed tzinfo failures.
+
+    Values loaded from an externally managed or legacy database can carry a
+    custom ``tzinfo`` implementation.  Its ``utcoffset`` method is part of
+    the data boundary and may raise one of the standard datetime errors (or a
+    runtime error supplied by the implementation).  Keep that failure in the
+    domain's stable validation contract without catching unrelated errors in
+    callers.
+    """
+
+    try:
+        return dt.utcoffset()
+    except _TIMEZONE_ERRORS as exc:
+        raise _InvalidExpiryTimezone(_INVALID_EXPIRY_TIMEZONE) from exc
+
+
 def _ensure_aware(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
@@ -39,7 +64,13 @@ def _normalize_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     aware = _ensure_aware(dt)
-    return aware.astimezone(UTC) if aware is not None else None
+    if aware is None:
+        return None
+    _safe_utcoffset(aware)
+    try:
+        return aware.astimezone(UTC)
+    except _TIMEZONE_ERRORS as exc:
+        raise _InvalidExpiryTimezone(_INVALID_EXPIRY_TIMEZONE) from exc
 
 
 def _gen_case_key():
@@ -124,10 +155,14 @@ def _validate_risk_decision_request(
     if expires_at is None:
         raise ValueError("risk decision expires_at is required")
     if not isinstance(expires_at, datetime) or expires_at.tzinfo is None:
-        raise ValueError("risk decision expires_at must be timezone-aware")
-    if expires_at.utcoffset() is None:
-        raise ValueError("risk decision expires_at must be timezone-aware")
-    if expires_at <= _utcnow():
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE)
+    if _safe_utcoffset(expires_at) is None:
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE)
+    try:
+        expired = expires_at <= _utcnow()
+    except _TIMEZONE_ERRORS as exc:
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE) from exc
+    if expired:
         raise ValueError("risk decision expires_at must be in the future")
 
 
@@ -142,11 +177,15 @@ def _validate_risk_decision_expiry(expires_at: Any) -> None:
     if expires_at is None:
         raise ValueError("risk decision expires_at is required")
     if not isinstance(expires_at, datetime):
-        raise ValueError("risk decision expires_at must be timezone-aware")
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE)
     effective_expiry = _ensure_aware(expires_at)
-    if effective_expiry is None or effective_expiry.utcoffset() is None:
-        raise ValueError("risk decision expires_at must be timezone-aware")
-    if effective_expiry <= _utcnow():
+    if effective_expiry is None or _safe_utcoffset(effective_expiry) is None:
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE)
+    try:
+        expired = effective_expiry <= _utcnow()
+    except _TIMEZONE_ERRORS as exc:
+        raise ValueError(_INVALID_EXPIRY_TIMEZONE) from exc
+    if expired:
         raise ValueError("risk decision expires_at must be in the future")
 
 
@@ -163,11 +202,16 @@ def _canonicalize_risk_decision_expiry(decision: RiskDecision) -> RiskDecision:
     # Datetime equality compares instants, so 18:00+08:00 == 10:00+00:00.
     # Use the tzinfo representation to decide whether the mapped attribute is
     # already canonical; otherwise expose UTC without marking it dirty.
-    if expires_at.tzinfo is not None and expires_at.utcoffset() is None:
-        return decision
     if expires_at.tzinfo is UTC:
         return decision
-    canonical = _normalize_utc(expires_at)
+    try:
+        if expires_at.tzinfo is not None and _safe_utcoffset(expires_at) is None:
+            return decision
+        canonical = _normalize_utc(expires_at)
+    except _InvalidExpiryTimezone:
+        # Leave malformed values available to the approval validator, which
+        # turns them into the stable domain error without mutating workflow.
+        return decision
     if canonical is not None:
         set_committed_value(decision, "expires_at", canonical)
     return decision

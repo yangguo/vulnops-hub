@@ -1,7 +1,7 @@
 """Regression tests for PR #1 review feedback (P1 items)."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from threading import Barrier
 
 import pytest
@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.attributes import set_committed_value
 
-from vulnops.cases.models import CaseStatus
+from vulnops.cases.models import CaseStatus, RiskDecision
 from vulnops.cases.service import CaseService
 from vulnops.db import Base
 from vulnops.db.models.audit_event import AuditEvent
@@ -47,6 +47,14 @@ def _file_engine(path):
 
     Base.metadata.create_all(bind=eng)
     return eng
+
+
+class _RaisingTZInfo(tzinfo):
+    def __init__(self, exception_type: type[Exception]):
+        self.exception_type = exception_type
+
+    def utcoffset(self, dt):
+        raise self.exception_type("malformed timezone")
 
 
 def test_verification_rejected_outside_awaiting_state():
@@ -455,7 +463,42 @@ def test_malformed_orm_expiry_returns_stable_domain_error_without_mutation():
         )
 
     assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
-    assert svc.get_risk_decision(decision.id).status == "pending_approval"
+    persisted = session.get(RiskDecision, decision.id)
+    assert persisted is not None
+    assert persisted.status == "pending_approval"
+    assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
+    session.close()
+
+
+@pytest.mark.parametrize("exception_type", [RuntimeError, TypeError, ValueError])
+def test_malformed_tzinfo_expiry_returns_stable_domain_error_without_mutation(exception_type):
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    malformed = datetime(2030, 1, 1, 10, tzinfo=_RaisingTZInfo(exception_type))
+    set_committed_value(decision, "expires_at", malformed)
+    before_case = (svc.get_case(case.id).status, svc.get_case(case.id).version)
+    before_audits = session.scalar(select(func.count()).select_from(AuditEvent))
+    before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+
+    with pytest.raises(ValueError, match="risk decision expires_at must be timezone-aware"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="review malformed timezone",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
+    assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
+    persisted = session.get(RiskDecision, decision.id)
+    assert persisted is not None
+    assert persisted.status == "pending_approval"
     assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
     session.close()
