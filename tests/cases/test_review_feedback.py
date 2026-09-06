@@ -7,6 +7,7 @@ from threading import Barrier
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.attributes import set_committed_value
 
 from vulnops.cases.models import CaseStatus
 from vulnops.cases.service import CaseService
@@ -371,6 +372,90 @@ def test_non_utc_expiry_round_trip_rejects_after_true_utc_instant(monkeypatch, t
     unchanged = svc.get_risk_decision(decision.id)
     assert unchanged.status == "pending_approval"
     assert unchanged.approver is None
+    assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
+    session.close()
+
+
+def test_aware_non_utc_orm_expiry_is_canonical_for_read_and_approval_outbox():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    non_utc = datetime(2030, 1, 1, 18, 0, tzinfo=timezone(timedelta(hours=8)))
+
+    # Simulate an ORM-loaded aware value returned by a PostgreSQL/session timezone.
+    set_committed_value(decision, "expires_at", non_utc)
+    assert decision not in session.dirty
+
+    loaded = svc.get_risk_decision(decision.id)
+    assert loaded.expires_at == datetime(2030, 1, 1, 10, 0, tzinfo=UTC)
+    assert loaded.expires_at.tzinfo is UTC
+    assert loaded not in session.dirty
+
+    approved = svc.approve_risk_decision(
+        decision.id,
+        outcome="approve",
+        reason="independent review",
+        actor="bob-approver",
+        actor_principal_type="human",
+        actor_roles={"risk_approver"},
+        actor_capabilities={"risk:approve"},
+        actor_provenance="authenticated_claim",
+    )
+    assert approved.status == "approved"
+    approval_outbox = session.scalar(
+        select(OutboxEvent)
+        .where(OutboxEvent.aggregate_id == decision.id)
+        .where(OutboxEvent.event_type == "vulnops.risk-decision.accepted.v1")
+    )
+    assert approval_outbox is not None
+    assert approval_outbox.payload["expires_at"] == "2030-01-01T10:00:00+00:00"
+    session.close()
+
+
+def test_already_utc_orm_expiry_stays_clean(monkeypatch):
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    canonical = datetime(2030, 1, 1, 10, 0, tzinfo=UTC)
+    set_committed_value(decision, "expires_at", canonical)
+
+    def unexpected_write(*args, **kwargs):
+        raise AssertionError("already canonical UTC value must not be rewritten")
+
+    monkeypatch.setattr("vulnops.cases.service.set_committed_value", unexpected_write)
+    loaded = svc.get_risk_decision(decision.id)
+    assert loaded.expires_at is canonical
+    assert loaded not in session.dirty
+    session.close()
+
+
+def test_malformed_orm_expiry_returns_stable_domain_error_without_mutation():
+    svc, session = _svc()
+    case = svc.create_case(organization_id="org1", title="t", owner_team="t1", priority="P1")
+    svc.transition(case.id, "triage", actor="analyst")
+    decision = _request_risk_decision(svc, case.id)
+    set_committed_value(decision, "expires_at", "not-a-datetime")
+    before_case = (svc.get_case(case.id).status, svc.get_case(case.id).version)
+    before_audits = session.scalar(select(func.count()).select_from(AuditEvent))
+    before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+
+    with pytest.raises(ValueError, match="risk decision expires_at must be timezone-aware"):
+        svc.approve_risk_decision(
+            decision.id,
+            outcome="approve",
+            reason="independent review",
+            actor="bob-approver",
+            actor_principal_type="human",
+            actor_roles={"risk_approver"},
+            actor_capabilities={"risk:approve"},
+            actor_provenance="authenticated_claim",
+        )
+
+    assert (svc.get_case(case.id).status, svc.get_case(case.id).version) == before_case
+    assert svc.get_risk_decision(decision.id).status == "pending_approval"
     assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audits
     assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
     session.close()

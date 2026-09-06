@@ -153,10 +153,23 @@ def _validate_risk_decision_expiry(expires_at: Any) -> None:
 def _canonicalize_risk_decision_expiry(decision: RiskDecision) -> RiskDecision:
     """Expose expiry values as UTC without rewriting legacy database rows."""
 
-    if decision.expires_at is not None:
-        canonical = _normalize_utc(decision.expires_at)
-        if canonical != decision.expires_at:
-            set_committed_value(decision, "expires_at", canonical)
+    expires_at = decision.expires_at
+    # An ORM-loaded value can be malformed when legacy or externally managed
+    # data bypasses the model type.  Leave it for the stable domain validator
+    # rather than allowing canonicalization to raise AttributeError.
+    if expires_at is None or not isinstance(expires_at, datetime):
+        return decision
+
+    # Datetime equality compares instants, so 18:00+08:00 == 10:00+00:00.
+    # Use the tzinfo representation to decide whether the mapped attribute is
+    # already canonical; otherwise expose UTC without marking it dirty.
+    if expires_at.tzinfo is not None and expires_at.utcoffset() is None:
+        return decision
+    if expires_at.tzinfo is UTC:
+        return decision
+    canonical = _normalize_utc(expires_at)
+    if canonical is not None:
+        set_committed_value(decision, "expires_at", canonical)
     return decision
 
 

@@ -1,11 +1,13 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import set_committed_value
 
 from vulnops.auth.models import Principal
 from vulnops.cases.models import RiskDecision
+from vulnops.cases.service import CaseService
 from vulnops.db import get_engine, get_sessionmaker
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
@@ -257,6 +259,103 @@ def test_risk_approval_api_rejects_expired_decision_with_stable_problem_details(
     assert body["status"] == 422
     assert body["detail"] == "risk decision expires_at must be in the future"
     current = client.get(f"/api/v1/organizations/acme/cases/{case_id}")
+    assert current.json()["status"] == "triage"
+
+
+def test_risk_decision_api_canonicalizes_aware_non_utc_orm_expiry_response(monkeypatch):
+    app = create_app()
+    client = TestClient(app)
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "canonical response", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+    transition = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+    )
+    assert transition.status_code == 200, transition.text
+    request_response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+        json={
+            "type": "risk_accepted",
+            "reason": "temporary exception",
+            "evidence_ids": ["ev-canonical"],
+            "expires_at": "2030-01-01T10:00:00Z",
+        },
+    )
+    assert request_response.status_code == 200, request_response.text
+
+    original_list = CaseService.list_risk_decisions
+
+    def list_with_non_utc_orm_value(self, case_id):
+        decisions = original_list(self, case_id)
+        for decision in decisions:
+            set_committed_value(
+                decision,
+                "expires_at",
+                datetime(2030, 1, 1, 18, 0, tzinfo=timezone(timedelta(hours=8))),
+            )
+        return [self.get_risk_decision(decision.id) for decision in decisions]
+
+    monkeypatch.setattr(CaseService, "list_risk_decisions", list_with_non_utc_orm_value)
+    response = client.get(f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions")
+    assert response.status_code == 200, response.text
+    assert response.json()["items"][0]["expires_at"] == "2030-01-01T10:00:00+00:00"
+
+
+def test_risk_approval_api_maps_malformed_orm_expiry_to_stable_problem_details(monkeypatch):
+    app = create_app()
+    client = TestClient(app)
+    case_response = client.post(
+        "/api/v1/organizations/acme/cases",
+        json={"title": "malformed approval", "owner_team": "t1", "priority": "P2"},
+    )
+    assert case_response.status_code == 200, case_response.text
+    case_id = case_response.json()["id"]
+    transition = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/transitions",
+        json={"target": "triage"},
+    )
+    assert transition.status_code == 200, transition.text
+    request_response = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions",
+        json={
+            "type": "risk_accepted",
+            "reason": "temporary exception",
+            "evidence_ids": ["ev-malformed"],
+            "expires_at": "2030-01-01T10:00:00Z",
+        },
+    )
+    assert request_response.status_code == 200, request_response.text
+    decision_id = request_response.json()["id"]
+
+    original_get = CaseService.get_risk_decision
+
+    def get_with_malformed_orm_value(self, loaded_decision_id):
+        decision = original_get(self, loaded_decision_id)
+        set_committed_value(decision, "expires_at", "not-a-datetime")
+        return decision
+
+    monkeypatch.setattr(CaseService, "get_risk_decision", get_with_malformed_orm_value)
+    app.state.test_principal = Principal(
+        subject="approver",
+        principal_type="human",
+        organization_ids={"acme"},
+        roles={"risk_approver"},
+    )
+    approval = client.post(
+        f"/api/v1/organizations/acme/cases/{case_id}/risk-decisions/{decision_id}/approval",
+        json={"outcome": "approve", "reason": "review malformed expiry"},
+    )
+    assert approval.status_code == 422, approval.text
+    body = approval.json()["detail"]
+    assert body["code"] == "invalid_risk_approval"
+    assert body["status"] == 422
+    assert body["detail"] == "risk decision expires_at must be timezone-aware"
+    current = client.get(f"/api/v1/organizations/acme/cases/{case_id}")
+    assert current.status_code == 200, current.text
     assert current.json()["status"] == "triage"
 
 
