@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     oidc_role_claim: str = Field(default="roles")
     oidc_service_scope_claim: str = Field(default="scope")
     auth_test_bypass_enabled: bool = Field(default=False)
+    auth_test_principal_subject: str = Field(default="test-principal")
 
     @field_validator("oidc_allowed_algorithms", mode="before")
     @classmethod

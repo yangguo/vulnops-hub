@@ -162,7 +162,11 @@ def test_principal_rejects_empty_subject():
         Principal(subject=" ", principal_type="human")
 
 
-def test_auth_settings_define_oidc_algorithms_claims_and_test_bypass():
+def test_auth_settings_define_oidc_algorithms_claims_and_test_bypass(monkeypatch):
+    # API integration tests opt into an explicit test bypass in conftest.  This
+    # unit test verifies the Settings defaults in isolation from that fixture.
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("AUTH_TEST_BYPASS_ENABLED", raising=False)
     settings = Settings(_env_file=None)
 
     assert settings.oidc_allowed_algorithms == ("RS256",)
