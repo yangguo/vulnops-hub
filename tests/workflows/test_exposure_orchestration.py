@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -11,12 +11,16 @@ from sqlalchemy.orm import sessionmaker
 
 from vulnops.config import Settings
 from vulnops.db import Base
+from vulnops.db.models.outbox_event import OutboxEvent
 
 
 def _settings(**overrides) -> Settings:
     """Settings instance safe for unit tests (no test bypass needed here)."""
 
-    defaults = dict(oidc_issuer_url="http://127.0.0.1:8082/realms/vulnops", oidc_audience="vulnops-api")
+    defaults: dict = {
+        "oidc_issuer_url": "http://127.0.0.1:8082/realms/vulnops",
+        "oidc_audience": "vulnops-api",
+    }
     defaults.update(overrides)
     return Settings(**defaults)
 
@@ -31,9 +35,7 @@ def db():
     session.close()
 
 
-def _outbox(event_type: str, payload: dict) -> "OutboxEvent":
-    from vulnops.db.models.outbox_event import OutboxEvent
-
+def _outbox(event_type: str, payload: dict) -> OutboxEvent:
     return OutboxEvent(
         id=f"evt_{uuid.uuid4().hex[:12]}",
         aggregate_type="test",
