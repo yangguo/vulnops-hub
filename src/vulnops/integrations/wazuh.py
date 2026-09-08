@@ -120,6 +120,7 @@ class WazuhBridge:
                     "agent_id": agent_id,
                     "cve": cve,
                     "package": package,
+                    "organization_id": organization_id,
                     "mapping": {"status": mapping.status, "asset_id": mapping.asset_id},
                     "scan_metadata": scan_metadata,
                 },

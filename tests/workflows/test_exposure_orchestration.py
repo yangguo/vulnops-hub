@@ -584,3 +584,46 @@ def test_dojo_ambiguous_mapping_skipped(db):
     orch.process_event(db, ev)
 
     assert db.query(Exposure).count() == 0
+
+
+def _wazuh_event(cve="unknown", agent_id="000", org="org-demo"):
+    return _outbox(
+        "vulnops.evidence.wazuh.ingested.v1",
+        {
+            "agent_id": agent_id,
+            "cve": cve,
+            "organization_id": org,
+            "package": {"name": "findutils", "version": "4.8.0"},
+        },
+    )
+
+
+def test_wazuh_unknown_cve_creates_no_exposure(db):
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_wazuh_event())
+    db.commit()
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    assert db.query(Exposure).count() == 0
+
+
+def test_wazuh_cve_without_purl_is_candidate(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_wazuh_event(cve="CVE-2026-9999"))
+    db.commit()
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    exp = db.query(Exposure).one()
+    assert exp.match_class == "candidate"
+    assert exp.state == "candidate"
+    assert exp.detection_context == "wazuh:000"
+    assert db.query(RemediationCase).count() == 0

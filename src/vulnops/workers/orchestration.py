@@ -211,6 +211,7 @@ class OutboxOrchestrator:
     _HANDLERS: ClassVar[dict[str, str]] = {
         "vulnops.sbom.processed.v1": "_handle_sbom_processed",
         "vulnops.evidence.defectdojo.ingested.v1": "_handle_defectdojo_ingested",
+        "vulnops.evidence.wazuh.ingested.v1": "_handle_wazuh_ingested",
     }
 
     def process_event(self, session: Session, event: OutboxEvent) -> str | None:
@@ -447,3 +448,27 @@ class OutboxOrchestrator:
         if purl:
             self._maybe_create_case(session, exposure, component_name)
         return f"dojo={finding_id} match={result.match_class}"
+
+    def _handle_wazuh_ingested(self, session: Session, event: OutboxEvent) -> str:
+        payload = event.payload or {}
+        agent_id = str(payload.get("agent_id") or "unknown")
+        cve = payload.get("cve")
+        if not cve or cve == "unknown":
+            return f"wazuh={agent_id} no-cve"
+        organization_id = payload.get("organization_id") or "default"
+        exposure, _created = upsert_exposure(
+            session,
+            organization_id=organization_id,
+            vulnerability_id=cve,
+            match_class="candidate",
+            confidence=0.35,
+            detection_context=f"wazuh:{agent_id}",
+            component_occurrence_id=None,
+            matched_rules=["wazuh.package-candidate"],
+            evidence_refs=[event.id],
+            limitations=["package inventory without purl; review required"],
+            matcher_version="2026.1",
+            evidence_ref=event.id,
+        )
+        session.commit()
+        return f"wazuh={agent_id} match=candidate exposure={exposure.id}"
