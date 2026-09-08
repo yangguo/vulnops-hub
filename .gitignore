@@ -15,3 +15,11 @@ build/
 uv.lock
 storage/
 .superpowers/
+
+# staging sandbox credentials
+deploy/.env.staging
+
+# local corporate TLS interception certs and overrides (never commit)
+deploy/kaspersky-ca.pem
+deploy/Dockerfile.local
+docker-compose.override.yml

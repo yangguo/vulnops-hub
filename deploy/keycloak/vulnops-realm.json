@@ -1,0 +1,228 @@
+{
+  "realm": "vulnops",
+  "enabled": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "verifyEmail": false,
+  "clients": [
+    {
+      "clientId": "vulnops-console",
+      "name": "VulnOps Console",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:8000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:8000/*"
+      }
+    },
+    {
+      "clientId": "vulnops-api",
+      "name": "VulnOps API",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "directAccessGrantsEnabled": true,
+      "secret": "sandbox-client-secret",
+      "redirectUris": [],
+      "webOrigins": []
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "basic",
+      "description": "OpenID Connect basic claims (sub). Defined explicitly because the realm import replaces the built-in client scopes.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "config": {
+            "introspection.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "vulnops-claims",
+      "description": "VulnOps RBAC claims: organizations, roles, principal_type, and API audience",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "organizations",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "organizations",
+            "claim.name": "organizations",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "roles",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "principal_type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "principal_type",
+            "claim.name": "principal_type",
+            "jsonType.label": "String",
+            "multivalued": "false",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "vulnops-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "vulnops-api",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": [
+    "vulnops-claims",
+    "basic"
+  ],
+  "users": [
+    {
+      "username": "owner-demo",
+      "enabled": true,
+      "email": "owner-demo@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Owner",
+      "attributes": {
+        "organizations": ["org-demo"],
+        "roles": ["owner"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-owner-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "approver-demo",
+      "enabled": true,
+      "email": "approver-demo@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Approver",
+      "attributes": {
+        "organizations": ["org-demo"],
+        "roles": ["owner", "risk_approver"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-approver-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "auditor-demo",
+      "enabled": true,
+      "email": "auditor-demo@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Auditor",
+      "attributes": {
+        "organizations": ["org-demo"],
+        "roles": ["auditor"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-auditor-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "viewer-demo",
+      "enabled": true,
+      "email": "viewer-demo@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Viewer",
+      "attributes": {
+        "organizations": ["org-demo"],
+        "roles": ["viewer"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-viewer-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "owner-other",
+      "enabled": true,
+      "email": "owner-other@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Other",
+      "lastName": "Org",
+      "attributes": {
+        "organizations": ["org-other"],
+        "roles": ["owner"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-owner-other-password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
