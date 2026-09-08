@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -8,11 +9,35 @@ import httpx
 
 from vulnops.intelligence.contracts import AdvisoryRecord, IntelligenceAdapter, SourceHealth
 
+logger = logging.getLogger("vulnops.intelligence.osv")
+
+
+def _strip_purl_version(purl: str) -> str:
+    """
+    Drop the version qualifier from a purl for OSV package queries.
+
+    OSV rejects a version-qualified purl combined with a version param, so the
+    query carries the bare package purl plus a separate version field. Cut at
+    the first `@` in the final `/`-segment only, after splitting off any query
+    or fragment, so namespace purls survive:
+    pkg:pypi/urllib3@1.26.17 -> pkg:pypi/urllib3
+    pkg:rpm/fedora/curl@7.0-1 -> pkg:rpm/fedora/curl
+    """
+    base = purl
+    for sep in ("?", "#"):
+        base = base.split(sep, 1)[0]
+    last_sep = base.rfind("/")
+    segment = base[last_sep + 1 :]
+    at = segment.find("@")
+    if at == -1:
+        return base
+    return base[: last_sep + 1 + at]
+
 
 class OSVAdapter(IntelligenceAdapter):
     """
     Direct OSV adapter for purl/ecosystem/version-range queries.
-    Uses https://api.osv.dev/v1/querybatch
+    Live path uses https://api.osv.dev/v1/query, one call per component.
     Stores only fields needed for matching, with source provenance.
     """
 
@@ -46,6 +71,21 @@ class OSVAdapter(IntelligenceAdapter):
     def checkpoint(self, result):
         return None, self._status
 
+    @staticmethod
+    def _component_query(component: dict) -> dict[str, Any] | None:
+        """Build one /v1/query payload; None when the component is unqueryable."""
+        purl = component.get("purl")
+        if purl:
+            return {"package": {"purl": _strip_purl_version(purl)}}
+        if component.get("ecosystem") and component.get("name"):
+            return {
+                "package": {
+                    "ecosystem": component["ecosystem"],
+                    "name": component["name"],
+                }
+            }
+        return None
+
     def lookup_batch(
         self,
         components: list[dict],
@@ -56,45 +96,70 @@ class OSVAdapter(IntelligenceAdapter):
         """
         Query OSV for a batch of components.
         components: list of {"purl": str, "version": str} or similar
-        For tests, pass raw_fixture to bypass HTTP and directly parse.
+        Live path: one POST {base}/v1/query per component, sending the
+        version-stripped purl plus a separate version field. OSV 400s on a
+        version-qualified purl combined with a version param, and
+        /v1/querybatch returns {id, modified} stubs without affected ranges.
+        A per-component HTTP error is logged and that component skipped (its
+        result slot stays empty so query_index keeps matching the component
+        index); the call raises only when every component failed, so the
+        orchestrator's fail_event path can retry the event.
+        For tests, pass raw_fixture ({"results": [...]}-shaped) to bypass HTTP
+        and directly parse.
         Returns normalized AdvisoryRecords with provenance.
         """
         now = retrieved_at or datetime.now(UTC)
-        url = source_url or f"{self.base_url}/v1/querybatch"
+        url = source_url or f"{self.base_url}/v1/query"
 
+        had_failures = False
         if raw_fixture is not None:
             raw = raw_fixture
         else:
-            # Build query payload
-            queries = []
-            for c in components:
-                q: dict[str, Any] = {}
-                if c.get("purl"):
-                    q["package"] = {"purl": c["purl"]}
-                elif c.get("ecosystem") and c.get("name"):
-                    q["package"] = {"ecosystem": c["ecosystem"], "name": c["name"]}
-                else:
-                    continue
-                if c.get("version"):
-                    q["version"] = c["version"]
-                queries.append(q)
-            payload = {"queries": queries}
+            # One request per component; SBOM component counts are small.
+            client = self.http_client
+            owns_client = client is None
+            if owns_client:
+                client = httpx.Client(timeout=10)
+            results: list[dict[str, Any]] = []
+            attempted = 0
+            failures = 0
+            last_error: Exception | None = None
             try:
-                client = self.http_client or httpx.Client(timeout=10)
-                resp = client.post(f"{self.base_url}/v1/querybatch", json=payload)
-                resp.raise_for_status()
-                raw = resp.json()
-                self._status.last_success_at = now
-                self._status.last_checked_at = now
-                self._status.freshness = "fresh"
-                self._status.error = None
-            except Exception as e:
-                # Mark stale/degraded but do NOT delete existing advisory assertions
-                self._status.last_checked_at = now
-                self._status.freshness = "stale"
-                self._status.error = str(e)[:512]
-                # Re-raise? For now return empty and let caller handle health
-                raise
+                for idx, component in enumerate(components):
+                    query = self._component_query(component)
+                    if query is None:
+                        results.append({"vulns": []})
+                        continue
+                    attempted += 1
+                    if component.get("version"):
+                        query["version"] = component["version"]
+                    try:
+                        resp = client.post(f"{self.base_url}/v1/query", json=query)
+                        resp.raise_for_status()
+                        payload = resp.json()
+                        results.append(payload if isinstance(payload, dict) else {"vulns": []})
+                    except Exception as e:
+                        # Mark stale but do NOT delete existing advisory
+                        # assertions; other components still get their queries.
+                        had_failures = True
+                        failures += 1
+                        last_error = e
+                        self._status.last_checked_at = now
+                        self._status.freshness = "stale"
+                        self._status.error = str(e)[:512]
+                        logger.warning(
+                            "OSV query failed for component %s (purl=%s): %s",
+                            idx,
+                            component.get("purl"),
+                            e,
+                        )
+                        results.append({"vulns": []})
+            finally:
+                if owns_client:
+                    client.close()
+            if attempted and failures == attempted and last_error is not None:
+                raise last_error
+            raw = {"results": results}
 
         is_valid, err = self.validate(raw)
         if not is_valid:
@@ -151,9 +216,12 @@ class OSVAdapter(IntelligenceAdapter):
                 )
                 records.append(rec)
 
-        self._status.last_success_at = now
-        self._status.last_checked_at = now
-        self._status.freshness = "fresh"
+        if not had_failures:
+            # Full success (or fixture path) is fresh; partial failures already
+            # set stale above and must not be overwritten.
+            self._status.last_success_at = now
+            self._status.last_checked_at = now
+            self._status.freshness = "fresh"
         return records
 
     def get_health(self) -> SourceHealth:

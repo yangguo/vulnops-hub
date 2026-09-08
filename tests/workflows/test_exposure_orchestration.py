@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -107,8 +108,25 @@ def test_fail_event_increments_attempts(db):
     ev = _outbox("t.a.v1", {})
     db.add(ev)
     db.commit()
-    fail_event(db, ev)
+    fail_event(db, ev, max_attempts=8)
     assert ev.attempts == 1
+
+
+def test_fail_event_logs_at_poison_cap(db, caplog):
+    from vulnops.workers.orchestration import claim_events, fail_event
+
+    ev = _outbox("t.a.v1", {})
+    db.add(ev)
+    db.commit()
+    with caplog.at_level(logging.ERROR):
+        for _ in range(8):
+            fail_event(db, ev, max_attempts=8)
+    assert ev.attempts == 8
+    poison_logs = [r for r in caplog.records if "dead-lettered" in r.getMessage()]
+    assert len(poison_logs) == 1
+    assert poison_logs[0].levelno == logging.ERROR
+    # The dead-lettered event is no longer claimable.
+    assert claim_events(db, batch_size=10, max_attempts=8) == []
 
 
 def test_upsert_exposure_creates_then_replays_without_duplicates(db):
@@ -212,6 +230,32 @@ class _NeverClient:
         raise RuntimeError("network disabled in unit tests")
 
 
+class _FakeResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _RecordingClient:
+    """Captures POST requests; replays scripted payloads/exceptions in order."""
+
+    def __init__(self, responses):
+        self.requests: list[dict] = []
+        self._responses = list(responses)
+
+    def post(self, url, json=None, **kwargs):
+        self.requests.append({"url": url, "json": json})
+        item = self._responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return _FakeResponse(item)
+
+
 def test_osv_lookup_batch_records_carry_query_index():
     from vulnops.intelligence.osv import OSVAdapter
 
@@ -240,6 +284,100 @@ def test_osv_lookup_batch_without_fixture_raises_without_network():
         OSVAdapter(http_client=_NeverClient()).lookup_batch(
             [{"purl": "pkg:pypi/a", "version": "1"}]
         )
+
+
+def test_osv_live_query_strips_purl_version_and_returns_full_records():
+    from vulnops.intelligence.osv import OSVAdapter
+
+    client = _RecordingClient(
+        [
+            {
+                "vulns": [
+                    {
+                        "id": "GHSA-2xpw-w6gg-jr37",
+                        "affected": [
+                            {
+                                "package": {"ecosystem": "PyPI", "purl": "pkg:pypi/urllib3"},
+                                "ranges": [
+                                    {
+                                        "type": "ECOSYSTEM",
+                                        "events": [{"introduced": "1.0"}, {"fixed": "2.6.0"}],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    )
+    records = OSVAdapter(http_client=client).lookup_batch(
+        [{"purl": "pkg:pypi/urllib3@1.26.17", "version": "1.26.17"}]
+    )
+
+    # One POST /v1/query per component, purl stripped of its version qualifier.
+    assert len(client.requests) == 1
+    assert client.requests[0]["url"] == "https://api.osv.dev/v1/query"
+    assert client.requests[0]["json"]["package"]["purl"] == "pkg:pypi/urllib3"
+    assert client.requests[0]["json"]["version"] == "1.26.17"
+    # Full /v1/query records keep affected ranges and per-component provenance.
+    assert len(records) == 1
+    assert records[0].vulnerability_id == "GHSA-2xpw-w6gg-jr37"
+    assert records[0].affected_ranges == [
+        {
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/urllib3",
+            "type": "ECOSYSTEM",
+            "introduced": "1.0",
+            "fixed": "2.6.0",
+        }
+    ]
+    assert records[0].retrieval_metadata["query_index"] == 0
+    assert records[0].source_url == "https://api.osv.dev/v1/query"
+
+
+def test_osv_live_query_preserves_namespace_purl():
+    from vulnops.intelligence.osv import OSVAdapter
+
+    client = _RecordingClient([{"vulns": []}])
+    OSVAdapter(http_client=client).lookup_batch(
+        [{"purl": "pkg:rpm/fedora/curl@7.0.1-1.el9", "version": "7.0.1-1.el9"}]
+    )
+    # Only the name-segment @version is dropped; the rpm namespace survives.
+    assert client.requests[0]["json"]["package"]["purl"] == "pkg:rpm/fedora/curl"
+
+
+def test_osv_live_query_all_fail_raises_and_partial_fail_continues():
+    from vulnops.intelligence.osv import OSVAdapter
+
+    # Every component fails -> the whole batch raises so the orchestrator's
+    # fail_event path retries the event; source health is stale.
+    all_fail = _RecordingClient([RuntimeError("400 Bad Request"), RuntimeError("429")])
+    adapter = OSVAdapter(http_client=all_fail)
+    with pytest.raises(RuntimeError):
+        adapter.lookup_batch(
+            [
+                {"purl": "pkg:pypi/a@1.0", "version": "1.0"},
+                {"purl": "pkg:pypi/b@2.0", "version": "2.0"},
+            ]
+        )
+    assert adapter.get_health().freshness == "stale"
+
+    # One component fails -> it is skipped, later components still get queried
+    # with their own query_index, and health stays stale.
+    partial = _RecordingClient(
+        [RuntimeError("400 Bad Request"), {"vulns": [{"id": "CVE-2026-2222", "affected": []}]}]
+    )
+    adapter = OSVAdapter(http_client=partial)
+    records = adapter.lookup_batch(
+        [
+            {"purl": "pkg:pypi/broken@1.0", "version": "1.0"},
+            {"purl": "pkg:pypi/good@2.0", "version": "2.0"},
+        ]
+    )
+    assert [r.vulnerability_id for r in records] == ["CVE-2026-2222"]
+    assert records[0].retrieval_metadata["query_index"] == 1
+    assert adapter.get_health().freshness == "stale"
 
 
 def _sbom_event(sbom_id: str = "sbom_1", org: str = "org-demo"):
@@ -435,6 +573,40 @@ def test_run_once_processes_and_marks_batch(db):
     orch = _orch(db)
     assert orch.run_once() == 1
     assert all(e.delivered_at is not None for e in claim_events(db, batch_size=10, max_attempts=8))
+
+
+def test_run_once_stops_after_failure(db):
+    from vulnops.workers.orchestration import OutboxOrchestrator
+
+    class _BrokenOSV:
+        def lookup_batch(self, components, **kwargs):
+            raise RuntimeError("network disabled")
+
+    first = _sbom_event("sbom_1")
+    second = _sbom_event("sbom_2")
+    second.created_at = first.created_at + timedelta(seconds=1)
+    db.add(_occurrence())
+    db.add_all([first, second])
+    db.commit()
+
+    orch = OutboxOrchestrator(
+        session_factory=lambda: db,
+        osv=_BrokenOSV(),
+        settings=_settings(),
+    )
+    first_id = first.id
+    second_id = second.id
+    assert orch.run_once() == 0
+
+    # run_once closes its session, so re-read the rows from a fresh query.
+    rows = {e.id: e for e in db.query(OutboxEvent).all()}
+    failed = rows[first_id]
+    assert failed.attempts == 1  # one attempt, not burned to the cap
+    assert failed.delivered_at is None
+    # The drain loop stopped claiming: the second event was not processed.
+    untouched = rows[second_id]
+    assert untouched.attempts == 0
+    assert untouched.delivered_at is None
 
 
 def test_priority_for_flags_kev_enrichment(db):

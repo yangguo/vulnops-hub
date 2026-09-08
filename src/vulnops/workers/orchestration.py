@@ -52,11 +52,20 @@ def complete_event(session: Session, event: OutboxEvent) -> None:
     session.commit()
 
 
-def fail_event(session: Session, event: OutboxEvent) -> None:
+def fail_event(session: Session, event: OutboxEvent, max_attempts: int) -> None:
+    """Roll back, count one attempt, and flag poison when the cap is reached."""
+
     session.rollback()
     stored = session.get(OutboxEvent, event.id)
     stored.attempts = (stored.attempts or 0) + 1
     session.commit()
+    if stored.attempts >= max_attempts:
+        logger.error(
+            "outbox event %s (%s) dead-lettered after %d attempts",
+            stored.id,
+            stored.event_type,
+            stored.attempts,
+        )
 
 
 def upsert_exposure(session: Session, **kwargs: Any) -> tuple[Exposure, bool]:
@@ -224,7 +233,7 @@ class OutboxOrchestrator:
         try:
             summary = handler(session, event)
         except Exception:
-            fail_event(session, event)
+            fail_event(session, event, self.settings.orchestrator_max_attempts)
             raise
         complete_event(session, event)
         return summary
@@ -235,7 +244,9 @@ class OutboxOrchestrator:
             # Handlers may emit follow-up outbox rows (e.g. case.created via
             # CaseService); keep claiming until the queue is drained so one
             # invocation leaves nothing undelivered behind. Only events handled
-            # by a registered handler count toward the delivered total.
+            # by a registered handler count toward the delivered total. A failed
+            # event stops claiming until the next poll so its retry cadence is
+            # the poll interval instead of burning attempts in one tight drain.
             delivered = 0
             while True:
                 events = claim_events(
@@ -245,10 +256,22 @@ class OutboxOrchestrator:
                 )
                 if not events:
                     break
+                stop_claiming = False
                 for event in events:
-                    summary = self.process_event(session, event)
+                    try:
+                        summary = self.process_event(session, event)
+                    except Exception:
+                        # fail_event already rolled back and counted the attempt.
+                        logger.exception(
+                            "outbox event %s failed; deferring remaining events to next poll",
+                            event.id,
+                        )
+                        stop_claiming = True
+                        break
                     if summary is not None:
                         delivered += 1
+                if stop_claiming:
+                    break
             return delivered
         finally:
             session.close()
