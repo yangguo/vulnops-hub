@@ -205,6 +205,26 @@
       ]
     },
     {
+      "username": "admin-demo",
+      "enabled": true,
+      "email": "admin-demo@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "attributes": {
+        "organizations": ["org-demo"],
+        "roles": ["admin"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-admin-user-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "username": "owner-other",
       "enabled": true,
       "email": "owner-other@sandbox.local",

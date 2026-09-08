@@ -37,10 +37,10 @@
 | --- | --- | --- |
 | Organization and asset identity | Partial | Organization IDs and asset reconciliation exist; team/service ownership APIs and auth-bound scope remain open |
 | CSV/CMDB and Wazuh observations | Partial | Wazuh bridge exists; CSV/CMDB import is open |
-| CycloneDX/SPDX ingestion | Verified | API, parser, hashing, persistence, and idempotency tests exist |
+| CycloneDX/SPDX ingestion | Verified | API, parser, hashing, persistence, and idempotency tests exist. *2026-09-08: real authenticated submission through the staging Keycloak/API path recorded — see [the staging evidence log](operations/integrated-staging.md)* |
 | Intelligence adapters | Verified in fixtures | KEV, EPSS, OSV, and Vulnerability-Lookup contract tests exist; staging evidence remains open |
 | DefectDojo bridge | Verified in fixtures | Mapping, replay, conflict, and missing-evidence behavior are tested |
-| Exposure generation/candidate queue | Partial | Matching behavior exists; operator-facing candidate queue is not exposed |
+| Exposure generation/candidate queue | Partial | Matching behavior exists; operator-facing candidate queue is not exposed. *2026-09-08 staging run localized the remaining gap precisely: ingested evidence (SBOM/DefectDojo/Wazuh) is stored with outbox events, but no worker consumes the outbox to query intel, run the matcher, and create exposures/cases — the `exposures` table has no writer and `POST /cases` only links existing exposure ids (see [the staging evidence log](operations/integrated-staging.md))* |
 | Transparent risk policy | Verified in fixtures | Version, simulation, KEV escalation, and factors are tested |
 | Case/SLA/audit/notifications | Partial | Workflow, SLA, audit, and outbox writes exist; notification and external-ticket delivery are open |
 | Risk acceptance | Verified in fixtures | Domain behavior, separation of request/approval, and authenticated approval provenance are tested; integrated IdP evidence remains open |
