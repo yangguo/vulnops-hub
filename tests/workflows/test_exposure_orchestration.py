@@ -240,3 +240,260 @@ def test_osv_lookup_batch_without_fixture_raises_without_network():
         OSVAdapter(http_client=_NeverClient()).lookup_batch(
             [{"purl": "pkg:pypi/a", "version": "1"}]
         )
+
+
+def _sbom_event(sbom_id: str = "sbom_1", org: str = "org-demo"):
+    return _outbox(
+        "vulnops.sbom.processed.v1",
+        {"sbom_id": sbom_id, "organization_id": org, "component_count": 1},
+    )
+
+
+def _occurrence(sbom_id: str = "sbom_1", purl: str = "pkg:pypi/urllib3@1.26.17"):
+    from vulnops.sbom.models import ComponentOccurrence
+
+    name = purl.split("/")[-1].split("@")[0]
+    return ComponentOccurrence(
+        id=f"occ_{uuid.uuid4().hex[:8]}",
+        sbom_id=sbom_id,
+        purl=purl,
+        ecosystem="pypi",
+        normalized_name=name,
+        raw_name=name,
+        raw_version=purl.split("@")[-1],
+        version_scheme="pypi",
+    )
+
+
+def _osv_fixture_for(purl_base: str, cve: str, fixed: str) -> dict:
+    """One OSV query -> one vuln with an in-range ECOSYSTEM advisory."""
+
+    return {
+        "results": [
+            {
+                "vulns": [
+                    {
+                        "id": cve,
+                        "affected": [
+                            {
+                                "package": {"ecosystem": "PyPI", "purl": purl_base},
+                                "ranges": [
+                                    {
+                                        "type": "ECOSYSTEM",
+                                        "events": [{"introduced": "0"}, {"fixed": fixed}],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+
+class _FixtureOSV:
+    """OSV stand-in that always returns the urllib3 in-range fixture."""
+
+    def __init__(self, cve: str = "CVE-2026-1234", fixed: str = "1.26.19"):
+        self.cve = cve
+        self.fixed = fixed
+
+    def lookup_batch(self, components, **kwargs):
+        from vulnops.intelligence.osv import OSVAdapter
+
+        return OSVAdapter().lookup_batch(
+            components,
+            raw_fixture=_osv_fixture_for("pkg:pypi/urllib3", self.cve, self.fixed),
+        )
+
+
+def _orch(db, settings=None, osv=None):
+    from vulnops.workers.orchestration import OutboxOrchestrator
+
+    return OutboxOrchestrator(
+        session_factory=lambda: db,
+        osv=osv or _FixtureOSV(),
+        settings=settings or _settings(),
+    )
+
+
+def test_sbom_event_creates_deterministic_exposure_and_case(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    occ = _occurrence()
+    db.add(occ)
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db)
+    event = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, event)
+
+    exposures = db.query(Exposure).all()
+    assert len(exposures) == 1
+    assert exposures[0].match_class == "deterministic"
+    assert exposures[0].state == "active"
+    assert exposures[0].component_occurrence_id == occ.id
+    assert exposures[0].priority in ("P1", "P2", "P3")
+    assert exposures[0].policy_version is not None
+
+    case = db.query(RemediationCase).one()
+    assert case.status == "new"
+    assert case.priority == exposures[0].priority
+    assert case.exposures == [exposures[0].id]
+    assert event.delivered_at is not None
+
+
+def test_sbom_event_replay_does_not_duplicate_case(db):
+    from vulnops.cases.models import CaseExposure, RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_occurrence())
+    db.add(_sbom_event("sbom_1"))
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db)
+    for ev in claim_events(db, batch_size=10, max_attempts=8):
+        orch.process_event(db, ev)
+
+    assert db.query(Exposure).count() == 1
+    assert db.query(RemediationCase).count() == 1
+    assert db.query(CaseExposure).count() == 1
+
+
+def test_sbom_event_out_of_range_creates_not_affected_without_case(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_occurrence(purl="pkg:pypi/urllib3@9.9.9"))
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    exp = db.query(Exposure).one()
+    assert exp.match_class == "not_affected"
+    assert exp.state == "not_affected"
+    assert db.query(RemediationCase).count() == 0
+
+
+def test_sbom_event_kill_switch_creates_exposure_without_case(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_occurrence())
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db, settings=_settings(case_auto_create_enabled=False))
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    assert db.query(Exposure).count() == 1
+    assert db.query(RemediationCase).count() == 0
+
+
+def test_sbom_event_osv_failure_leaves_event_undelivered(db):
+    from vulnops.workers.orchestration import OutboxOrchestrator, claim_events
+
+    class _BrokenOSV:
+        def lookup_batch(self, components, **kwargs):
+            raise RuntimeError("network disabled")
+
+    db.add(_occurrence())
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = OutboxOrchestrator(
+        session_factory=lambda: db,
+        osv=_BrokenOSV(),
+        settings=_settings(),
+    )
+    claimed = claim_events(db, batch_size=10, max_attempts=8)[0]
+    with pytest.raises(RuntimeError):
+        orch.process_event(db, claimed)
+    assert claimed.delivered_at is None
+    assert claimed.attempts == 1
+
+
+def test_run_once_processes_and_marks_batch(db):
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_occurrence())
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db)
+    assert orch.run_once() == 1
+    assert all(e.delivered_at is not None for e in claim_events(db, batch_size=10, max_attempts=8))
+
+
+def test_priority_for_flags_kev_enrichment(db):
+    class _KevStub:
+        def is_kev(self, cve_id: str) -> bool:
+            return cve_id == "CVE-2026-KEV"
+
+    orch = _orch(db, osv=_FixtureOSV())
+    orch.kev = _KevStub()
+
+    priority, policy_version, kev = orch._priority_for("CVE-2026-KEV", "deterministic", 0.93)
+    assert kev is True
+    assert priority in ("P0", "P1", "P2", "P3", "P4")
+    assert policy_version is not None
+
+    _, _, not_kev = orch._priority_for("CVE-2026-NOT-KEV", "deterministic", 0.93)
+    assert not_kev is False
+
+
+def test_sbom_event_crash_window_does_not_duplicate_case(db):
+    # Crash simulation: create_case committed the case row (with its exposures
+    # JSON list) but the process died before the CaseExposure link committed.
+    # Replaying the SBOM event must not create a second case.
+    from vulnops.cases.models import CaseExposure, RemediationCase
+    from vulnops.cases.service import CaseService
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events, upsert_exposure
+
+    occ = _occurrence()
+    db.add(occ)
+    db.commit()
+
+    exposure, _created = upsert_exposure(
+        db,
+        organization_id="org-demo",
+        vulnerability_id="CVE-2026-1234",
+        match_class="deterministic",
+        confidence=0.93,
+        detection_context="sbom:sbom_1",
+        component_occurrence_id=occ.id,
+        matcher_version="2026.1",
+    )
+    db.commit()
+    CaseService(db).create_case(
+        organization_id="org-demo",
+        title=f"Remediate CVE-2026-1234 in {occ.normalized_name}",
+        owner_team="unassigned",
+        priority="P3",
+        exposures=[exposure.id],
+    )
+    # Deliberately no CaseExposure row: the crash lost that write.
+    assert db.query(CaseExposure).count() == 0
+
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+    orch = _orch(db)
+    claimed = claim_events(db, batch_size=10, max_attempts=8)
+    sbom_event = next(e for e in claimed if e.event_type == "vulnops.sbom.processed.v1")
+    orch.process_event(db, sbom_event)
+
+    assert db.query(Exposure).count() == 1
+    assert db.query(RemediationCase).count() == 1
