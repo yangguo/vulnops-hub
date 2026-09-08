@@ -472,3 +472,31 @@ class OutboxOrchestrator:
         )
         session.commit()
         return f"wazuh={agent_id} match=candidate exposure={exposure.id}"
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    from vulnops.db import get_engine, get_sessionmaker
+    from vulnops.intelligence.epss import EPSSAdapter
+    from vulnops.intelligence.kev import KEVAdapter
+
+    settings = get_settings()
+    engine = get_engine()
+    kev = KEVAdapter()
+    try:
+        kev.fetch_catalog()
+        logger.info("KEV catalog loaded")
+    except Exception as exc:
+        logger.warning("KEV catalog unavailable at startup: %s", exc)
+
+    orchestrator = OutboxOrchestrator(
+        session_factory=lambda: get_sessionmaker(engine)(),
+        kev=kev,
+        epss=EPSSAdapter(),
+        settings=settings,
+    )
+    orchestrator.run_forever()
+
+
+if __name__ == "__main__":
+    main()

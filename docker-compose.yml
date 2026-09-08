@@ -95,6 +95,33 @@ services:
     command: python -m vulnops.workers.ingestion
     restart: unless-stopped
 
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg2://vulnops:vulnops@postgres:5432/vulnops
+      REDIS_URL: redis://valkey:6379/0
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: vulnops-snapshots
+      OBJECT_STORAGE_ACCESS_KEY: minioadmin
+      OBJECT_STORAGE_SECRET_KEY: minioadmin
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      CASE_AUTO_CREATE_ENABLED: ${CASE_AUTO_CREATE_ENABLED:-true}
+      DEFAULT_CASE_OWNER_TEAM: ${DEFAULT_CASE_OWNER_TEAM:-unassigned}
+      ORCHESTRATOR_POLL_INTERVAL_SECONDS: ${ORCHESTRATOR_POLL_INTERVAL_SECONDS:-5}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: python -m vulnops.workers.orchestration
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   minio_data:
