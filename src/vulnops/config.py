@@ -110,6 +110,13 @@ class Settings(BaseSettings):
     defectdojo_base_url: str | None = Field(default=None)
     wazuh_base_url: str | None = Field(default=None)
 
+    # Orchestration
+    orchestrator_poll_interval_seconds: float = Field(default=5.0)
+    orchestrator_batch_size: int = Field(default=50)
+    orchestrator_max_attempts: int = Field(default=8)
+    case_auto_create_enabled: bool = Field(default=True)
+    default_case_owner_team: str = Field(default="unassigned")
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _resolve_database_url(cls, v: str | None) -> str | None:
