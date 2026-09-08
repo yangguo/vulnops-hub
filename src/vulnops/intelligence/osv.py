@@ -147,6 +147,7 @@ class OSVAdapter(IntelligenceAdapter):
                     aliases=vuln.get("aliases", []),
                     affected_ranges=affected,
                     references=[r.get("url") for r in vuln.get("references", []) if r.get("url")],
+                    retrieval_metadata={"query_index": idx},
                 )
                 records.append(rec)
 

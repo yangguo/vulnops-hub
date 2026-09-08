@@ -205,3 +205,38 @@ def test_upsert_exposure_dedups_evidence_without_autoflush(db_no_autoflush):
     db_no_autoflush.commit()
     assert db_no_autoflush.query(Exposure).count() == 1
     assert db_no_autoflush.query(MatchEvidence).count() == 1
+
+
+class _NeverClient:
+    def post(self, *args, **kwargs):
+        raise RuntimeError("network disabled in unit tests")
+
+
+def test_osv_lookup_batch_records_carry_query_index():
+    from vulnops.intelligence.osv import OSVAdapter
+
+    fixture = {
+        "results": [
+            {"vulns": [{"id": "CVE-2026-1111", "affected": []}]},
+            {"vulns": []},
+            {"vulns": [{"id": "CVE-2026-2222", "affected": []}]},
+        ]
+    }
+    records = OSVAdapter().lookup_batch(
+        [
+            {"purl": "pkg:pypi/a", "version": "1"},
+            {"purl": "pkg:pypi/b", "version": "2"},
+            {"purl": "pkg:pypi/c", "version": "3"},
+        ],
+        raw_fixture=fixture,
+    )
+    assert [r.retrieval_metadata["query_index"] for r in records] == [0, 2]
+
+
+def test_osv_lookup_batch_without_fixture_raises_without_network():
+    from vulnops.intelligence.osv import OSVAdapter
+
+    with pytest.raises(RuntimeError):
+        OSVAdapter(http_client=_NeverClient()).lookup_batch(
+            [{"purl": "pkg:pypi/a", "version": "1"}]
+        )
