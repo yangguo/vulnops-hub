@@ -177,6 +177,23 @@ def _component_from_occurrence(occurrence: Any) -> ParsedComponent:
     )
 
 
+def _component_from_fields(
+    *, raw_name: str, raw_version: str | None, purl: str | None
+) -> ParsedComponent:
+    ecosystem = None
+    if purl and purl.startswith("pkg:"):
+        ecosystem = purl[4:].split("/")[0].lower()
+    return ParsedComponent(
+        raw_name=raw_name,
+        raw_version=raw_version,
+        purl=purl,
+        ecosystem=ecosystem,
+        normalized_name=raw_name,
+        cpe=None,
+        version_scheme=ecosystem,
+    )
+
+
 class OutboxOrchestrator:
     """Consume evidence outbox events and materialize exposures/cases."""
 
@@ -193,6 +210,7 @@ class OutboxOrchestrator:
 
     _HANDLERS: ClassVar[dict[str, str]] = {
         "vulnops.sbom.processed.v1": "_handle_sbom_processed",
+        "vulnops.evidence.defectdojo.ingested.v1": "_handle_defectdojo_ingested",
     }
 
     def process_event(self, session: Session, event: OutboxEvent) -> str | None:
@@ -373,3 +391,59 @@ class OutboxOrchestrator:
                 )
                 exposure_count += 1
         return f"sbom={sbom_id} exposures={exposure_count}"
+
+    def _handle_defectdojo_ingested(self, session: Session, event: OutboxEvent) -> str:
+        payload = event.payload or {}
+        finding_id = str(payload.get("finding_id"))
+        mapping_status = (payload.get("mapping") or {}).get("status")
+        if mapping_status == "ambiguous":
+            return f"dojo={finding_id} skipped-ambiguous"
+
+        cve = payload.get("cve")
+        if not cve or cve == "unknown":
+            return f"dojo={finding_id} skipped-no-cve"
+
+        organization_id = payload.get("organization_id") or "default"
+        purl = payload.get("purl")
+        component_name = payload.get("component_name") or "unknown"
+        component_version = payload.get("component_version")
+        verified = bool(payload.get("verified"))
+
+        advisory: dict[str, Any] = {"id": cve, "affected": []}
+        if purl:
+            records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
+            if records:
+                advisory = _advisory_from_record(records[0])
+                advisory["id"] = advisory.get("id") or cve
+
+        component = _component_from_fields(
+            raw_name=component_name, raw_version=component_version, purl=purl
+        )
+        scanner_evidence = (
+            {"scanner_confirmed": True, "finding_id": finding_id} if verified else None
+        )
+        result = self.matcher.evaluate(component, advisory, scanner_evidence=scanner_evidence)
+        priority, policy_version, _kev = self._priority_for(
+            cve, result.match_class, result.confidence
+        )
+        exposure, _created = upsert_exposure(
+            session,
+            organization_id=organization_id,
+            vulnerability_id=cve,
+            match_class=result.match_class,
+            confidence=result.confidence,
+            detection_context=f"defectdojo:{finding_id}",
+            component_occurrence_id=None,
+            asset_id=(payload.get("mapping") or {}).get("asset_id"),
+            matched_rules=result.matched_rules,
+            evidence_refs=[event.id],
+            limitations=result.limitations,
+            matcher_version=result.matcher_version,
+            priority=priority,
+            policy_version=policy_version,
+            evidence_ref=event.id,
+        )
+        session.commit()
+        if purl:
+            self._maybe_create_case(session, exposure, component_name)
+        return f"dojo={finding_id} match={result.match_class}"

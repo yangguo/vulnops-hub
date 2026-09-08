@@ -497,3 +497,90 @@ def test_sbom_event_crash_window_does_not_duplicate_case(db):
 
     assert db.query(Exposure).count() == 1
     assert db.query(RemediationCase).count() == 1
+
+
+def _dojo_event(**overrides):
+    payload = {
+        "finding_id": "42",
+        "cve": "CVE-2026-1234",
+        "purl": "pkg:pypi/urllib3@1.26.17",
+        "component_name": "urllib3",
+        "component_version": "1.26.17",
+        "verified": False,
+        "organization_id": "org-demo",
+        "mapping": {"status": "matched", "asset_id": None},
+        "scan_metadata": {"scope_status": "unknown"},
+    }
+    payload.update(overrides)
+    return _outbox("vulnops.evidence.defectdojo.ingested.v1", payload)
+
+
+def test_dojo_verified_finding_creates_confirmed_case(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_dojo_event(verified=True))
+    db.commit()
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    exp = db.query(Exposure).one()
+    assert exp.match_class == "confirmed"
+    case = db.query(RemediationCase).one()
+    assert case.priority in ("P0", "P1", "P2", "P3")
+
+
+def test_dojo_unverified_finding_other_purl_has_no_case(db):
+    # requests identity is not covered by the urllib3 fixture advisory:
+    # identity never matches, so the matcher falls back to candidate.
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(
+        _dojo_event(
+            purl="pkg:pypi/requests@2.31.0",
+            component_name="requests",
+            component_version="2.31.0",
+        )
+    )
+    db.commit()
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    exp = db.query(Exposure).one()
+    assert exp.match_class == "candidate"
+    assert db.query(RemediationCase).count() == 0
+
+
+def test_dojo_without_purl_is_candidate(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_dojo_event(purl=None, component_version=None))
+    db.commit()
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    exp = db.query(Exposure).one()
+    assert exp.match_class == "candidate"
+    assert exp.component_occurrence_id is None
+    assert db.query(RemediationCase).count() == 0
+
+
+def test_dojo_ambiguous_mapping_skipped(db):
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(_dojo_event(mapping={"status": "ambiguous", "asset_id": None}))
+    db.commit()
+    orch = _orch(db)
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    assert db.query(Exposure).count() == 0
