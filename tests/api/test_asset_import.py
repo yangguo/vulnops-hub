@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import vulnops.assets.models  # noqa: F401  (register metadata)
+import vulnops.assets.models
 import vulnops.intelligence.models  # noqa: F401
 from vulnops.config import get_settings
 from vulnops.db import Base
@@ -60,7 +60,7 @@ def env(monkeypatch: pytest.MonkeyPatch):
         "client": TestClient(app),
         "factory": factory,
         "post": lambda csv_text: TestClient(app).post(
-            f"/api/v1/organizations/org-demo/assets/import",
+            "/api/v1/organizations/org-demo/assets/import",
             content=csv_text,
             headers={"Authorization": "Bearer test-token", "Content-Type": "text/csv"},
         ),
