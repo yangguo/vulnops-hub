@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
 from vulnops.api.schemas import (
-    ProblemDetails,
     ExposureItem,
     ExposureListResponse,
     ExposureReviewResponse,
+    ProblemDetails,
 )
 from vulnops.auth.dependencies import get_principal, require_capability
 from vulnops.auth.models import Principal
