@@ -37,6 +37,9 @@ intentional contract changes.
   exposure review API with audit trail, Jira issue-key link-back for
   scanner-confirmed auto-cases, and VEX statements via Vulnerability-Lookup
   feeding match policy (ADR 0002).
+- Console source-health page (freshness badges, degraded-source alert) and
+  candidate review page (decision dialog writing audited reasons), with
+  navigation gated by capability.
 
 ### Changed
 
