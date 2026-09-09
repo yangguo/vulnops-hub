@@ -194,6 +194,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{org_id}/source-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Health
+         * @description Operational visibility for source freshness (global scope, read-only).
+         */
+        get: operations["source_health_api_v1_organizations__org_id__source_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/assets/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Assets
+         * @description Import a CSV asset inventory (CMDB export).
+         *
+         *     Header row required; recognized columns: hostname (required identity),
+         *     name, criticality, environment, owner, internet_exposure, type.
+         *     Existing assets are matched by hostname alias and updated in place;
+         *     unknown hostnames create assets with a hostname alias; ambiguous alias
+         *     collisions are skipped for review, never merged.
+         */
+        post: operations["import_assets_api_v1_organizations__org_id__assets_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/exposures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Exposures */
+        get: operations["list_exposures_api_v1_organizations__org_id__exposures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/exposures/{exposure_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Exposure */
+        post: operations["review_exposure_api_v1_organizations__org_id__exposures__exposure_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -279,6 +359,51 @@ export interface components {
             page: number;
             /** Page Size */
             page_size: number;
+        };
+        /** ExposureItem */
+        ExposureItem: {
+            /** Id */
+            id: string;
+            /** Vulnerability Id */
+            vulnerability_id: string;
+            /** Match Class */
+            match_class: string;
+            /** Confidence */
+            confidence: number;
+            /** State */
+            state: string;
+            /** Priority */
+            priority?: string | null;
+            /** Detection Context */
+            detection_context?: string | null;
+            /** Component Occurrence Id */
+            component_occurrence_id?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** First Observed At */
+            first_observed_at?: string | null;
+            /** Last Observed At */
+            last_observed_at?: string | null;
+        };
+        /** ExposureListResponse */
+        ExposureListResponse: {
+            /** Items */
+            items: components["schemas"]["ExposureItem"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
+        /** ExposureReviewResponse */
+        ExposureReviewResponse: {
+            /** Id */
+            id: string;
+            /** State */
+            state: string;
+            /** Match Class */
+            match_class: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -408,6 +533,34 @@ export interface components {
             status: string;
             /** Received At */
             received_at: string;
+        };
+        /** SourceHealthItem */
+        SourceHealthItem: {
+            /** Source */
+            source: string;
+            /** Scope */
+            scope: string;
+            /** Freshness */
+            freshness: string;
+            /** Cursor */
+            cursor?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Last Checked At */
+            last_checked_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** SourceHealthResponse */
+        SourceHealthResponse: {
+            /** Items */
+            items: components["schemas"]["SourceHealthItem"][];
+            /** Total */
+            total: number;
+            /** Degraded Sources */
+            degraded_sources: string[];
         };
         /** TransitionResponse */
         TransitionResponse: {
@@ -1172,6 +1325,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VerificationSubmitResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    source_health_api_v1_organizations__org_id__source_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceHealthResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_assets_api_v1_organizations__org_id__assets_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_exposures_api_v1_organizations__org_id__exposures_get: {
+        parameters: {
+            query?: {
+                state?: string;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_exposure_api_v1_organizations__org_id__exposures__exposure_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+                exposure_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExposureReviewResponse"];
                 };
             };
             /** @description Authentication required */

@@ -838,10 +838,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Source Health Api V1 Organizations  Org Id  Source
-                  Health Get
+                $ref: '#/components/schemas/SourceHealthResponse'
         '401':
           description: Authentication required
           content:
@@ -960,10 +957,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response List Exposures Api V1 Organizations  Org Id  Exposures
-                  Get
+                $ref: '#/components/schemas/ExposureListResponse'
         '401':
           description: Authentication required
           content:
@@ -1009,10 +1003,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Review Exposure Api V1 Organizations  Org Id  Exposures  Exposure
-                  Id  Review Post
+                $ref: '#/components/schemas/ExposureReviewResponse'
         '401':
           description: Authentication required
           content:
@@ -1207,6 +1198,101 @@ components:
       - page
       - page_size
       title: CaseListResponse
+    ExposureItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        vulnerability_id:
+          type: string
+          title: Vulnerability Id
+        match_class:
+          type: string
+          title: Match Class
+        confidence:
+          type: number
+          title: Confidence
+        state:
+          type: string
+          title: State
+        priority:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Priority
+        detection_context:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detection Context
+        component_occurrence_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Component Occurrence Id
+        asset_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Asset Id
+        first_observed_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Observed At
+        last_observed_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Observed At
+      type: object
+      required:
+      - id
+      - vulnerability_id
+      - match_class
+      - confidence
+      - state
+      title: ExposureItem
+    ExposureListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExposureItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: ExposureListResponse
+    ExposureReviewResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        state:
+          type: string
+          title: State
+        match_class:
+          type: string
+          title: Match Class
+      type: object
+      required:
+      - id
+      - state
+      - match_class
+      title: ExposureReviewResponse
     HTTPValidationError:
       properties:
         detail:
@@ -1476,6 +1562,68 @@ components:
       - status
       - received_at
       title: SbomSubmitResponse
+    SourceHealthItem:
+      properties:
+        source:
+          type: string
+          title: Source
+        scope:
+          type: string
+          title: Scope
+        freshness:
+          type: string
+          title: Freshness
+        cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cursor
+        last_success_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Success At
+        last_checked_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Checked At
+        last_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Error
+        enabled:
+          type: boolean
+          title: Enabled
+      type: object
+      required:
+      - source
+      - scope
+      - freshness
+      - enabled
+      title: SourceHealthItem
+    SourceHealthResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SourceHealthItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        degraded_sources:
+          items:
+            type: string
+          type: array
+          title: Degraded Sources
+      type: object
+      required:
+      - items
+      - total
+      - degraded_sources
+      title: SourceHealthResponse
     TransitionResponse:
       properties:
         id:

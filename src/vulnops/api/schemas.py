@@ -403,3 +403,52 @@ class VerificationResponse(BaseModel):
 
 class VerificationsResponse(BaseModel):
     items: list[VerificationResponse]
+
+
+class SourceHealthItem(BaseModel):
+    source: str
+    scope: str
+    freshness: str
+    cursor: str | None = None
+    last_success_at: str | None = None
+    last_checked_at: str | None = None
+    last_error: str | None = None
+    enabled: bool
+
+
+class SourceHealthResponse(BaseModel):
+    items: list[SourceHealthItem]
+    total: int
+    degraded_sources: list[str]
+
+
+class ExposureItem(BaseModel):
+    id: str
+    vulnerability_id: str
+    match_class: str
+    confidence: float
+    state: str
+    priority: str | None = None
+    detection_context: str | None = None
+    component_occurrence_id: str | None = None
+    asset_id: str | None = None
+    first_observed_at: str | None = None
+    last_observed_at: str | None = None
+
+
+class ExposureListResponse(BaseModel):
+    items: list[ExposureItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class ExposureReviewResponse(BaseModel):
+    id: str
+    state: str
+    match_class: str
+
+
+class ExposureReviewRequest(BaseModel):
+    decision: str
+    reason: str

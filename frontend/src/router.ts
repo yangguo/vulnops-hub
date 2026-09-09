@@ -27,6 +27,13 @@ export const router = createRouter({
       component: () => import('./views/SbomSubmitView.vue'),
       meta: { capability: 'sbom:write' },
     },
+    { path: '/source-health', name: 'source-health', component: () => import('./views/SourceHealthView.vue') },
+    {
+      path: '/review',
+      name: 'candidate-review',
+      component: () => import('./views/CandidateReviewView.vue'),
+      meta: { capability: 'risk:request' },
+    },
   ],
 })
 

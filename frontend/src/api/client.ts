@@ -14,6 +14,9 @@ import type {
   TransitionResponse,
   VerificationSubmitResponse,
   VerificationsResponse,
+  ExposureListResponse,
+  ExposureReviewResponse,
+  SourceHealthResponse,
 } from './types'
 
 export class ApiError extends Error {
@@ -174,6 +177,24 @@ export const apiClient = {
   },
   getSbom(org: string, sbomId: string): Promise<SbomResponse> {
     return request(`/api/v1/organizations/${org}/sboms/${sbomId}`)
+  },
+  listSourceHealth(org: string): Promise<SourceHealthResponse> {
+    return request(`/api/v1/organizations/${org}/source-health`)
+  },
+  listExposures(org: string, state: string, page = 1): Promise<ExposureListResponse> {
+    return request(
+      `/api/v1/organizations/${org}/exposures?state=${encodeURIComponent(state)}&page=${page}`,
+    )
+  },
+  reviewExposure(
+    org: string,
+    exposureId: string,
+    payload: { decision: string; reason: string },
+  ): Promise<ExposureReviewResponse> {
+    return request(
+      `/api/v1/organizations/${org}/exposures/${exposureId}/review`,
+      jsonInit('POST', payload),
+    )
   },
   getHealthLive(): Promise<{ service: string; version: string }> {
     return request('/health/live')

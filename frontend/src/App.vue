@@ -28,6 +28,15 @@
         >
           📦 SBOM 提交
         </el-menu-item>
+        <el-menu-item index="/source-health">
+          🩺 源健康
+        </el-menu-item>
+        <el-menu-item
+          v-if="authStore.hasCapability('risk:request')"
+          index="/review"
+        >
+          🔍 候选审查
+        </el-menu-item>
         <el-menu-item-group title="未来模块">
           <el-menu-item
             index="/assets"

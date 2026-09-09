@@ -3,10 +3,16 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
-from vulnops.api.schemas import ProblemDetails
+from vulnops.api.schemas import (
+    ProblemDetails,
+    ExposureItem,
+    ExposureListResponse,
+    ExposureReviewResponse,
+)
 from vulnops.auth.dependencies import get_principal, require_capability
 from vulnops.auth.models import Principal
 from vulnops.db.models.audit_event import AuditEvent
@@ -32,7 +38,7 @@ async def list_exposures(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_principal),
-) -> dict:
+) -> ExposureListResponse:
     del principal  # org scoping is enforced by the query itself
     query = db.query(Exposure).filter(Exposure.organization_id == org_id, Exposure.state == state)
     total = query.count()
@@ -42,12 +48,12 @@ async def list_exposures(
         .limit(page_size)
         .all()
     )
-    return {
-        "items": [_serialize(e) for e in rows],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
+    return ExposureListResponse(
+        items=[_serialize(e) for e in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post(
@@ -60,7 +66,7 @@ async def review_exposure(
     request: Request,
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_principal),
-) -> dict:
+) -> ExposureReviewResponse:
     body = await request.json()
     decision = str(body.get("decision") or "").strip()
     reason = str(body.get("reason") or "").strip()
@@ -97,28 +103,28 @@ async def review_exposure(
         )
     )
     db.commit()
-    return {"id": exposure.id, "state": exposure.state, "match_class": exposure.match_class}
+    return ExposureReviewResponse(
+        id=exposure.id, state=exposure.state, match_class=exposure.match_class
+    )
 
 
-def _serialize(e: Exposure) -> dict:
-    return {
-        "id": e.id,
-        "vulnerability_id": e.vulnerability_id,
-        "match_class": e.match_class,
-        "confidence": e.confidence,
-        "state": e.state,
-        "priority": e.priority,
-        "detection_context": e.detection_context,
-        "component_occurrence_id": e.component_occurrence_id,
-        "asset_id": e.asset_id,
-        "first_observed_at": e.first_observed_at.isoformat() if e.first_observed_at else None,
-        "last_observed_at": e.last_observed_at.isoformat() if e.last_observed_at else None,
-    }
+def _serialize(e: Exposure) -> ExposureItem:
+    return ExposureItem(
+        id=e.id,
+        vulnerability_id=e.vulnerability_id,
+        match_class=e.match_class,
+        confidence=e.confidence,
+        state=e.state,
+        priority=e.priority,
+        detection_context=e.detection_context,
+        component_occurrence_id=e.component_occurrence_id,
+        asset_id=e.asset_id,
+        first_observed_at=e.first_observed_at.isoformat() if e.first_observed_at else None,
+        last_observed_at=e.last_observed_at.isoformat() if e.last_observed_at else None,
+    )
 
 
-def _problem(status: int, code: str, detail: str) -> dict:
-    from fastapi.responses import JSONResponse
-
+def _problem(status: int, code: str, detail: str) -> JSONResponse:
     return JSONResponse(
         status_code=status,
         content={
