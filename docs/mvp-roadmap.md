@@ -100,12 +100,21 @@ and one non-production integrated environment.
 
 ### M2 — Operational pilot
 
-- Add Greenbone report/API bridge and Jira/ServiceNow projection.
-- Add business-service mappings, improved asset reconciliation, ownership
-  escalation, and notification templates.
-- Add VEX/CSAF ingestion and review workflow.
-- Add operator UI for triage, case timeline, policy explanation, source
-  freshness, and coverage gaps.
+- Add product-level polling adapters for DefectDojo and Wazuh (cursor,
+  checkpoint, health) per the adapter onboarding contract.
+- Add CSV/CMDB asset import.
+- Add source-health API and operator UI for source freshness and coverage
+  gaps.
+- Add candidate review API and operator UI.
+- Consume VEX/CSAF statements via Vulnerability-Lookup; feed them into match
+  policy as review evidence.
+- Project scanner-confirmed cases to Jira via DefectDojo's native
+  integration, recording the issue key as the case's external-ticket
+  reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
+  Greenbone evidence enters through DefectDojo; ServiceNow and case-level
+  projection are deferred until pilot feedback.
+- Add business-service mappings, improved asset reconciliation, and ownership
+  escalation.
 - Establish backup/restore drill and upgrade/replay procedure.
 
 **Exit gate:** a pilot team runs its normal remediation cycle with measurable
