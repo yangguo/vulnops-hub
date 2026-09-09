@@ -10,14 +10,6 @@ import { mkdirSync } from 'node:fs'
 const OUT = '../docs/screenshots'
 mkdirSync(OUT, { recursive: true })
 
-const SHOTS = [
-  { path: '/', file: 'dashboard.png', name: '看板' },
-  { path: '/cases', file: 'cases.png', name: '工单列表' },
-  { path: '/source-health', file: 'source-health.png', name: '源健康' },
-  { path: '/review', file: 'candidate-review.png', name: '候选审查' },
-  { path: '/sboms', file: 'sbom-submit.png', name: 'SBOM 提交' },
-]
-
 async function waitFor(url, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -35,7 +27,7 @@ async function waitFor(url, timeoutMs = 30000) {
 await waitFor('http://localhost:5173/')
 await waitFor('http://localhost:8000/health/live')
 
-const channel = process.env.BROWSER_CHANNEL ?? 'msedge'
+const channel = globalThis.process?.env.BROWSER_CHANNEL ?? 'msedge'
 const browser = await chromium.launch({ channel, headless: true })
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await context.newPage()
