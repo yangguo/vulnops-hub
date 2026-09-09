@@ -1,0 +1,218 @@
+"""Polling worker tests: fetch -> enqueue -> checkpoint per the onboarding contract."""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+import vulnops.db.models.outbox_event
+import vulnops.intelligence.models  # noqa: F401  (register SourceStatus metadata)
+from vulnops.config import Settings
+from vulnops.db import Base
+
+
+@pytest.fixture()
+def db():
+    eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=eng)
+    factory = sessionmaker(bind=eng, expire_on_commit=False)
+    session = factory()
+    yield session
+    session.close()
+
+
+def _settings(**overrides) -> Settings:
+    defaults: dict = {
+        "oidc_issuer_url": "http://127.0.0.1:8082/realms/vulnops",
+        "oidc_audience": "vulnops-api",
+    }
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+class _RecordingEnqueuer:
+    def __init__(self, fail: bool = False):
+        self.jobs: list[list[dict]] = []
+        self.fail = fail
+
+    def __call__(self, jobs: list[dict]) -> None:
+        if self.fail:
+            raise RuntimeError("queue down")
+        self.jobs.append(jobs)
+
+
+class _FakeDDClient:
+    """DefectDojo stand-in: two pages keyed by cursor."""
+
+    def __init__(self):
+        self.pages = {
+            None: [{"id": 1, "title": "a"}, {"id": 2, "title": "b"}],
+            "2": [{"id": 3, "title": "c"}],
+        }
+        self.requests: list[str | None] = []
+
+    def fetch(self, cursor):
+        self.requests.append(cursor)
+        records = self.pages.get(cursor, [])
+        next_cursor = str(max((r["id"] for r in records), default=0)) or None
+        return records, (next_cursor if records else cursor)
+
+
+def test_defectdojo_jobs_shape_and_cursor_advance(db):
+    from vulnops.workers.polling import PollingWorker
+
+    enqueuer = _RecordingEnqueuer()
+    worker = PollingWorker(
+        session_factory=lambda: db,
+        clients={"defectdojo": _FakeDDClient(), "wazuh": None},
+        enqueuer=enqueuer,
+        settings=_settings(),
+    )
+    stats = worker.cycle()
+    assert stats["defectdojo"] == 2
+    assert enqueuer.jobs[0] == [
+        {
+            "source": "defectdojo",
+            "payload": {"id": 1, "title": "a"},
+            "organization_id": "org-demo",
+            "idempotency_key": "defectdojo:1",
+        },
+        {
+            "source": "defectdojo",
+            "payload": {"id": 2, "title": "b"},
+            "organization_id": "org-demo",
+            "idempotency_key": "defectdojo:2",
+        },
+    ]
+    from vulnops.intelligence.models import SourceStatus
+
+    status = db.query(SourceStatus).filter_by(source="defectdojo").one()
+    assert status.cursor == "2"
+    assert status.freshness == "fresh"
+    assert status.last_success_at is not None
+
+
+def test_wazuh_events_shaped_for_bridge(db):
+    from vulnops.workers.polling import PollingWorker, WazuhClient
+
+    class _Resp:
+        def __init__(self, body, text=""):
+            self._body = body
+            self.text = text
+
+        def json(self):
+            return self._body
+
+        def raise_for_status(self):
+            return None
+
+    class _FakeTransport:
+        def post(self, url, **kwargs):
+            return _Resp({}, text="tok")
+
+        def get(self, url, **kwargs):
+            if "/agents?" in url:
+                return _Resp({"data": {"affected_items": [{"id": 7, "name": "h1"}]}})
+            return _Resp({"data": {"affected_items": [{"name": "openssl", "version": "3.0.2"}]}})
+
+    client = WazuhClient("https://wazuh", "wazuh", "pw", http_client=_FakeTransport())
+    enqueuer = _RecordingEnqueuer()
+    worker = PollingWorker(
+        session_factory=lambda: db,
+        clients={"defectdojo": None, "wazuh": client},
+        enqueuer=enqueuer,
+        settings=_settings(),
+    )
+    stats = worker.cycle()
+    assert stats["wazuh"] == 1
+    job = enqueuer.jobs[0][0]
+    assert job["source"] == "wazuh"
+    assert job["payload"] == {
+        "agent": {"id": 7, "name": "h1"},
+        "package": {"name": "openssl", "version": "3.0.2"},
+    }
+    assert job["idempotency_key"] == "wazuh:7:openssl:3.0.2"
+
+
+class _Resp:
+    def __init__(self, body, text=""):
+        self._body = body
+        self.text = text
+
+    def json(self):
+        return self._body
+
+    def raise_for_status(self):
+        return None
+
+
+def test_checkpoint_only_after_enqueue(db):
+    from vulnops.intelligence.models import SourceStatus
+    from vulnops.workers.polling import PollingWorker
+
+    enqueuer = _RecordingEnqueuer(fail=True)
+    worker = PollingWorker(
+        session_factory=lambda: db,
+        clients={"defectdojo": _FakeDDClient(), "wazuh": None},
+        enqueuer=enqueuer,
+        settings=_settings(),
+    )
+    stats = worker.cycle()
+    assert stats["defectdojo"] == 0
+    status = db.query(SourceStatus).filter_by(source="defectdojo").one()
+    assert status.cursor is None  # cursor not advanced: jobs were not durably enqueued
+    assert status.freshness == "stale"
+    assert status.last_error
+
+
+def test_fetch_failure_marks_stale_keeps_cursor(db):
+    from vulnops.intelligence.models import SourceStatus
+    from vulnops.workers.polling import PollingWorker
+
+    class _Broken:
+        def fetch(self, cursor):
+            raise RuntimeError("upstream 500")
+
+    enqueuer = _RecordingEnqueuer()
+    worker = PollingWorker(
+        session_factory=lambda: db,
+        clients={"defectdojo": _Broken(), "wazuh": None},
+        enqueuer=enqueuer,
+        settings=_settings(),
+    )
+    worker.cycle()
+    status = db.query(SourceStatus).filter_by(source="defectdojo").one()
+    assert status.freshness == "stale"
+    assert status.cursor is None
+    assert not enqueuer.jobs
+
+
+def test_unconfigured_source_skipped(db):
+    from vulnops.intelligence.models import SourceStatus
+    from vulnops.workers.polling import PollingWorker
+
+    worker = PollingWorker(
+        session_factory=lambda: db,
+        clients={"defectdojo": None, "wazuh": None},
+        enqueuer=_RecordingEnqueuer(),
+        settings=_settings(),
+    )
+    stats = worker.cycle()
+    assert stats == {}
+    assert db.query(SourceStatus).count() == 0
+
+
+def test_cursor_persisted_across_cycles(db):
+    from vulnops.workers.polling import PollingWorker
+
+    client = _FakeDDClient()
+    worker = PollingWorker(
+        session_factory=lambda: db,
+        clients={"defectdojo": client, "wazuh": None},
+        enqueuer=_RecordingEnqueuer(),
+        settings=_settings(),
+    )
+    worker.cycle()
+    worker.cycle()
+    assert client.requests == [None, "2"]  # second cycle resumes from checkpoint

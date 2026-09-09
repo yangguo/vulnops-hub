@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     defectdojo_base_url: str | None = Field(default=None)
     wazuh_base_url: str | None = Field(default=None)
 
+    # Polling
+    defectdojo_api_token: str | None = Field(default=None)
+    defectdojo_poll_interval_seconds: float = Field(default=300.0)
+    wazuh_api_user: str = Field(default="wazuh")
+    wazuh_api_password: str | None = Field(default=None)
+    wazuh_poll_interval_seconds: float = Field(default=300.0)
+    wazuh_tls_verify: bool = Field(default=False)
+    poll_organization_id: str = Field(default="org-demo")
+    poll_page_size: int = Field(default=100)
+
     # Orchestration
     orchestrator_poll_interval_seconds: float = Field(default=5.0)
     orchestrator_batch_size: int = Field(default=50)
