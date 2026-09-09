@@ -816,6 +816,221 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/source-health:
+    get:
+      tags:
+      - source-health
+      summary: Source Health
+      description: Operational visibility for source freshness (global scope, read-only).
+      operationId: source_health_api_v1_organizations__org_id__source_health_get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Source Health Api V1 Organizations  Org Id  Source
+                  Health Get
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/assets/import:
+    post:
+      tags:
+      - assets
+      summary: Import Assets
+      description: 'Import a CSV asset inventory (CMDB export).
+
+
+        Header row required; recognized columns: hostname (required identity),
+
+        name, criticality, environment, owner, internet_exposure, type.
+
+        Existing assets are matched by hostname alias and updated in place;
+
+        unknown hostnames create assets with a hostname alias; ambiguous alias
+
+        collisions are skipped for review, never merged.'
+      operationId: import_assets_api_v1_organizations__org_id__assets_import_post
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Assets Api V1 Organizations  Org Id  Assets
+                  Import Post
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/exposures:
+    get:
+      tags:
+      - exposures
+      summary: List Exposures
+      operationId: list_exposures_api_v1_organizations__org_id__exposures_get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: state
+        in: query
+        required: false
+        schema:
+          type: string
+          default: candidate
+          title: State
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Exposures Api V1 Organizations  Org Id  Exposures
+                  Get
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/exposures/{exposure_id}/review:
+    post:
+      tags:
+      - exposures
+      summary: Review Exposure
+      operationId: review_exposure_api_v1_organizations__org_id__exposures__exposure_id__review_post
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: exposure_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Exposure Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Review Exposure Api V1 Organizations  Org Id  Exposures  Exposure
+                  Id  Review Post
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AllowedTransitionsResponse:

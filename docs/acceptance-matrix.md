@@ -35,7 +35,7 @@
 
 | Must-have area | Status | Notes |
 | --- | --- | --- |
-| Organization and asset identity | Partial | Organization IDs and asset reconciliation exist; team/service ownership APIs and auth-bound scope remain open |
+| Organization and asset identity | Partial | Organization IDs and asset reconciliation exist; *2026-09-09: CSV/CMDB asset import shipped (hostname-alias reconciliation, create-or-update, collision skip)*; team/service ownership APIs remain open |
 | CSV/CMDB and Wazuh observations | Partial | Wazuh bridge exists; CSV/CMDB import is open |
 | CycloneDX/SPDX ingestion | Verified | API, parser, hashing, persistence, and idempotency tests exist. *2026-09-08: real authenticated submission through the staging Keycloak/API path recorded — see [the staging evidence log](operations/integrated-staging.md)* |
 | Intelligence adapters | Verified in fixtures | KEV, EPSS, OSV, and Vulnerability-Lookup contract tests exist; staging evidence remains open |
@@ -45,7 +45,7 @@
 | Case/SLA/audit/notifications | Partial | Workflow, SLA, audit, and outbox writes exist; notification and external-ticket delivery are open |
 | Risk acceptance | Verified in fixtures | Domain behavior, separation of request/approval, and authenticated approval provenance are tested; integrated IdP evidence remains open |
 | Verification and reopen | Verified in fixtures | Conservative closure and reopen behavior are tested |
-| Source health and coverage gaps | Partial | Adapter status models exist; API/UI and operational visibility are open |
+| Source health and coverage gaps | Partial | Adapter status models exist; *2026-09-09: source-health API shipped (freshness + degraded flags) and product-level polling adapters now write cursor/health checkpoints — operator console panel still open* |
 | Secure self-hosted deployment | Partial | Compose, Helm, CI, SBOM, scan, Docker smoke, and fail-closed OIDC configuration exist; production certification remains open |
 
 ## Evidence required to close M1

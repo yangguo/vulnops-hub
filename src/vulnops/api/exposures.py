@@ -6,12 +6,19 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.api.schemas import ProblemDetails
 from vulnops.auth.dependencies import get_principal, require_capability
 from vulnops.auth.models import Principal
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.matching.models import Exposure
 
-router = APIRouter(tags=["exposures"])
+router = APIRouter(
+    tags=["exposures"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
 
 
 @router.get(

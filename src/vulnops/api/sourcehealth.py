@@ -4,10 +4,17 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.api.schemas import ProblemDetails
 from vulnops.auth.dependencies import require_capability
 from vulnops.intelligence.models import SourceStatus
 
-router = APIRouter(tags=["source-health"])
+router = APIRouter(
+    tags=["source-health"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
 
 
 def _serialize(status: SourceStatus) -> dict:

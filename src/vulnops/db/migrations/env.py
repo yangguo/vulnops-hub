@@ -26,7 +26,9 @@ from vulnops.db import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers stays False so running a migration (e.g. from
+    # tests or CLI) does not silence every logger created before it.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

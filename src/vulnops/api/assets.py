@@ -7,11 +7,18 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
+from vulnops.api.schemas import ProblemDetails
 from vulnops.assets.models import Asset
 from vulnops.assets.reconciliation import AssetService
 from vulnops.auth.dependencies import require_capability
 
-router = APIRouter(tags=["assets"])
+router = APIRouter(
+    tags=["assets"],
+    responses={
+        401: {"model": ProblemDetails, "description": "Authentication required"},
+        403: {"model": ProblemDetails, "description": "Insufficient permission"},
+    },
+)
 
 _VALID_CRITICALITY = {"critical", "high", "medium", "low"}
 _VALID_EXPOSURE = {"external", "internal", "unknown"}

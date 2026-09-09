@@ -113,6 +113,7 @@ def test_principal_checks_organization_membership_and_roles_case_insensitively()
                 "risk:read",
                 "verification:read",
                 "sbom:write",
+                "asset:write",
             },
         ),
     ],

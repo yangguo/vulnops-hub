@@ -120,10 +120,13 @@ def test_fail_event_logs_at_poison_cap(db, caplog):
     db.add(ev)
     db.commit()
     with caplog.at_level(logging.ERROR):
+        caplog.clear()
         for _ in range(8):
             fail_event(db, ev, max_attempts=8)
     assert ev.attempts == 8
-    poison_logs = [r for r in caplog.records if "dead-lettered" in r.getMessage()]
+    poison_logs = [
+        r for r in caplog.records if "dead-lettered" in r.getMessage() and ev.id in r.getMessage()
+    ]
     assert len(poison_logs) == 1
     assert poison_logs[0].levelno == logging.ERROR
     # The dead-lettered event is no longer claimable.
@@ -822,11 +825,11 @@ def test_dojo_verified_finding_with_jira_key_links_ticket(db):
     db.add(_outbox("vulnops.evidence.defectdojo.ingested.v1", payload))
     db.commit()
     orch = _orch(db)
-    ev = [
+    ev = next(
         e
         for e in claim_events(db, batch_size=10, max_attempts=8)
         if e.event_type == "vulnops.evidence.defectdojo.ingested.v1"
-    ][0]
+    )
     orch.process_event(db, ev)
 
     case = db.query(RemediationCase).one()
