@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from vulnops.cases.models import CaseExposure, CaseStatus, RemediationCase
 from vulnops.cases.service import CaseService
 from vulnops.config import get_settings
+from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.intelligence.osv import OSVAdapter
 from vulnops.matching.models import Exposure, MatchEvidence
@@ -321,7 +322,14 @@ class OutboxOrchestrator:
 
     # -- case creation -----------------------------------------------------
 
-    def _maybe_create_case(self, session: Session, exposure: Exposure, component_label: str):
+    def _maybe_create_case(
+        self,
+        session: Session,
+        exposure: Exposure,
+        component_label: str,
+        external_ticket_id: str | None = None,
+        ticket_provenance: str | None = None,
+    ):
         if not self.settings.case_auto_create_enabled:
             return None
         if exposure.match_class not in _CASE_CLASSES:
@@ -364,6 +372,19 @@ class OutboxOrchestrator:
         session.add(
             CaseExposure(id=f"cx_{uuid.uuid4().hex[:12]}", case_id=case.id, exposure_id=exposure.id)
         )
+        if external_ticket_id:
+            case.external_ticket_id = external_ticket_id
+            session.add(
+                AuditEvent(
+                    id=f"aud_{uuid.uuid4().hex[:12]}",
+                    actor="orchestration",
+                    action="case.external_ticket.linked",
+                    subject_type="case",
+                    subject_id=case.id,
+                    reason=ticket_provenance or "external ticket linked",
+                    organization_id=exposure.organization_id,
+                )
+            )
         session.commit()
         return case
 
@@ -469,7 +490,14 @@ class OutboxOrchestrator:
         )
         session.commit()
         if purl:
-            self._maybe_create_case(session, exposure, component_name)
+            jira_key = payload.get("jira_key")
+            self._maybe_create_case(
+                session,
+                exposure,
+                component_name,
+                external_ticket_id=jira_key,
+                ticket_provenance=f"jira via defectdojo finding {finding_id}" if jira_key else None,
+            )
         return f"dojo={finding_id} match={result.match_class}"
 
     def _handle_wazuh_ingested(self, session: Session, event: OutboxEvent) -> str:

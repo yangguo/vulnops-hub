@@ -219,6 +219,7 @@ class DefectDojoBridge:
                     "component_name": component_name,
                     "component_version": component_version,
                     "verified": bool(raw.get("verified")),
+                    "jira_key": (raw.get("jira_issue") or {}).get("key") or raw.get("jira_key"),
                     "organization_id": organization_id,
                     "mapping": {"status": mapping.status, "asset_id": mapping.asset_id},
                     "scan_metadata": scan_metadata,

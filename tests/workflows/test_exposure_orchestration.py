@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+import vulnops.workers.orchestration  # noqa: F401  (register matching/cases metadata)
 from vulnops.config import Settings
 from vulnops.db import Base
 from vulnops.db.models.outbox_event import OutboxEvent
@@ -799,3 +800,36 @@ def test_wazuh_cve_without_purl_is_candidate(db):
     assert exp.state == "candidate"
     assert exp.detection_context == "wazuh:000"
     assert db.query(RemediationCase).count() == 0
+
+
+def test_dojo_verified_finding_with_jira_key_links_ticket(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.db.models.audit_event import AuditEvent
+    from vulnops.workers.orchestration import claim_events
+
+    payload = {
+        "finding_id": "77",
+        "cve": "CVE-2026-1234",
+        "purl": "pkg:pypi/urllib3@1.26.17",
+        "component_name": "urllib3",
+        "component_version": "1.26.17",
+        "verified": True,
+        "jira_key": "VULN-42",
+        "organization_id": "org-demo",
+        "mapping": {"status": "matched", "asset_id": None},
+        "scan_metadata": {"scope_status": "unknown"},
+    }
+    db.add(_outbox("vulnops.evidence.defectdojo.ingested.v1", payload))
+    db.commit()
+    orch = _orch(db)
+    ev = [
+        e
+        for e in claim_events(db, batch_size=10, max_attempts=8)
+        if e.event_type == "vulnops.evidence.defectdojo.ingested.v1"
+    ][0]
+    orch.process_event(db, ev)
+
+    case = db.query(RemediationCase).one()
+    assert case.external_ticket_id == "VULN-42"
+    link = db.query(AuditEvent).filter_by(action="case.external_ticket.linked").one()
+    assert link.reason == "jira via defectdojo finding 77"
