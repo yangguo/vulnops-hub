@@ -19,6 +19,18 @@ intentional contract changes.
 - Node.js 22.22.2 and pnpm 9.15.0 development baseline.
 - As-built development guide, MVP acceptance matrix, and OIDC/RBAC next-slice
   design and implementation plan.
+- Outbox orchestration worker (`orchestrator` compose service) that consumes
+  evidence events, queries OSV for advisories, evaluates deterministic
+  matches, upserts exposures with policy-derived priority, and auto-creates
+  remediation cases with SLA clocks for confirmed/deterministic matches
+  (`CASE_AUTO_CREATE_ENABLED` kill switch; candidates queue for review).
+- Profile-isolated staging sandbox compose for DefectDojo, Wazuh (manager),
+  and a configured Keycloak realm with organization/role claims, plus a
+  sandbox fetch script that stands in for product-level polling adapters.
+- Integrated-staging runbook with dated evidence: OIDC/RBAC against the
+  configured IdP, real DefectDojo reimport idempotency, Wazuh package
+  ingestion, backup/restore and outbox replay drills, source-outage handling,
+  and the deterministic SBOM→match→case loop against the live OSV API.
 
 ### Changed
 
@@ -38,14 +50,23 @@ intentional contract changes.
 - Improved optimistic-lock conflict handling and lifecycle action feedback.
 - Granted the Security workflow the permission required to upload SARIF and
   upgraded the upload action to v4.
+- OSV adapter queries now use per-component `/v1/query` with version-stripped
+  purls (the batch endpoint returned range-less stubs and rejected
+  version-qualified purls), restoring deterministic matching against the
+  live API; orchestrator retries defer to the next poll instead of burning
+  attempts, and poison events are logged as dead-lettered.
 
 ### Known limitations
 
 - Production IdP integration, production certification, first-adopter
   integrated-staging evidence, and raw-evidence authorization remain open.
 - Source-health and coverage-gap APIs/UI, CSV/CMDB import, external-ticket and
-  notification delivery, and integrated-staging evidence remain open.
+  notification delivery, and the candidate review UI remain open; Wazuh
+  candidate exposures are queue-only until purl derivation exists.
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
-- Backup/restore and outbox replay documentation is a target procedure and has
-  not yet been rehearsed against a certified production topology.
+- Backup/restore and outbox replay have been rehearsed against the local
+  staging topology (see the integrated-staging evidence log); a certified
+  production topology drill with MinIO/S3 object storage remains open.
+- Intel-table persistence (`Vulnerability`/`AffectedRange` upserts) and KEV
+  catalog periodic refresh are unimplemented; enrichment is on-demand only.
