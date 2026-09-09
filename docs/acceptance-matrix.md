@@ -76,9 +76,9 @@
   pg_dump/restore drill with identical row counts; object-store digest check
   against the local backing store. A certified production topology with
   MinIO/S3 remains open — see CHANGELOG known limitations.)*
-- [ ] The release commit has successful CI and Security workflow links.
-  *(CI/Security runs verified green on prior main pushes; the tag commit
-  gets its own links.)*
+- [x] The release commit has successful CI and Security workflow links.
+  *(2026-09-09: tag `v0.1.0-m1` = commit 8b168df; CI run 34348813538 and
+  Security run 34348813517 both successful.)*
 - [x] Known limitations and operator safeguards are reviewed for the release.
   *(2026-09-09: CHANGELOG known limitations updated with the orchestration
   slice, replay-drill scope, and intel-persistence gaps.)*
