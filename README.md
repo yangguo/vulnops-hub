@@ -22,6 +22,22 @@ ingestion worker，并附带 Vue 3 整改运营控制台（frontend/），单容
 首个采用方的集成验收和部分运营能力仍未完成，因此还未达到 roadmap 定义的完整
 MVP 退出条件。运行方式见下文 Quick start。
 
+## Console screenshots
+
+Captured from the Vue 3 operations console against the local staging stack
+(see `docs/operations/integrated-staging.md`); OIDC login goes through the
+sandbox Keycloak realm. The demo data includes auto-created remediation
+cases produced by the orchestration worker from a real OSV query.
+
+| | |
+| --- | --- |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Case list](docs/screenshots/cases.png) |
+| *Dashboard — open cases, SLA and priority distribution* | *Case list — deterministic matches auto-create cases with SLA clocks* |
+| ![Case detail](docs/screenshots/case-detail.png) | ![Source health](docs/screenshots/source-health.png) |
+| *Case detail — lifecycle stepper, metadata, exposures* | *Source health — polling cursor and freshness per source* |
+| ![Candidate review](docs/screenshots/candidate-review.png) | ![SBOM submit](docs/screenshots/sbom-submit.png) |
+| *Candidate review — ambiguous matches wait for an audited decision* | *SBOM submit — CycloneDX/SPDX ingestion entry point* |
+
 ## Quick start
 
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22.22.2,
