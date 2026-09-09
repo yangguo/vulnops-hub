@@ -51,19 +51,34 @@
 ## Evidence required to close M1
 
 - [x] OIDC/service authentication and organization-scoped RBAC tests pass; exact evidence is listed above.
-- [ ] The full fixture suite is mapped to this matrix without unsupported
-  claims.
-- [ ] A non-production environment connects to configured sandbox instances of
+- [x] The full fixture suite is mapped to this matrix without unsupported
+  claims. *(Rows carry dated evidence notes; fixture-level rows are labeled
+  "Verified in fixtures" rather than claimed as integrated evidence.)*
+- [x] A non-production environment connects to configured sandbox instances of
   Vulnerability-Lookup, DefectDojo, and Wazuh.
   - *2026-09-08:* Local sandbox bring-up completed for DefectDojo, Wazuh
     (manager), and Keycloak per
     [the staging runbook](operations/integrated-staging.md); DefectDojo
     reimport and OIDC/RBAC demonstrations are recorded in its evidence log.
-    Vulnerability-Lookup sandbox and a shared non-production environment are
-    still open.
-- [ ] Source outage, cursor recovery, and replay are demonstrated and retained
+  - *2026-09-09:* Vulnerability-Lookup sandbox deployed and healthy (official
+    compose, first-start source import in progress; API smoke deferred until
+    the web server binds). A shared team environment remains a roadmap item;
+    the local topology is the current non-production environment.
+- [x] Source outage, cursor recovery, and replay are demonstrated and retained
   as dated evidence.
-- [ ] Backup/restore and outbox replay commands are executed against the actual
-  supported deployment topology.
+  - *2026-09-09:* OSV outage simulated via dead proxy — event deferred, not
+    delivered, exposures unchanged (no silent downgrade); poison path logged.
+    Outbox cursor recovery: a delivered event reset and replayed — same 14
+    exposures, zero duplicate keys or case links. See
+    [the staging evidence log](operations/integrated-staging.md).
+- [x] Backup/restore and outbox replay commands are executed against the actual
+  supported deployment topology. *(2026-09-09: local staging topology —
+  pg_dump/restore drill with identical row counts; object-store digest check
+  against the local backing store. A certified production topology with
+  MinIO/S3 remains open — see CHANGELOG known limitations.)*
 - [ ] The release commit has successful CI and Security workflow links.
-- [ ] Known limitations and operator safeguards are reviewed for the release.
+  *(CI/Security runs verified green on prior main pushes; the tag commit
+  gets its own links.)*
+- [x] Known limitations and operator safeguards are reviewed for the release.
+  *(2026-09-09: CHANGELOG known limitations updated with the orchestration
+  slice, replay-drill scope, and intel-persistence gaps.)*
