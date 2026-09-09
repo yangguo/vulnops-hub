@@ -207,11 +207,12 @@ def _component_from_fields(
 class OutboxOrchestrator:
     """Consume evidence outbox events and materialize exposures/cases."""
 
-    def __init__(self, session_factory, osv=None, kev=None, epss=None, settings=None):
+    def __init__(self, session_factory, osv=None, kev=None, epss=None, vex=None, settings=None):
         self.session_factory = session_factory
         self.osv = osv or OSVAdapter()
         self.kev = kev
         self.epss = epss
+        self.vex = vex
         self.settings = settings or get_settings()
         self.matcher = MatchingService()
         self.policy = RiskPolicyEngine()
@@ -320,6 +321,17 @@ class OutboxOrchestrator:
             priority = "P3"
         return priority, result.policy_version, kev
 
+    def _vex_status_for(self, vulnerability_id: str) -> str | None:
+        """Best-effort VEX lookup; failures degrade to no VEX input."""
+
+        if self.vex is None:
+            return None
+        try:
+            return self.vex.get_status(vulnerability_id)
+        except Exception as exc:
+            logger.warning("VEX lookup failed for %s: %s", vulnerability_id, exc)
+            return None
+
     # -- case creation -----------------------------------------------------
 
     def _maybe_create_case(
@@ -409,7 +421,8 @@ class OutboxOrchestrator:
             for rec in by_index.get(idx, []):
                 advisory = _advisory_from_record(rec)
                 component = _component_from_occurrence(occurrence)
-                result = self.matcher.evaluate(component, advisory)
+                vex_status = self._vex_status_for(rec.vulnerability_id)
+                result = self.matcher.evaluate(component, advisory, vex_status=vex_status)
                 priority, policy_version, _kev = self._priority_for(
                     rec.vulnerability_id, result.match_class, result.confidence
                 )
@@ -467,7 +480,10 @@ class OutboxOrchestrator:
         scanner_evidence = (
             {"scanner_confirmed": True, "finding_id": finding_id} if verified else None
         )
-        result = self.matcher.evaluate(component, advisory, scanner_evidence=scanner_evidence)
+        vex_status = self._vex_status_for(cve) if not verified else None
+        result = self.matcher.evaluate(
+            component, advisory, scanner_evidence=scanner_evidence, vex_status=vex_status
+        )
         priority, policy_version, _kev = self._priority_for(
             cve, result.match_class, result.confidence
         )
