@@ -31,6 +31,12 @@ intentional contract changes.
   configured IdP, real DefectDojo reimport idempotency, Wazuh package
   ingestion, backup/restore and outbox replay drills, source-outage handling,
   and the deterministic SBOM→match→case loop against the live OSV API.
+- M2 operational slice: product-level DefectDojo/Wazuh polling adapters
+  (cursor/checkpoint/health, `poller` compose service), source-health API,
+  CSV/CMDB asset import with hostname-alias reconciliation, candidate
+  exposure review API with audit trail, Jira issue-key link-back for
+  scanner-confirmed auto-cases, and VEX statements via Vulnerability-Lookup
+  feeding match policy (ADR 0002).
 
 ### Changed
 
@@ -60,9 +66,10 @@ intentional contract changes.
 
 - Production IdP integration, production certification, first-adopter
   integrated-staging evidence, and raw-evidence authorization remain open.
-- Source-health and coverage-gap APIs/UI, CSV/CMDB import, external-ticket and
-  notification delivery, and the candidate review UI remain open; Wazuh
-  candidate exposures are queue-only until purl derivation exists.
+- External-ticket and notification delivery are delegated to DefectDojo's
+  Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
+  case-level projection, the source-health and candidate review console
+  panels, and Wazuh purl derivation remain open.
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
 - Backup/restore and outbox replay have been rehearsed against the local
