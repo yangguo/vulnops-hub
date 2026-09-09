@@ -122,6 +122,30 @@ services:
     command: python -m vulnops.workers.orchestration
     restart: unless-stopped
 
+  poller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: postgresql+psycopg2://vulnops:vulnops@postgres:5432/vulnops
+      REDIS_URL: redis://valkey:6379/0
+      DEFECTDOJO_BASE_URL: ${DEFECTDOJO_BASE_URL:-}
+      DEFECTDOJO_API_TOKEN: ${DEFECTDOJO_API_TOKEN:-}
+      DEFECTDOJO_POLL_INTERVAL_SECONDS: ${DEFECTDOJO_POLL_INTERVAL_SECONDS:-300}
+      WAZUH_BASE_URL: ${WAZUH_BASE_URL:-}
+      WAZUH_API_USER: ${WAZUH_API_USER:-wazuh}
+      WAZUH_API_PASSWORD: ${WAZUH_API_PASSWORD:-}
+      WAZUH_POLL_INTERVAL_SECONDS: ${WAZUH_POLL_INTERVAL_SECONDS:-300}
+      POLL_ORGANIZATION_ID: ${POLL_ORGANIZATION_ID:-org-demo}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    command: python -m vulnops.workers.polling
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   minio_data:
