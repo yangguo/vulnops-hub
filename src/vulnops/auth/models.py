@@ -28,6 +28,7 @@ _ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = MappingProxyType(
         "security_lead": frozenset(),
         "admin": frozenset(
             {
+                "asset:write",
                 "case:write",
                 "risk:approve",
                 "risk:request",

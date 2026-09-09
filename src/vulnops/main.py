@@ -160,6 +160,15 @@ def create_app() -> FastAPI:
     except Exception as e:
         logger.warning("sourcehealth router not loaded: %s", e)
 
+    try:
+        from vulnops.api.assets import router as assets_router
+
+        app.include_router(
+            assets_router, prefix="/api/v1", dependencies=[Depends(get_principal)]
+        )
+    except Exception as e:
+        logger.warning("assets router not loaded: %s", e)
+
     from vulnops.api.frontend import frontend_index_response
 
     @app.get("/", include_in_schema=False)
