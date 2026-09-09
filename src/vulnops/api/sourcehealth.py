@@ -34,9 +34,7 @@ def _serialize(status: SourceStatus) -> dict:
     "/organizations/{org_id}/source-health",
     dependencies=[Depends(require_capability("case:read"))],
 )
-async def source_health(
-    org_id: str, db: Session = Depends(get_db)
-) -> SourceHealthResponse:
+async def source_health(org_id: str, db: Session = Depends(get_db)) -> SourceHealthResponse:
     """Operational visibility for source freshness (global scope, read-only)."""
 
     rows = db.query(SourceStatus).filter_by(enabled=True).order_by(SourceStatus.source).all()
