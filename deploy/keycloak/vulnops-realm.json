@@ -73,7 +73,7 @@
             "claim.name": "organizations",
             "jsonType.label": "String",
             "multivalued": "true",
-            "id.token.claim": "false",
+            "id.token.claim": "true",
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
           }
@@ -87,7 +87,7 @@
             "claim.name": "roles",
             "jsonType.label": "String",
             "multivalued": "true",
-            "id.token.claim": "false",
+            "id.token.claim": "true",
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
           }
@@ -101,7 +101,7 @@
             "claim.name": "principal_type",
             "jsonType.label": "String",
             "multivalued": "false",
-            "id.token.claim": "false",
+            "id.token.claim": "true",
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
           }
