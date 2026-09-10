@@ -67,12 +67,14 @@ intentional contract changes.
 
 ### Known limitations
 
-- Production IdP integration, production certification, first-adopter
+- Production IdP integration, production certification, shared adopter
   integrated-staging evidence, and raw-evidence authorization remain open.
 - External-ticket and notification delivery are delegated to DefectDojo's
   Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
-  case-level projection, the source-health and candidate review console
-  panels, and Wazuh purl derivation remain open.
+  case-level projection, and broader notification channels remain open.
+- Wazuh package observations without purls do not produce deterministic
+  matches; name-only CVE correlation stays in the candidate review queue
+  (purl derivation from Wazuh package metadata remains open).
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
 - Backup/restore and outbox replay have been rehearsed against the local
