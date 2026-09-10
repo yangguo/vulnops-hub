@@ -1,9 +1,17 @@
 # MVP and Roadmap
 
-> **Current status:** M1 technical preview. Core fixture-level behavior and the
-> remediation console are implemented, but the M1 exit gate is open because
-> OIDC/RBAC, integrated-staging evidence, and several operational capabilities
-> are incomplete. See [the acceptance matrix](acceptance-matrix.md).
+> **Current status:** M1 exit gate closed (2026-09-09). The acceptance-matrix
+> checklist is complete with dated local staging evidence; release tag
+> `v0.1.0-m1` marks the thin vertical slice. Core fixture-level behavior,
+> OIDC/RBAC, and the remediation console are implemented. The product is now
+> in an **M2 operational pilot** phase: polling adapters, source-health
+> API/console, CSV/CMDB import, candidate review, Jira link-back via
+> DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
+> `main`. Remaining pilot work includes ServiceNow and case-level projection,
+> ownership escalation, Greenbone evidence via DefectDojo, production IdP
+> integration, shared adopter staging, certified backup/restore on MinIO/S3,
+> and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)
+> and [integrated staging evidence](operations/integrated-staging.md).
 
 ## 1. Product thesis
 
@@ -100,22 +108,24 @@ and one non-production integrated environment.
 
 ### M2 — Operational pilot
 
-- Add product-level polling adapters for DefectDojo and Wazuh (cursor,
-  checkpoint, health) per the adapter onboarding contract.
-- Add CSV/CMDB asset import.
-- Add source-health API and operator UI for source freshness and coverage
-  gaps.
-- Add candidate review API and operator UI.
-- Consume VEX/CSAF statements via Vulnerability-Lookup; feed them into match
+- **(shipped)** Product-level polling adapters for DefectDojo and Wazuh
+  (cursor, checkpoint, health) per the adapter onboarding contract.
+- **(shipped)** CSV/CMDB asset import.
+- **(shipped)** Source-health API and operator UI for source freshness and
+  coverage gaps.
+- **(shipped)** Candidate review API and operator UI.
+- **(shipped)** VEX/CSAF statements via Vulnerability-Lookup; fed into match
   policy as review evidence.
-- Project scanner-confirmed cases to Jira via DefectDojo's native
+- **(shipped)** Scanner-confirmed cases link to Jira via DefectDojo's native
   integration, recording the issue key as the case's external-ticket
   reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
   Greenbone evidence enters through DefectDojo; ServiceNow and case-level
-  projection are deferred until pilot feedback.
-- Add business-service mappings, improved asset reconciliation, and ownership
-  escalation.
-- Establish backup/restore drill and upgrade/replay procedure.
+  projection remain deferred until pilot feedback.
+- **(open)** Business-service mappings, improved asset reconciliation, and
+  ownership escalation.
+- **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
+  on the local staging topology; certified production topology (MinIO/S3)
+  remains open.
 
 **Exit gate:** a pilot team runs its normal remediation cycle with measurable
 case ownership, SLA, verification, and replay evidence.
