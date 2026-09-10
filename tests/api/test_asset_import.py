@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import vulnops.assets.models
-import vulnops.intelligence.models  # noqa: F401
+import vulnops.intelligence.models
+import vulnops.matching.models
+import vulnops.services.models  # noqa: F401
+from vulnops.assets.models import Asset
 from vulnops.config import get_settings
 from vulnops.db import Base
 from vulnops.main import create_app
+from vulnops.matching.models import Exposure
+from vulnops.services.models import BusinessService
 
 
 class _StaticVerifier:
@@ -121,6 +126,12 @@ def test_reimport_updates_existing_without_duplicates(env):
     assert web01.owner == "platform-2"
     session.close()
 
+    cleared = env["post"]("hostname,owner\nweb01,\n")
+    assert cleared.status_code == 200
+    session = env["factory"]()
+    assert session.query(Asset).filter_by(name="Web Frontend").one().owner is None
+    session.close()
+
 
 def test_invalid_rows_skipped_not_fatal(env):
     resp = env["post"]("hostname,criticality\n,low\nbad-host,high\n")
@@ -136,3 +147,169 @@ def test_missing_hostname_column_rejected(env):
     body = resp.json()
     assert body["total"] == 0
     assert body["skipped_details"][0]["reason"].startswith("missing required 'hostname'")
+
+
+def test_import_sets_owner_and_resolves_business_service_id_or_name(env):
+    session = env["factory"]()
+    session.add_all(
+        [
+            BusinessService(
+                id="svc-payments",
+                organization_id="org-demo",
+                name="Payments",
+                owner_team="payments",
+            ),
+            BusinessService(
+                id="svc-search",
+                organization_id="org-demo",
+                name="Search",
+                owner_team="search",
+            ),
+        ]
+    )
+    session.commit()
+    session.close()
+
+    response = env["post"](
+        "hostname,owner,business_service_id\n"
+        "payments-01,payments-oncall,svc-payments\n"
+        "search-01,search-oncall,svc-search\n"
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 2
+
+    session = env["factory"]()
+    from vulnops.assets.models import Asset
+
+    payments = session.query(Asset).filter_by(name="payments-01").one()
+    search = session.query(Asset).filter_by(name="search-01").one()
+    assert payments.owner == "payments-oncall"
+    assert payments.business_service_id == "svc-payments"
+    assert search.owner == "search-oncall"
+    assert search.business_service_id == "svc-search"
+    session.close()
+
+    by_name = env["post"]("hostname,owner,service\nsearch-name-01,search-oncall,Search\n")
+    assert by_name.status_code == 200
+    session = env["factory"]()
+    search_by_name = session.query(Asset).filter_by(name="search-name-01").one()
+    assert search_by_name.business_service_id == "svc-search"
+    session.close()
+
+    update = env["post"]("hostname,criticality\npayments-01,low\n")
+    assert update.status_code == 200
+    session = env["factory"]()
+    payments = session.query(Asset).filter_by(name="payments-01").one()
+    assert payments.owner == "payments-oncall"
+    assert payments.business_service_id == "svc-payments"
+    session.close()
+
+
+def test_ambiguous_business_service_name_is_skipped(env):
+    # Simulate legacy rows from before the service-name uniqueness invariant.
+    # The current ORM/migration prevents creating these rows normally.
+    session = env["factory"]()
+    session.execute(text("DROP TABLE business_services"))
+    session.execute(
+        text(
+            """
+            CREATE TABLE business_services (
+                id VARCHAR(64) NOT NULL PRIMARY KEY,
+                organization_id VARCHAR(64) NOT NULL,
+                name VARCHAR(256) NOT NULL,
+                name_normalized VARCHAR(256) NOT NULL,
+                owner_team VARCHAR(128) NOT NULL,
+                criticality VARCHAR(32),
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            INSERT INTO business_services
+                (id, organization_id, name, name_normalized, owner_team, created_at, updated_at)
+            VALUES
+                ('legacy-svc-a', 'org-demo', 'Payments', 'payments', 'payments-a',
+                 '2026-09-10 00:00:00', '2026-09-10 00:00:00'),
+                ('legacy-svc-b', 'org-demo', 'payments', 'payments', 'payments-b',
+                 '2026-09-10 00:00:00', '2026-09-10 00:00:00')
+            """
+        )
+    )
+    session.commit()
+    session.close()
+
+    response = env["post"]("hostname,service\nambiguous-01,Payments\n")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["created"] == 0
+    assert body["updated"] == 0
+    assert body["skipped"] == 1
+    assert body["skipped_details"] == [
+        {"row": 2, "reason": "ambiguous business service name", "service": "Payments"}
+    ]
+    session = env["factory"]()
+    from vulnops.assets.models import Asset
+
+    assert session.query(Asset).count() == 0
+    session.close()
+
+
+def test_conflicting_exposure_owners_are_bad_request(env):
+    session = env["factory"]()
+    session.add_all(
+        [
+            Asset(
+                id="asset-api-owner-a",
+                organization_id="org-demo",
+                name="api-owner-a",
+                owner="team-a",
+            ),
+            Asset(
+                id="asset-api-owner-b",
+                organization_id="org-demo",
+                name="api-owner-b",
+                owner="team-b",
+            ),
+            Exposure(
+                id="exp-api-owner-a",
+                organization_id="org-demo",
+                asset_id="asset-api-owner-a",
+                vulnerability_id="CVE-2026-API-A",
+                match_class="confirmed",
+                confidence=1.0,
+                state="active",
+            ),
+            Exposure(
+                id="exp-api-owner-b",
+                organization_id="org-demo",
+                asset_id="asset-api-owner-b",
+                vulnerability_id="CVE-2026-API-B",
+                match_class="confirmed",
+                confidence=1.0,
+                state="active",
+            ),
+        ]
+    )
+    session.commit()
+    session.close()
+
+    response = env["client"].post(
+        "/api/v1/organizations/org-demo/cases",
+        json={
+            "title": "Conflicting owner case",
+            "owner_team": "unassigned",
+            "priority": "P1",
+            "exposures": ["exp-api-owner-b", "exp-api-owner-a"],
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 400, response.text
+    problem = response.json()["detail"]
+    assert problem["code"] == "conflicting_exposure_owners"
+    assert problem["detail"] == "conflicting exposure owners"

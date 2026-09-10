@@ -164,6 +164,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '400':
+          description: Conflicting exposure owners
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -867,7 +873,9 @@ paths:
 
         Header row required; recognized columns: hostname (required identity),
 
-        name, criticality, environment, owner, internet_exposure, type.
+        name, criticality, environment, owner, internet_exposure, type,
+
+        business_service_id, service, service_name.
 
         Existing assets are matched by hostname alias and updated in place;
 
@@ -902,6 +910,176 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/services:
+    post:
+      tags:
+      - services
+      summary: Create Business Service
+      operationId: create_business_service_api_v1_organizations__org_id__services_post
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessServiceResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Business service name conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              additionalProperties: false
+              description: Organization-scoped business-service inventory write contract.
+              properties:
+                name:
+                  minLength: 1
+                  title: Name
+                  type: string
+                owner_team:
+                  minLength: 1
+                  title: Owner Team
+                  type: string
+                criticality:
+                  anyOf:
+                  - minLength: 1
+                    type: string
+                  - type: 'null'
+                  title: Criticality
+              required:
+              - name
+              - owner_team
+              title: BusinessServiceCreateRequest
+              type: object
+    get:
+      tags:
+      - services
+      summary: List Business Services
+      operationId: list_business_services_api_v1_organizations__org_id__services_get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessServiceListResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Business service name conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/services/{service_id}:
+    get:
+      tags:
+      - services
+      summary: Get Business Service
+      operationId: get_business_service_api_v1_organizations__org_id__services__service_id__get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: service_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessServiceResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Business service name conflict
           content:
             application/json:
               schema:
@@ -1047,6 +1225,55 @@ components:
       - allowed
       - current
       title: AllowedTransitionsResponse
+    BusinessServiceListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/BusinessServiceResponse'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+      type: object
+      required:
+      - items
+      - total
+      title: BusinessServiceListResponse
+    BusinessServiceResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        organization_id:
+          type: string
+          title: Organization Id
+        name:
+          type: string
+          title: Name
+        owner_team:
+          type: string
+          title: Owner Team
+        criticality:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Criticality
+        created_at:
+          type: string
+          title: Created At
+        updated_at:
+          type: string
+          title: Updated At
+      type: object
+      required:
+      - id
+      - organization_id
+      - name
+      - owner_team
+      - created_at
+      - updated_at
+      title: BusinessServiceResponse
     CaseCreateResponse:
       properties:
         id:
@@ -1081,6 +1308,10 @@ components:
           - type: string
           - type: 'null'
           title: Due At
+        ownership_escalated:
+          type: boolean
+          title: Ownership Escalated
+          default: false
       type: object
       required:
       - id
@@ -1162,6 +1393,10 @@ components:
           - type: string
           - type: 'null'
           title: Updated At
+        ownership_escalated:
+          type: boolean
+          title: Ownership Escalated
+          default: false
       type: object
       required:
       - id

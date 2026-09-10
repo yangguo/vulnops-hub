@@ -83,6 +83,16 @@ def _submit_sbom(client: TestClient, organization_id: str) -> dict[str, Any]:
     return response.json()
 
 
+def _create_business_service(client: TestClient, organization_id: str) -> dict[str, Any]:
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/services",
+        json={"name": "Matrix Payments", "owner_team": "payments"},
+        headers=_headers(),
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def _transition_case(client: TestClient, organization_id: str, case_id: str, target: str) -> None:
     response = client.post(
         f"/api/v1/organizations/{organization_id}/cases/{case_id}/transitions",
@@ -110,6 +120,7 @@ def _route_request(
     route_name: str,
     case: dict[str, Any] | None,
     sbom: dict[str, Any] | None,
+    service: dict[str, Any] | None,
 ):
     case_id = case["id"] if case else "case_missing"
     if route_name == "case_create":
@@ -182,6 +193,19 @@ def _route_request(
     if route_name == "sbom_detail":
         return client.get(
             f"/api/v1/organizations/{organization_id}/sboms/{sbom['id']}",
+            headers=_headers(),
+        )
+    if route_name == "service_create":
+        return client.post(
+            f"/api/v1/organizations/{organization_id}/services",
+            json={"name": "Matrix Search", "owner_team": "search"},
+            headers=_headers(),
+        )
+    if route_name == "service_list":
+        return client.get(f"/api/v1/organizations/{organization_id}/services", headers=_headers())
+    if route_name == "service_detail":
+        return client.get(
+            f"/api/v1/organizations/{organization_id}/services/{service['id']}",
             headers=_headers(),
         )
     raise AssertionError(f"unknown route matrix entry: {route_name}")
@@ -276,6 +300,30 @@ ROUTE_EXPECTED_STATUS = {
         "service": 200,
         "cross_org": 404,
     },
+    "service_create": {
+        "viewer": 403,
+        "owner": 201,
+        "auditor": 403,
+        "risk_approver": 403,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "service_list": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
+    "service_detail": {
+        "viewer": 200,
+        "owner": 200,
+        "auditor": 200,
+        "risk_approver": 200,
+        "service": 403,
+        "cross_org": 404,
+    },
 }
 
 
@@ -316,6 +364,7 @@ def test_all_business_routes_have_literal_principal_status_matrix(
     admin = _client(monkeypatch, _claims(organization_ids=[organization_id], roles=["admin"]))
     case = None
     sbom = None
+    service = None
     if route_name in {
         "case_detail",
         "allowed_transitions",
@@ -328,12 +377,14 @@ def test_all_business_routes_have_literal_principal_status_matrix(
         case = _prepare_case_for_route(admin, organization_id, route_name)
     if route_name == "sbom_detail":
         sbom = _submit_sbom(admin, organization_id)
+    if route_name in {"service_list", "service_detail"}:
+        service = _create_business_service(admin, organization_id)
 
     client = _client(
         monkeypatch,
         _claims_for_matrix(principal_name, organization_id, outside_organization_id),
     )
-    response = _route_request(client, organization_id, route_name, case, sbom)
+    response = _route_request(client, organization_id, route_name, case, sbom, service)
     expected = ROUTE_EXPECTED_STATUS[route_name][principal_name]
     assert response.status_code == expected, (
         f"route={route_name} principal={principal_name} "

@@ -19,6 +19,7 @@ import vulnops.db.models.source_snapshot
 import vulnops.intelligence.models
 import vulnops.matching.models
 import vulnops.sbom.models  # noqa: F401
+import vulnops.services.models as _business_service_models  # noqa: F401
 from vulnops.config import get_settings
 from vulnops.db import Base
 

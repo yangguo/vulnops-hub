@@ -87,6 +87,8 @@ class AssetService:
         criticality: str = "medium",
         environment: str | None = None,
         status: str = "active",
+        owner: str | None = None,
+        business_service_id: str | None = None,
     ):
         from vulnops.assets.models import Asset
 
@@ -98,6 +100,8 @@ class AssetService:
             organization_id=organization_id,
             criticality=criticality,
             environment=environment,
+            owner=owner,
+            business_service_id=business_service_id,
         )
         self.session.add(asset)
         self.session.commit()

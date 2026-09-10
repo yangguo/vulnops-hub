@@ -373,13 +373,17 @@ class OutboxOrchestrator:
         )
         if any(exposure.id in (rc.exposures or []) for rc in org_cases):
             return None
-        case = CaseService(session).create_case(
+        case = CaseService(session, settings=self.settings).create_case(
             organization_id=exposure.organization_id,
             title=f"Remediate {exposure.vulnerability_id} in {component_label}",
+            # Let CaseService resolve inventory ownership at creation time;
+            # passing a pre-resolved non-default team would make that snapshot
+            # look like an explicit override.
             owner_team=self.settings.default_case_owner_team,
             priority=exposure.priority or "P2",
             exposures=[exposure.id],
             policy_version=exposure.policy_version,
+            asset_id=exposure.asset_id,
         )
         session.add(
             CaseExposure(id=f"cx_{uuid.uuid4().hex[:12]}", case_id=case.id, exposure_id=exposure.id)

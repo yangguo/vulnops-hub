@@ -235,6 +235,29 @@ def require_capability(capability: str):
     return dependency
 
 
+def require_any_capability(*capabilities: str):
+    """Build a dependency requiring organization scope and one capability."""
+
+    normalized = tuple(capability.strip().lower() for capability in capabilities if capability)
+    if not normalized:
+        raise ValueError("at least one capability is required")
+
+    async def dependency(
+        request: Request,
+        principal: Principal = Depends(require_organization),
+    ) -> Principal:
+        if _is_explicit_test_bypass(request, principal) or any(
+            principal.has_capability(capability) for capability in normalized
+        ):
+            return principal
+        raise AuthorizationError("insufficient_permission")
+
+    dependency.__name__ = "require_any_" + "_or_".join(
+        capability.replace(":", "_") for capability in normalized
+    )
+    return dependency
+
+
 def authorize_capability(request: Request, principal: Principal, capability: str) -> Principal:
     """Authorize a trusted principal after a resource has been resolved.
 

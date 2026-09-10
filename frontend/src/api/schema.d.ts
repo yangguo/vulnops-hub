@@ -228,12 +228,48 @@ export interface paths {
          * @description Import a CSV asset inventory (CMDB export).
          *
          *     Header row required; recognized columns: hostname (required identity),
-         *     name, criticality, environment, owner, internet_exposure, type.
+         *     name, criticality, environment, owner, internet_exposure, type,
+         *     business_service_id, service, service_name.
          *     Existing assets are matched by hostname alias and updated in place;
          *     unknown hostnames create assets with a hostname alias; ambiguous alias
          *     collisions are skipped for review, never merged.
          */
         post: operations["import_assets_api_v1_organizations__org_id__assets_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Business Services */
+        get: operations["list_business_services_api_v1_organizations__org_id__services_get"];
+        put?: never;
+        /** Create Business Service */
+        post: operations["create_business_service_api_v1_organizations__org_id__services_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{org_id}/services/{service_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Business Service */
+        get: operations["get_business_service_api_v1_organizations__org_id__services__service_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -289,6 +325,30 @@ export interface components {
             /** Current */
             current: string;
         };
+        /** BusinessServiceListResponse */
+        BusinessServiceListResponse: {
+            /** Items */
+            items: components["schemas"]["BusinessServiceResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** BusinessServiceResponse */
+        BusinessServiceResponse: {
+            /** Id */
+            id: string;
+            /** Organization Id */
+            organization_id: string;
+            /** Name */
+            name: string;
+            /** Owner Team */
+            owner_team: string;
+            /** Criticality */
+            criticality?: string | null;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
         /** CaseCreateResponse */
         CaseCreateResponse: {
             /** Id */
@@ -311,6 +371,11 @@ export interface components {
             etag: string;
             /** Due At */
             due_at?: string | null;
+            /**
+             * Ownership Escalated
+             * @default false
+             */
+            ownership_escalated: boolean;
         };
         /** CaseDetailResponse */
         CaseDetailResponse: {
@@ -348,6 +413,11 @@ export interface components {
             created_at?: string | null;
             /** Updated At */
             updated_at?: string | null;
+            /**
+             * Ownership Escalated
+             * @default false
+             */
+            ownership_escalated: boolean;
         };
         /** CaseListResponse */
         CaseListResponse: {
@@ -1425,6 +1495,165 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_business_services_api_v1_organizations__org_id__services_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessServiceListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_business_service_api_v1_organizations__org_id__services_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Name */
+                    name: string;
+                    /** Owner Team */
+                    owner_team: string;
+                    /** Criticality */
+                    criticality?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessServiceResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Insufficient permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_business_service_api_v1_organizations__org_id__services__service_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                org_id: string;
+                service_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessServiceResponse"];
                 };
             };
             /** @description Authentication required */

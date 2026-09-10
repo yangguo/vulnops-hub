@@ -69,6 +69,7 @@ class RemediationCase(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)  # for If-Match
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sla_breached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ownership_escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     closure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_ticket_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     exposures: Mapped[list | None] = mapped_column(JSON, nullable=True)  # list of exposure ids

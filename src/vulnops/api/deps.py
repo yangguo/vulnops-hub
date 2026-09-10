@@ -20,7 +20,8 @@ def get_db() -> Generator[Session, None, None]:
         import vulnops.db.models.audit_event
         import vulnops.db.models.outbox_event
         import vulnops.db.models.source_snapshot
-        import vulnops.sbom.models  # noqa
+        import vulnops.sbom.models
+        import vulnops.services.models  # noqa: F401
         from vulnops.db import Base
 
         # Create all if not exists (idempotent)

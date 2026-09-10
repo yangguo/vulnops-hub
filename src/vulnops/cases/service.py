@@ -17,8 +17,10 @@ from vulnops.cases.models import (
     SlaClock,
     Verification,
 )
+from vulnops.cases.ownership import ResolvedOwner, resolve_case_owner
 from vulnops.cases.sla import calculate_due_date
 from vulnops.cases.verification import evaluate_coverage
+from vulnops.config import Settings, get_settings
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 
@@ -224,19 +226,95 @@ def _canonicalize_risk_decision_expiry(decision: RiskDecision) -> RiskDecision:
 
 
 class CaseService:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, settings: Settings | None = None):
         self.session = session
+        self.settings = settings or get_settings()
 
     def create_case(
         self,
         organization_id: str,
         title: str,
-        owner_team: str,
+        owner_team: str | None,
         priority: str = "P2",
         exposures: list[str] | None = None,
         policy_version: str | None = None,
         assignee: str | None = None,
+        asset_id: str | None = None,
     ) -> RemediationCase:
+        """Create a case with deterministic ownership and escalation.
+
+        For automatic/default ownership requests, every organization-scoped
+        exposure with an asset ID is resolved.  All those resolutions must
+        agree on the case-insensitive team and on the owned-vs-default
+        category; mixed or conflicting results raise the stable
+        ``conflicting exposure owners`` error rather than depending on list
+        order.  If all exposures are default, a high-priority case escalates.
+        This consistency check also applies when an explicit owner is supplied;
+        after it passes, that non-default caller-provided owner remains an
+        explicit override and never escalates merely because its text equals
+        the configured default.
+        """
+
+        default_owner_team = (self.settings.default_case_owner_team or "unassigned").strip()
+        default_owner_team = default_owner_team or "unassigned"
+        requested_owner = (owner_team or "").strip()
+        requested_default = not requested_owner or (
+            requested_owner.casefold() == default_owner_team.casefold()
+        )
+
+        from vulnops.matching.models import Exposure
+
+        asset_ids: set[str] = set()
+        explicit_asset_id = (asset_id or "").strip()
+        if explicit_asset_id:
+            asset_ids.add(explicit_asset_id)
+        if exposures:
+            exposure_asset_ids = self.session.scalars(
+                select(Exposure.asset_id).where(
+                    Exposure.organization_id == organization_id,
+                    Exposure.id.in_(exposures),
+                    Exposure.asset_id.is_not(None),
+                )
+            ).all()
+            asset_ids.update(asset_id for asset_id in exposure_asset_ids if asset_id)
+
+        exposure_owners = [
+            resolve_case_owner(
+                self.session,
+                organization_id=organization_id,
+                asset_id=linked_asset_id,
+                default_owner_team=default_owner_team,
+            )
+            for linked_asset_id in sorted(asset_ids)
+        ]
+        owner_keys = {
+            (resolved.owner_team.casefold(), resolved.source == "default")
+            for resolved in exposure_owners
+        }
+        if len(owner_keys) > 1:
+            raise ValueError("conflicting exposure owners")
+
+        if requested_default:
+            if exposure_owners:
+                # The key above makes this representative deterministic even
+                # when the same team is stored with different capitalization.
+                resolved_owner = min(
+                    exposure_owners,
+                    key=lambda resolved: (
+                        resolved.owner_team.casefold(),
+                        resolved.owner_team,
+                        resolved.source,
+                    ),
+                )
+                if resolved_owner.source == "default":
+                    resolved_owner = ResolvedOwner(default_owner_team, "default")
+            else:
+                resolved_owner = ResolvedOwner(default_owner_team, "default")
+        else:
+            resolved_owner = ResolvedOwner(requested_owner, "explicit")
+
+        owner_team = resolved_owner.owner_team
+        ownership_escalated = priority in {"P0", "P1"} and resolved_owner.source == "default"
         case_id = f"case_{uuid.uuid4().hex[:12]}"
         now = _utcnow()
         due = calculate_due_date(priority, now)
@@ -253,6 +331,7 @@ class CaseService:
             version=1,
             due_at=due,
             exposures=exposures or [],
+            ownership_escalated=ownership_escalated,
         )
         try:
             self.session.add(case)
@@ -264,24 +343,47 @@ class CaseService:
                 due_at=due,
             )
             self.session.add(clock)
+            event_correlation_id = str(uuid.uuid4())
             audit = AuditEvent(
                 id=f"aud_{uuid.uuid4().hex[:12]}",
                 actor="system",
                 action="case.created",
                 subject_type="case",
                 subject_id=case_id,
-                correlation_id=str(uuid.uuid4()),
+                correlation_id=event_correlation_id,
                 new_state=CaseStatus.NEW,
                 reason="case created",
                 organization_id=organization_id,
             )
             self.session.add(audit)
+            if ownership_escalated:
+                self.session.add(
+                    AuditEvent(
+                        id=f"aud_{uuid.uuid4().hex[:12]}",
+                        actor="system",
+                        action="case.ownership.unassigned_high_priority",
+                        subject_type="case",
+                        subject_id=case_id,
+                        correlation_id=event_correlation_id,
+                        new_state="unassigned",
+                        reason=(
+                            f"{priority} case created without an asset or business-service owner"
+                        ),
+                        organization_id=organization_id,
+                    )
+                )
             outbox = OutboxEvent(
                 id=f"evt_{uuid.uuid4().hex[:12]}",
                 aggregate_type="case",
                 aggregate_id=case_id,
                 event_type="vulnops.case.created.v1",
-                payload={"case_id": case_id, "priority": priority, "exposures": exposures or []},
+                payload={
+                    "case_id": case_id,
+                    "priority": priority,
+                    "owner_team": owner_team,
+                    "ownership_escalated": ownership_escalated,
+                    "exposures": exposures or [],
+                },
                 correlation_id=audit.correlation_id,
             )
             self.session.add(outbox)
