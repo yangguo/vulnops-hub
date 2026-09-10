@@ -23,20 +23,23 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=64), nullable=False),
         sa.Column("organization_id", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=256), nullable=False),
+        # Names are human identifiers: the ORM stores a casefolded identity
+        # key so the database enforces case-insensitive uniqueness per org.
+        sa.Column("name_normalized", sa.String(length=256), nullable=False),
         sa.Column("owner_team", sa.String(length=128), nullable=False),
         sa.Column("criticality", sa.String(length=32), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("organization_id", "name", name="uq_business_service_org_name"),
+        sa.UniqueConstraint(
+            "organization_id",
+            "name_normalized",
+            name="uq_business_service_org_name_normalized",
+        ),
     )
     op.create_index(
         "ix_business_service_org", "business_services", ["organization_id"], unique=False
-    )
-    op.create_index(
-        "ix_business_service_org_name",
-        "business_services",
-        ["organization_id", "name"],
-        unique=False,
     )
     op.add_column(
         "remediation_cases",
@@ -51,6 +54,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_column("remediation_cases", "ownership_escalated")
-    op.drop_index("ix_business_service_org_name", table_name="business_services")
     op.drop_index("ix_business_service_org", table_name="business_services")
     op.drop_table("business_services")

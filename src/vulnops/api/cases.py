@@ -200,6 +200,7 @@ def _parse_if_match(if_match: str | None) -> int | None:
     "/organizations/{org_id}/cases",
     response_model=CaseCreateResponse,
     openapi_extra=json_request_body(CaseCreateRequest),
+    responses={400: {"model": ProblemDetails, "description": "Conflicting exposure owners"}},
     dependencies=[Depends(require_capability("case:write"))],
 )
 async def create_case(org_id: str, request: Request, db: Session = Depends(get_db)):
@@ -207,15 +208,29 @@ async def create_case(org_id: str, request: Request, db: Session = Depends(get_d
     payload = validate_request_body(CaseCreateRequest, data, code="invalid_request_body")
 
     svc = CaseService(db)
-    case = svc.create_case(
-        organization_id=org_id,
-        title=payload.title,
-        owner_team=payload.owner_team,
-        priority=payload.priority,
-        exposures=payload.exposures,
-        policy_version=payload.policy_version,
-        assignee=payload.assignee,
-    )
+    try:
+        case = svc.create_case(
+            organization_id=org_id,
+            title=payload.title,
+            owner_team=payload.owner_team,
+            priority=payload.priority,
+            exposures=payload.exposures,
+            policy_version=payload.policy_version,
+            assignee=payload.assignee,
+        )
+    except ValueError as exc:
+        if str(exc) != "conflicting exposure owners":
+            raise
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "type": "https://hub.example/problems/conflicting-exposure-owners",
+                "title": "Conflicting Exposure Owners",
+                "status": 400,
+                "code": "conflicting_exposure_owners",
+                "detail": str(exc),
+            },
+        ) from None
     return {
         "id": case.id,
         "case_key": case.case_key,

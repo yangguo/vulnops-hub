@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
@@ -21,13 +22,14 @@ from vulnops.auth.dependencies import (
     require_organization,
 )
 from vulnops.auth.models import Principal
-from vulnops.services.models import BusinessService
+from vulnops.services.models import BusinessService, normalize_business_service_name
 
 router = APIRouter(
     tags=["services"],
     responses={
         401: {"model": ProblemDetails, "description": "Authentication required"},
         403: {"model": ProblemDetails, "description": "Insufficient permission"},
+        409: {"model": ProblemDetails, "description": "Business service name conflict"},
     },
 )
 
@@ -42,6 +44,19 @@ def _serialize_service(service: BusinessService) -> dict:
         "created_at": service.created_at.isoformat(),
         "updated_at": service.updated_at.isoformat(),
     }
+
+
+def _duplicate_service_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "type": "https://hub.example/problems/business-service-conflict",
+            "title": "Business Service Conflict",
+            "status": status.HTTP_409_CONFLICT,
+            "code": "business_service_conflict",
+            "detail": "A business service with this name already exists in the organization.",
+        },
+    )
 
 
 @router.post(
@@ -59,6 +74,18 @@ async def create_business_service(
         await request.json(),
         code="invalid_request_body",
     )
+    normalized_name = normalize_business_service_name(payload.name)
+    if (
+        db.scalar(
+            select(BusinessService.id).where(
+                BusinessService.organization_id == org_id,
+                BusinessService.name_normalized == normalized_name,
+            )
+        )
+        is not None
+    ):
+        raise _duplicate_service_error()
+
     service = BusinessService(
         organization_id=org_id,
         name=payload.name,
@@ -66,7 +93,13 @@ async def create_business_service(
         criticality=payload.criticality,
     )
     db.add(service)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The pre-check gives a useful fast path; the constraint handles races
+        # between concurrent creators and legacy callers that bypass the API.
+        db.rollback()
+        raise _duplicate_service_error() from None
     db.refresh(service)
     return _serialize_service(service)
 
@@ -97,6 +130,9 @@ async def get_business_service(
     principal: Principal = Depends(require_organization),
     db: Session = Depends(get_db),
 ) -> dict:
+    # Authorize before resolving the row so a principal without case:read
+    # cannot distinguish an existing service from a missing one.
+    authorize_capability(request, principal, "case:read")
     service = db.scalar(
         select(BusinessService).where(
             BusinessService.id == service_id,
@@ -105,5 +141,4 @@ async def get_business_service(
     )
     if service is None:
         raise AuthorizationError("resource_not_found")
-    authorize_capability(request, principal, "case:read")
     return _serialize_service(service)

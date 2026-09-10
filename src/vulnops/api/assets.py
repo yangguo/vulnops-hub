@@ -26,6 +26,10 @@ _VALID_CRITICALITY = {"critical", "high", "medium", "low"}
 _VALID_EXPOSURE = {"external", "internal", "unknown"}
 
 
+class AmbiguousBusinessServiceNameError(ValueError):
+    """Raised when legacy service rows make a CSV name non-unique."""
+
+
 def _resolve_business_service_id(
     db: Session,
     organization_id: str,
@@ -44,12 +48,17 @@ def _resolve_business_service_id(
         if resolved:
             return resolved
     if service_name:
-        return db.scalar(
-            select(BusinessService.id).where(
-                BusinessService.organization_id == organization_id,
-                BusinessService.name == service_name,
-            )
+        matches = list(
+            db.scalars(
+                select(BusinessService.id).where(
+                    BusinessService.organization_id == organization_id,
+                    BusinessService.name_normalized == service_name.casefold(),
+                )
+            ).all()
         )
+        if len(matches) > 1:
+            raise AmbiguousBusinessServiceNameError("ambiguous business service name")
+        return matches[0] if matches else None
     return None
 
 
@@ -86,6 +95,7 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
     created = updated = skipped = 0
     skipped_details: list[dict] = []
     total = 0
+    owner_column_present = "owner" in fieldnames
     for row_number, row in enumerate(reader, start=2):  # header is row 1
         hostname = (row.get("hostname") or "").strip()
         if not hostname:
@@ -100,15 +110,21 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
         if internet_exposure not in _VALID_EXPOSURE:
             internet_exposure = None
         environment = (row.get("environment") or "").strip() or None
-        owner = (row.get("owner") or "").strip() or None
+        owner = (row.get("owner") or "").strip() if owner_column_present else None
+        owner = owner or None
         asset_type = (row.get("type") or "host").strip() or "host"
         service_name = (row.get("service") or row.get("service_name") or "").strip() or None
-        business_service_id = _resolve_business_service_id(
-            db,
-            org_id,
-            (row.get("business_service_id") or "").strip() or None,
-            service_name,
-        )
+        try:
+            business_service_id = _resolve_business_service_id(
+                db,
+                org_id,
+                (row.get("business_service_id") or "").strip() or None,
+                service_name,
+            )
+        except AmbiguousBusinessServiceNameError as exc:
+            skipped += 1
+            skipped_details.append({"row": row_number, "reason": str(exc), "service": service_name})
+            continue
 
         result = service.reconcile_alias("hostname", hostname, organization_id=org_id)
         if result.status == "ambiguous":
@@ -121,7 +137,8 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
             asset = db.get(Asset, result.asset_id)
             asset.criticality = criticality
             asset.environment = environment or asset.environment
-            asset.owner = owner or asset.owner
+            if owner_column_present:
+                asset.owner = owner
             asset.business_service_id = business_service_id or asset.business_service_id
             asset.internet_exposure = internet_exposure or asset.internet_exposure
             updated += 1

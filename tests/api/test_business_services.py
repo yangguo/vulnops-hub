@@ -125,3 +125,47 @@ def test_business_service_owner_role_can_write_via_case_capability(env):
         headers=_headers(),
     )
     assert response.status_code == 201, response.text
+
+
+def test_business_service_duplicate_name_returns_conflict(env):
+    client: TestClient = env["client"]
+    first = client.post(
+        "/api/v1/organizations/org-services/services",
+        json={"name": "Payments", "owner_team": "payments"},
+        headers=_headers(),
+    )
+    assert first.status_code == 201, first.text
+
+    duplicate = client.post(
+        "/api/v1/organizations/org-services/services",
+        json={"name": "payments", "owner_team": "other-payments"},
+        headers=_headers(),
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    problem = duplicate.json()["detail"]
+    assert problem["status"] == 409
+    assert problem["code"] == "business_service_conflict"
+    assert problem["type"].endswith("/problems/business-service-conflict")
+
+
+def test_business_service_get_checks_capability_before_lookup(env):
+    client: TestClient = env["client"]
+    created = client.post(
+        "/api/v1/organizations/org-services/services",
+        json={"name": "Payments", "owner_team": "payments"},
+        headers=_headers(),
+    ).json()
+    env["verifier"].roles = []
+
+    existing = client.get(
+        f"/api/v1/organizations/org-services/services/{created['id']}",
+        headers=_headers(),
+    )
+    missing = client.get(
+        "/api/v1/organizations/org-services/services/service-missing",
+        headers=_headers(),
+    )
+    assert existing.status_code == 403
+    assert missing.status_code == 403
+    assert existing.json()["code"] == "insufficient_permission"
+    assert missing.json()["code"] == "insufficient_permission"

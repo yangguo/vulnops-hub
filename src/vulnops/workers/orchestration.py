@@ -18,7 +18,6 @@ from typing import Any, ClassVar
 from sqlalchemy.orm import Session
 
 from vulnops.cases.models import CaseExposure, CaseStatus, RemediationCase
-from vulnops.cases.ownership import resolve_case_owner_team
 from vulnops.cases.service import CaseService
 from vulnops.config import get_settings
 from vulnops.db.models.audit_event import AuditEvent
@@ -374,16 +373,13 @@ class OutboxOrchestrator:
         )
         if any(exposure.id in (rc.exposures or []) for rc in org_cases):
             return None
-        owner_team = resolve_case_owner_team(
-            session,
-            organization_id=exposure.organization_id,
-            asset_id=exposure.asset_id,
-            default_owner_team=self.settings.default_case_owner_team,
-        )
         case = CaseService(session, settings=self.settings).create_case(
             organization_id=exposure.organization_id,
             title=f"Remediate {exposure.vulnerability_id} in {component_label}",
-            owner_team=owner_team,
+            # Let CaseService resolve inventory ownership at creation time;
+            # passing a pre-resolved non-default team would make that snapshot
+            # look like an explicit override.
+            owner_team=self.settings.default_case_owner_team,
             priority=exposure.priority or "P2",
             exposures=[exposure.id],
             policy_version=exposure.policy_version,

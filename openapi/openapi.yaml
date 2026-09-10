@@ -164,6 +164,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '400':
+          description: Conflicting exposure owners
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -948,6 +954,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Business service name conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -1014,6 +1026,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Business service name conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '422':
           description: Validation Error
           content:
@@ -1056,6 +1074,12 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '403':
           description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Business service name conflict
           content:
             application/json:
               schema:

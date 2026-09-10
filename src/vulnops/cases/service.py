@@ -17,7 +17,7 @@ from vulnops.cases.models import (
     SlaClock,
     Verification,
 )
-from vulnops.cases.ownership import resolve_case_owner_team
+from vulnops.cases.ownership import ResolvedOwner, resolve_case_owner
 from vulnops.cases.sla import calculate_due_date
 from vulnops.cases.verification import evaluate_coverage
 from vulnops.config import Settings, get_settings
@@ -234,42 +234,87 @@ class CaseService:
         self,
         organization_id: str,
         title: str,
-        owner_team: str,
+        owner_team: str | None,
         priority: str = "P2",
         exposures: list[str] | None = None,
         policy_version: str | None = None,
         assignee: str | None = None,
         asset_id: str | None = None,
     ) -> RemediationCase:
-        default_owner_team = (self.settings.default_case_owner_team or "unassigned").strip()
-        owner_team = (owner_team or "").strip() or default_owner_team
-        resolved_asset_id = asset_id
-        if resolved_asset_id is None and exposures:
-            # Manual callers commonly provide exposure IDs rather than an
-            # explicit asset. Resolve the first organization-scoped asset
-            # reference in that list while preserving the public request shape.
-            from vulnops.matching.models import Exposure
+        """Create a case with deterministic ownership and escalation.
 
-            for exposure_id in exposures:
-                resolved_asset_id = self.session.scalar(
-                    select(Exposure.asset_id).where(
-                        Exposure.id == exposure_id,
-                        Exposure.organization_id == organization_id,
-                        Exposure.asset_id.is_not(None),
-                    )
+        For automatic/default ownership requests, every organization-scoped
+        exposure with an asset ID is resolved.  All those resolutions must
+        agree on the case-insensitive team and on the owned-vs-default
+        category; mixed or conflicting results raise the stable
+        ``conflicting exposure owners`` error rather than depending on list
+        order.  If all exposures are default, a high-priority case escalates.
+        This consistency check also applies when an explicit owner is supplied;
+        after it passes, that non-default caller-provided owner remains an
+        explicit override and never escalates merely because its text equals
+        the configured default.
+        """
+
+        default_owner_team = (self.settings.default_case_owner_team or "unassigned").strip()
+        default_owner_team = default_owner_team or "unassigned"
+        requested_owner = (owner_team or "").strip()
+        requested_default = not requested_owner or (
+            requested_owner.casefold() == default_owner_team.casefold()
+        )
+
+        from vulnops.matching.models import Exposure
+
+        asset_ids: set[str] = set()
+        explicit_asset_id = (asset_id or "").strip()
+        if explicit_asset_id:
+            asset_ids.add(explicit_asset_id)
+        if exposures:
+            exposure_asset_ids = self.session.scalars(
+                select(Exposure.asset_id).where(
+                    Exposure.organization_id == organization_id,
+                    Exposure.id.in_(exposures),
+                    Exposure.asset_id.is_not(None),
                 )
-                if resolved_asset_id:
-                    break
-        if resolved_asset_id and owner_team.casefold() == default_owner_team.casefold():
-            owner_team = resolve_case_owner_team(
+            ).all()
+            asset_ids.update(asset_id for asset_id in exposure_asset_ids if asset_id)
+
+        exposure_owners = [
+            resolve_case_owner(
                 self.session,
                 organization_id=organization_id,
-                asset_id=resolved_asset_id,
+                asset_id=linked_asset_id,
                 default_owner_team=default_owner_team,
             )
-        ownership_escalated = priority in {"P0", "P1"} and (
-            owner_team.casefold() == default_owner_team.casefold()
-        )
+            for linked_asset_id in sorted(asset_ids)
+        ]
+        owner_keys = {
+            (resolved.owner_team.casefold(), resolved.source == "default")
+            for resolved in exposure_owners
+        }
+        if len(owner_keys) > 1:
+            raise ValueError("conflicting exposure owners")
+
+        if requested_default:
+            if exposure_owners:
+                # The key above makes this representative deterministic even
+                # when the same team is stored with different capitalization.
+                resolved_owner = min(
+                    exposure_owners,
+                    key=lambda resolved: (
+                        resolved.owner_team.casefold(),
+                        resolved.owner_team,
+                        resolved.source,
+                    ),
+                )
+                if resolved_owner.source == "default":
+                    resolved_owner = ResolvedOwner(default_owner_team, "default")
+            else:
+                resolved_owner = ResolvedOwner(default_owner_team, "default")
+        else:
+            resolved_owner = ResolvedOwner(requested_owner, "explicit")
+
+        owner_team = resolved_owner.owner_team
+        ownership_escalated = priority in {"P0", "P1"} and resolved_owner.source == "default"
         case_id = f"case_{uuid.uuid4().hex[:12]}"
         now = _utcnow()
         due = calculate_due_date(priority, now)
