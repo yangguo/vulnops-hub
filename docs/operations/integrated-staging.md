@@ -73,7 +73,8 @@ uv run python scripts/sandbox_fetch.py defectdojo \
   --org org-demo --limit 10 --dry-run   # inspect, then drop --dry-run
 ```
 
-Smoke check: `curl -s http://localhost:8081/api/v2/findings/?limit=1 -H "Authorization: Token <key>"`.
+Smoke check:
+`curl -s "http://localhost:8081/api/v2/findings/?limit=1&related_fields=true" -H "Authorization: Token <key>"`.
 
 ### Greenbone/OpenVAS evidence through DefectDojo
 
@@ -89,10 +90,13 @@ To import a report into the DefectDojo sandbox:
    Scan** (or the installed **Greenbone...** scan type). For an existing test,
    use **Reimport Scan** with the same scan type so DefectDojo applies its
    normal finding deduplication.
-2. Confirm the imported finding exposes the expected DefectDojo metadata:
-   `test_type`, `found_by`, and, for a reimport, `reimport.scan_type`. A
-   verified finding can carry a Jira key from DefectDojo's native Jira
-   integration.
+2. Verify the actual findings-list response with `related_fields=true`:
+   `test` and `found_by` may be integer IDs rather than labels. Read the
+   scanner provenance from `related_fields.test.test_type.name` and the test
+   identifier from `related_fields.test.id`. If the list response does not
+   include the related test object, fetch
+   `/api/v2/tests/{test_id}/` and inspect its `test_type.name`. A verified
+   finding can carry a Jira key from DefectDojo's native Jira integration.
 3. Fetch the finding through the existing DefectDojo path. For a direct
    sandbox run, inspect first and then enqueue it with:
 
@@ -114,7 +118,11 @@ To import a report into the DefectDojo sandbox:
 
 No Greenbone-specific poller, API client, XML parser, or Hub-native bridge is
 required for this procedure. Re-running the fetch is expected to be
-idempotent for an unchanged finding.
+idempotent for an unchanged finding. Both the product poller and
+`scripts/sandbox_fetch.py` request `related_fields=true` so the bridge can
+retain scanner provenance from the real findings-list shape. CI uses
+checked-in DefectDojo-shaped fixtures; it does not contact a live Greenbone
+server.
 
 ### Wazuh manager
 

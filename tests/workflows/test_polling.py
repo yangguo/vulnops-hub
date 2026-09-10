@@ -147,6 +147,32 @@ class _Resp:
         return None
 
 
+def test_defectdojo_client_requests_related_fields():
+    from vulnops.workers.polling import DefectDojoClient
+
+    class _FakeTransport:
+        def __init__(self):
+            self.url = None
+            self.headers = None
+
+        def get(self, url, **kwargs):
+            self.url = url
+            self.headers = kwargs["headers"]
+            return _Resp({"results": [{"id": 11, "related_fields": {}}]})
+
+    transport = _FakeTransport()
+    client = DefectDojoClient("https://dojo/", "token", http_client=transport)
+
+    records, cursor = client.fetch(None)
+
+    assert records == [{"id": 11, "related_fields": {}}]
+    assert cursor == "11"
+    assert transport.url == (
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true"
+    )
+    assert transport.headers == {"authorization": "Token token"}
+
+
 def test_checkpoint_only_after_enqueue(db):
     from vulnops.intelligence.models import SourceStatus
     from vulnops.workers.polling import PollingWorker

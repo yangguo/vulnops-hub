@@ -37,10 +37,11 @@ intentional contract changes.
   exposure review API with audit trail, Jira issue-key link-back for
   scanner-confirmed auto-cases, and VEX statements via Vulnerability-Lookup
   feeding match policy (ADR 0002).
-- Greenbone/OpenVAS scanner provenance via DefectDojo: Greenbone-shaped
-  findings retain normalized scanner, scan-type, and test-type metadata through
-  the existing DefectDojo poller → bridge → orchestration path; no native
-  Greenbone bridge is added.
+- Greenbone/OpenVAS provenance support via DefectDojo: the poller and sandbox
+  fetch request `related_fields=true`, and fixture-covered findings retain
+  normalized scanner, scan-type, and test-type metadata through the existing
+  poller → bridge → orchestration path. Live Greenbone/DefectDojo verification
+  remains pending; no native Greenbone bridge is added.
 - Console source-health page (freshness badges, degraded-source alert) and
   candidate review page (decision dialog writing audited reasons), with
   navigation gated by capability.

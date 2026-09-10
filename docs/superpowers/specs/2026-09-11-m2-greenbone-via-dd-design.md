@@ -1,7 +1,7 @@
 # M2 Greenbone via DefectDojo — Design
 
 > **Date:** 2026-09-11
-> **Status:** Implemented
+> **Status:** Implemented; live poller verification pending
 > **Decision boundary:** [ADR 0002](../../decisions/0002-projection-and-connector-leverage.md)
 
 ## Decision and ADR compliance
@@ -35,9 +35,14 @@ completeness fields and adds generic scanner identity:
 }
 ```
 
-The extractor accepts DefectDojo-shaped scalar or nested values for
-`test_type`, `found_by`, `scan_type`, `reimport.scan_type`, and the nested
-`test` object. Any case-insensitive Greenbone or OpenVAS signal normalizes to
+The DefectDojo findings-list request includes `related_fields=true` because
+production list records commonly expose `test` and `found_by` as IDs. The
+extractor reads the scanner label from
+`related_fields.test.test_type.name` and the test ID from
+`related_fields.test.id`, while accepting DefectDojo-shaped scalar or nested
+values for `test_type`, optional `test_type_name`, `found_by`, `scan_type`,
+`reimport.scan_type`, and the nested `test` object used by Hub fixtures. Any
+case-insensitive Greenbone or OpenVAS signal normalizes to
 `Greenbone/OpenVAS`; other findings retain their first useful tool/test label,
 such as `Trivy`.
 

@@ -10,6 +10,12 @@ from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.integrations.defectdojo import DefectDojoBridge
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "defectdojo" / "finding.json"
+POLLER_FIXTURE = (
+    Path(__file__).parent.parent
+    / "fixtures"
+    / "defectdojo"
+    / "finding_poller_related_fields.json"
+)
 
 
 def _engine():
@@ -60,6 +66,22 @@ def test_defectdojo_import_creates_evidence_and_exposure():
     assert outbox.payload["scan_metadata"]["scanner"] == "Greenbone/OpenVAS"
     audit = session.query(AuditEvent).one()
     assert "scanner=Greenbone/OpenVAS" in audit.reason
+    session.close()
+
+
+def test_defectdojo_poller_related_fields_preserve_greenbone_provenance():
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+    bridge = DefectDojoBridge(session)
+
+    raw = json.loads(POLLER_FIXTURE.read_text())
+    result = bridge.ingest_finding(raw, organization_id="org1")
+
+    assert result.scan_metadata["scanner"] == "Greenbone/OpenVAS"
+    assert result.scan_metadata["scan_type"] == "OpenVAS Scan"
+    assert result.scan_metadata["test_type"] == "OpenVAS Scan"
+    assert result.scan_metadata["test_id"] == 987
     session.close()
 
 

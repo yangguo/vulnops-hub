@@ -1,0 +1,25 @@
+{
+  "id": 123456,
+  "test": 987,
+  "found_by": [141],
+  "title": "CVE-2026-12345 in openssl 3.0.2",
+  "severity": "High",
+  "cve": "CVE-2026-12345",
+  "component_name": "openssl",
+  "component_version": "3.0.2",
+  "purl": "pkg:deb/debian/openssl@3.0.2",
+  "verified": true,
+  "active": true,
+  "is_mitigated": false,
+  "related_fields": {
+    "test": {
+      "id": 987,
+      "title": "OpenVAS Scan",
+      "test_type": {
+        "id": 141,
+        "name": "OpenVAS Scan"
+      }
+    },
+    "jira": null
+  }
+}
