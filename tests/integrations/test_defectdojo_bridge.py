@@ -11,10 +11,7 @@ from vulnops.integrations.defectdojo import DefectDojoBridge
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "defectdojo" / "finding.json"
 POLLER_FIXTURE = (
-    Path(__file__).parent.parent
-    / "fixtures"
-    / "defectdojo"
-    / "finding_poller_related_fields.json"
+    Path(__file__).parent.parent / "fixtures" / "defectdojo" / "finding_poller_related_fields.json"
 )
 
 

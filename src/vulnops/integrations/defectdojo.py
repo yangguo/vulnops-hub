@@ -255,8 +255,7 @@ class DefectDojoBridge:
         related_fields = raw.get("related_fields")
         related_test = (
             related_fields.get("test")
-            if isinstance(related_fields, dict)
-            and isinstance(related_fields.get("test"), dict)
+            if isinstance(related_fields, dict) and isinstance(related_fields.get("test"), dict)
             else {}
         )
 
@@ -326,9 +325,7 @@ class DefectDojoBridge:
 
     @staticmethod
     def _normalize_scanner(*values: str | None) -> str:
-        identity_labels = [
-            value for value in values[:3] if value and not value.strip().isdigit()
-        ]
+        identity_labels = [value for value in values[:3] if value and not value.strip().isdigit()]
         if any(
             token in value.lower()
             for value in identity_labels
