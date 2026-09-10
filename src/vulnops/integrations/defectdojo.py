@@ -203,7 +203,7 @@ class DefectDojoBridge:
                 subject_type="source_snapshot",
                 subject_id=snapshot.id,
                 correlation_id=snapshot.correlation_id,
-                reason="defectdojo finding ingested",
+                reason=self._ingest_reason(scan_metadata),
                 organization_id=organization_id,
             )
             self.session.add(audit)
@@ -220,6 +220,9 @@ class DefectDojoBridge:
                     "component_version": component_version,
                     "verified": bool(raw.get("verified")),
                     "jira_key": (raw.get("jira_issue") or {}).get("key") or raw.get("jira_key"),
+                    "scanner": scan_metadata["scanner"],
+                    "scan_type": scan_metadata["scan_type"],
+                    "test_type": scan_metadata["test_type"],
                     "organization_id": organization_id,
                     "mapping": {"status": mapping.status, "asset_id": mapping.asset_id},
                     "scan_metadata": scan_metadata,
@@ -244,23 +247,109 @@ class DefectDojoBridge:
             cve=cve,
         )
 
-    def _extract_scan_metadata(self, raw: dict) -> dict:
-        scan_run = raw.get("scan_run") or {}
-        # Also check reimport metadata
-        reimport = raw.get("reimport") or {}
+    def _extract_scan_metadata(self, raw: dict[str, Any]) -> dict[str, Any]:
+        scan_run = raw.get("scan_run") if isinstance(raw.get("scan_run"), dict) else {}
+        reimport = raw.get("reimport") if isinstance(raw.get("reimport"), dict) else {}
+        test = raw.get("test")
+        test_object = test if isinstance(test, dict) else {}
+        related_fields = raw.get("related_fields")
+        related_test = (
+            related_fields.get("test")
+            if isinstance(related_fields, dict) and isinstance(related_fields.get("test"), dict)
+            else {}
+        )
+
+        test_type = self._dd_label(raw.get("test_type"), "name", "test_type_name", "scan_type")
+        test_type = test_type or self._dd_label(
+            raw.get("test_type_name"), "name", "test_type_name", "scan_type"
+        )
+        for test_source in (related_test, test_object):
+            test_type = test_type or self._dd_label(
+                test_source.get("test_type_name"), "name", "test_type_name", "scan_type"
+            )
+            test_type = test_type or self._dd_label(
+                test_source.get("test_type"), "name", "test_type_name", "scan_type"
+            )
+
+        scan_type = self._dd_label(reimport.get("scan_type"), "name", "scan_type")
+        scan_type = scan_type or self._dd_label(raw.get("scan_type"), "name", "scan_type")
+        for test_source in (related_test, test_object):
+            scan_type = scan_type or self._dd_label(
+                test_source.get("scan_type"), "name", "scan_type"
+            )
+        scan_type = scan_type or test_type
+        test_type = test_type or scan_type
+
+        found_by = self._dd_label(raw.get("found_by"), "name", "tool", "title", "label")
+        scanner_name = self._dd_label(raw.get("scanner"), "name", "tool", "title", "label")
+        tool_name = self._dd_label(raw.get("tool"), "name", "tool", "title", "label")
+        scanner = self._normalize_scanner(found_by, scanner_name, tool_name, test_type, scan_type)
+
+        test_id = related_test.get("id") or related_test.get("test_id")
+        test_id = test_id or test_object.get("id") or test_object.get("test_id")
+        if test_id is None and test is not None and not isinstance(test, (dict, list)):
+            test_id = test
+        test_id = test_id or reimport.get("test_id")
+        scan_id = scan_run.get("id") or raw.get("scan_id") or reimport.get("scan_id") or test_id
+
         return {
             "scope_status": scan_run.get("scope_status")
             or scan_run.get("status")
             or raw.get("status")
             or "unknown",
             "credentials_status": scan_run.get("credentials_status") or "unknown",
-            "scan_id": scan_run.get("id")
-            or raw.get("scan_run", {}).get("id")
-            or reimport.get("test_id")
-            or raw.get("test"),
-            "test_id": raw.get("test") or reimport.get("test_id"),
+            "scan_id": scan_id,
+            "test_id": test_id,
             "reimport_version": reimport.get("version"),
+            "scanner": scanner,
+            "scan_type": scan_type,
+            "test_type": test_type,
         }
+
+    @staticmethod
+    def _dd_label(value: Any, *keys: str) -> str | None:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        if isinstance(value, dict):
+            for key in keys:
+                label = DefectDojoBridge._dd_label(value.get(key), *keys)
+                if label:
+                    return label
+        if isinstance(value, list):
+            for item in value:
+                label = DefectDojoBridge._dd_label(item, *keys)
+                if label:
+                    return label
+        return None
+
+    @staticmethod
+    def _normalize_scanner(*values: str | None) -> str:
+        identity_labels = [value for value in values[:3] if value and not value.strip().isdigit()]
+        if any(
+            token in value.lower()
+            for value in identity_labels
+            for token in ("greenbone", "openvas")
+        ):
+            return "Greenbone/OpenVAS"
+        if identity_labels:
+            return identity_labels[0]
+
+        metadata_labels = [value for value in values[3:] if value]
+        if any(
+            token in value.lower()
+            for value in metadata_labels
+            for token in ("greenbone", "openvas")
+        ):
+            return "Greenbone/OpenVAS"
+        return metadata_labels[0] if metadata_labels else "unknown"
+
+    @staticmethod
+    def _ingest_reason(scan_metadata: dict[str, Any]) -> str:
+        scanner = scan_metadata.get("scanner") or "unknown"
+        scan_type = scan_metadata.get("scan_type")
+        suffix = f"; scan_type={scan_type}" if scan_type else ""
+        return f"defectdojo finding ingested (scanner={scanner}{suffix})"
 
     def _extract_ecosystem(self, purl: str | None) -> str | None:
         if not purl:

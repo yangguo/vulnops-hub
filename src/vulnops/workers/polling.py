@@ -33,7 +33,7 @@ class DefectDojoClient:
         self.http_client = http_client or _make_client()
 
     def fetch(self, cursor: str | None) -> tuple[list[dict], str | None]:
-        query = "/api/v2/findings/?ordering=id&limit=100"
+        query = "/api/v2/findings/?ordering=id&limit=100&related_fields=true"
         if cursor:
             query += f"&id__gt={cursor}"
         resp = self.http_client.get(

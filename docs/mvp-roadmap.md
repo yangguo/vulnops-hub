@@ -7,8 +7,10 @@
 > in an **M2 operational pilot** phase: polling adapters, source-health
 > API/console, CSV/CMDB import, candidate review, Jira link-back via
 > DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
-> `main`. Remaining pilot work includes ServiceNow and case-level projection,
-> Greenbone evidence via DefectDojo, production IdP
+> `main`. Greenbone-via-DefectDojo provenance and its tested
+> fixture/orchestration path are implemented; live poller `related_fields`
+> verification remains pending. Remaining pilot work includes ServiceNow and
+> case-level projection, production IdP
 > integration, shared adopter staging, certified backup/restore on MinIO/S3,
 > and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
@@ -119,8 +121,13 @@ and one non-production integrated environment.
 - **(shipped)** Scanner-confirmed cases link to Jira via DefectDojo's native
   integration, recording the issue key as the case's external-ticket
   reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
-  Greenbone evidence enters through DefectDojo; ServiceNow and case-level
-  projection remain deferred until pilot feedback.
+- **(implemented; live poller verification pending)** Greenbone/OpenVAS
+  evidence enters through DefectDojo: the DefectDojo poller and sandbox fetch
+  request `related_fields=true`, while scanner provenance is retained in the
+  existing evidence/audit/outbox structures and verified findings use the
+  tested generic scanner-confirmed exposure/case path. No Hub-native
+  Greenbone bridge is present; ServiceNow and case-level projection remain
+  deferred until pilot feedback.
 - **(shipped, minimal escalation)** Business-service mappings, improved asset
   reconciliation, and ownership escalation. The ownership slice resolves
   asset owner → business-service owner → configured default and records an

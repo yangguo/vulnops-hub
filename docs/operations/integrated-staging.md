@@ -18,10 +18,10 @@ credential below is a sandbox default and must never be reused elsewhere.
 - The VulnOps api/worker containers (from the root `docker-compose.yml`)
   reach sandboxes through `http://host.docker.internal:<port>`, so the
   application compose file stays untouched.
-- DefectDojo/Wazuh records enter the pipeline via the queue: fetch script →
-  Valkey `vulnops:ingest` → ingestion worker → bridges. The product-level
-  HTTP polling adapters are a future slice; `scripts/sandbox_fetch.py` stands
-  in for them.
+- DefectDojo/Wazuh records enter the pipeline via the queue: the product-level
+  poller (or `scripts/sandbox_fetch.py` for a direct sandbox run) → Valkey
+  `vulnops:ingest` → ingestion worker → bridges. The poller checkpoints only
+  after jobs are durably enqueued.
 - Vulnerability-Lookup is launched from its own repository (it builds from
   source with its own kvrocks/valkey/postgres backing services).
 
@@ -73,7 +73,56 @@ uv run python scripts/sandbox_fetch.py defectdojo \
   --org org-demo --limit 10 --dry-run   # inspect, then drop --dry-run
 ```
 
-Smoke check: `curl -s http://localhost:8081/api/v2/findings/?limit=1 -H "Authorization: Token <key>"`.
+Smoke check:
+`curl -s "http://localhost:8081/api/v2/findings/?limit=1&related_fields=true" -H "Authorization: Token <key>"`.
+
+### Greenbone/OpenVAS evidence through DefectDojo
+
+The staging path does not run a Greenbone server and the Hub has no native
+Greenbone/OpenVAS client or parser. DefectDojo is the scanner evidence
+producer and parser; the Hub reads the resulting finding like any other
+DefectDojo finding.
+
+To import a report into the DefectDojo sandbox:
+
+1. In the DefectDojo UI, open the target product and engagement, then choose
+   **Import Scan**. Upload the Greenbone/OpenVAS report and choose **OpenVAS
+   Scan** (or the installed **Greenbone...** scan type). For an existing test,
+   use **Reimport Scan** with the same scan type so DefectDojo applies its
+   normal finding deduplication.
+2. Verify the actual findings-list response with `related_fields=true`:
+   `test` and `found_by` may be integer IDs rather than labels. Read the
+   scanner provenance from `related_fields.test.test_type.name` and the test
+   identifier from `related_fields.test.id`. If the list response does not
+   include the related test object, fetch
+   `/api/v2/tests/{test_id}/` and inspect its `test_type.name`. A verified
+   finding can carry a Jira key from DefectDojo's native Jira integration.
+3. Fetch the finding through the existing DefectDojo path. For a direct
+   sandbox run, inspect first and then enqueue it with:
+
+   ```bash
+   uv run python scripts/sandbox_fetch.py defectdojo \
+     --base-url http://localhost:8081 --token <dojo-api-key> \
+     --org org-demo --limit 10 --dry-run
+   # Repeat without --dry-run after reviewing the payload.
+   ```
+
+   For the product polling path, set `DEFECTDOJO_BASE_URL`,
+   `DEFECTDOJO_API_TOKEN`, and `POLL_ORGANIZATION_ID` for the root compose
+   stack, then run `docker compose up -d poller`.
+4. Watch `docker compose logs -f worker orchestrator poller`. The existing
+   DefectDojo bridge persists scanner provenance in `scan_metadata`, the
+   ingestion outbox, and the audit reason. Verified findings continue through
+   the generic `scanner_confirmed` path; the orchestrator creates the exposure
+   and case and records any DefectDojo Jira issue key as the external ticket.
+
+No Greenbone-specific poller, API client, XML parser, or Hub-native bridge is
+required for this procedure. Re-running the fetch is expected to be
+idempotent for an unchanged finding. Both the product poller and
+`scripts/sandbox_fetch.py` request `related_fields=true` so the bridge can
+retain scanner provenance from the real findings-list shape. CI uses
+checked-in DefectDojo-shaped fixtures; it does not contact a live Greenbone
+server.
 
 ### Wazuh manager
 

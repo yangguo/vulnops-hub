@@ -64,7 +64,7 @@ def fetch_defectdojo(base_url: str, token: str, limit: int) -> list[dict[str, An
     """Pull the most recent findings raw from the DefectDojo v2 API."""
 
     data = _http_json(
-        f"{base_url.rstrip('/')}/api/v2/findings/?limit={limit}&ordering=-id",
+        f"{base_url.rstrip('/')}/api/v2/findings/?limit={limit}&ordering=-id&related_fields=true",
         headers={"authorization": f"Token {token}"},
     )
     return list(data.get("results", []))

@@ -873,3 +873,46 @@ def test_dojo_verified_finding_with_jira_key_links_ticket(db):
     assert case.external_ticket_id == "VULN-42"
     link = db.query(AuditEvent).filter_by(action="case.external_ticket.linked").one()
     assert link.reason == "jira via defectdojo finding 77"
+
+
+def test_dojo_greenbone_provenance_keeps_scanner_confirmed_case_path(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.db.models.audit_event import AuditEvent
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    payload = {
+        "finding_id": "123456",
+        "cve": "CVE-2026-1234",
+        "purl": "pkg:pypi/urllib3@1.26.17",
+        "component_name": "urllib3",
+        "component_version": "1.26.17",
+        "verified": True,
+        "jira_key": "VULN-99",
+        "scanner": "Greenbone/OpenVAS",
+        "scan_type": "OpenVAS Scan",
+        "organization_id": "org-demo",
+        "mapping": {"status": "matched", "asset_id": None},
+        "scan_metadata": {
+            "scanner": "Greenbone/OpenVAS",
+            "scan_type": "OpenVAS Scan",
+            "test_type": "OpenVAS Scan",
+        },
+    }
+    event = _outbox("vulnops.evidence.defectdojo.ingested.v1", payload)
+    db.add(event)
+    db.commit()
+
+    orch = _orch(db)
+    claimed = claim_events(db, batch_size=10, max_attempts=8)
+    orch.process_event(db, claimed[0])
+
+    exposure = db.query(Exposure).one()
+    assert exposure.match_class == "confirmed"
+    assert "scanner.confirmed" in exposure.matched_rules
+    case = db.query(RemediationCase).one()
+    assert case.external_ticket_id == "VULN-99"
+    link = db.query(AuditEvent).filter_by(action="case.external_ticket.linked").one()
+    assert link.reason == "jira via defectdojo finding 123456"
+    assert event.payload["scanner"] == "Greenbone/OpenVAS"
+    assert event.payload["scan_metadata"]["scan_type"] == "OpenVAS Scan"

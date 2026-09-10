@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from vulnops.assets.models import Asset, AssetAlias
 from vulnops.cases.service import CaseService
+from vulnops.config import Settings
 from vulnops.db import Base
 from vulnops.integrations.defectdojo import DefectDojoBridge
 from vulnops.integrations.wazuh import WazuhBridge
@@ -191,4 +192,80 @@ def test_defectdojo_to_closed_case_e2e():
     r2 = dojo_bridge.ingest_finding(dojo_raw, organization_id="org1")
     assert r2.source_snapshot.id == dojo_result.source_snapshot.id
 
+    session.close()
+
+
+def test_greenbone_defectdojo_ingest_orchestrates_confirmed_case_with_provenance():
+    from vulnops.cases.models import RemediationCase
+    from vulnops.db.models.audit_event import AuditEvent
+    from vulnops.db.models.outbox_event import OutboxEvent
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import OutboxOrchestrator
+
+    class _NoopOSV:
+        def lookup_batch(self, components, **kwargs):
+            return []
+
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+
+    asset = Asset(
+        id="ast_greenbone_01",
+        name="payments-api-3",
+        type="host",
+        status="active",
+        criticality="critical",
+        organization_id="org1",
+    )
+    session.add(asset)
+    session.commit()
+    session.add(
+        AssetAlias(
+            asset_id=asset.id,
+            namespace="hostname",
+            value="payments-api-3",
+            organization_id="org1",
+        )
+    )
+    session.commit()
+
+    raw = json.loads(DOJO_FIXTURE.read_text())
+    raw["asset_hints"] = [{"namespace": "hostname", "value": "payments-api-3"}]
+    raw["jira_key"] = "VULN-GREENBONE"
+    bridge = DefectDojoBridge(session)
+    result = bridge.ingest_finding(raw, organization_id="org1")
+
+    assert result.scan_metadata["scanner"] == "Greenbone/OpenVAS"
+    event = session.query(OutboxEvent).one()
+    assert event.payload["scanner"] == "Greenbone/OpenVAS"
+    assert event.payload["scan_metadata"]["test_type"] == "OpenVAS Scan"
+
+    orchestrator = OutboxOrchestrator(
+        session_factory=lambda: session,
+        osv=_NoopOSV(),
+        settings=Settings(
+            oidc_issuer_url="http://127.0.0.1:8082/realms/vulnops",
+            oidc_audience="vulnops-api",
+        ),
+    )
+    orchestrator.process_event(session, event)
+
+    exposure = session.query(Exposure).one()
+    assert exposure.match_class == "confirmed"
+    case = session.query(RemediationCase).one()
+    assert case.external_ticket_id == "VULN-GREENBONE"
+    link = session.query(AuditEvent).filter_by(action="case.external_ticket.linked").one()
+    assert link.reason == "jira via defectdojo finding 123456"
+
+    replay = bridge.ingest_finding(raw, organization_id="org1")
+    assert replay.source_snapshot.id == result.source_snapshot.id
+    assert (
+        session.query(OutboxEvent)
+        .filter_by(event_type="vulnops.evidence.defectdojo.ingested.v1")
+        .count()
+        == 1
+    )
+    assert session.query(Exposure).count() == 1
+    assert session.query(RemediationCase).count() == 1
     session.close()
