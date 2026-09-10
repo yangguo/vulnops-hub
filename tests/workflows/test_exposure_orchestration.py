@@ -489,6 +489,43 @@ def test_sbom_event_creates_deterministic_exposure_and_case(db):
     assert event.delivered_at is not None
 
 
+def test_sbom_case_owner_uses_linked_business_service(db):
+    from vulnops.assets.models import Asset
+    from vulnops.cases.models import RemediationCase
+    from vulnops.services.models import BusinessService
+    from vulnops.workers.orchestration import claim_events
+
+    db.add(
+        BusinessService(
+            id="svc-orchestration",
+            organization_id="org-demo",
+            name="Payments",
+            owner_team="payments-platform",
+        )
+    )
+    db.add(
+        Asset(
+            id="asset-orchestration",
+            organization_id="org-demo",
+            name="payments-01",
+            business_service_id="svc-orchestration",
+        )
+    )
+    occurrence = _occurrence()
+    occurrence.asset_id = "asset-orchestration"
+    db.add(occurrence)
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db)
+    event = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, event)
+
+    case = db.query(RemediationCase).one()
+    assert case.owner_team == "payments-platform"
+    assert case.ownership_escalated is False
+
+
 def test_sbom_event_replay_does_not_duplicate_case(db):
     from vulnops.cases.models import CaseExposure, RemediationCase
     from vulnops.matching.models import Exposure

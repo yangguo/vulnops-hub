@@ -9,10 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import vulnops.assets.models
-import vulnops.intelligence.models  # noqa: F401
+import vulnops.intelligence.models
+import vulnops.services.models  # noqa: F401
 from vulnops.config import get_settings
 from vulnops.db import Base
 from vulnops.main import create_app
+from vulnops.services.models import BusinessService
 
 
 class _StaticVerifier:
@@ -136,3 +138,59 @@ def test_missing_hostname_column_rejected(env):
     body = resp.json()
     assert body["total"] == 0
     assert body["skipped_details"][0]["reason"].startswith("missing required 'hostname'")
+
+
+def test_import_sets_owner_and_resolves_business_service_id_or_name(env):
+    session = env["factory"]()
+    session.add_all(
+        [
+            BusinessService(
+                id="svc-payments",
+                organization_id="org-demo",
+                name="Payments",
+                owner_team="payments",
+            ),
+            BusinessService(
+                id="svc-search",
+                organization_id="org-demo",
+                name="Search",
+                owner_team="search",
+            ),
+        ]
+    )
+    session.commit()
+    session.close()
+
+    response = env["post"](
+        "hostname,owner,business_service_id\n"
+        "payments-01,payments-oncall,svc-payments\n"
+        "search-01,search-oncall,svc-search\n"
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 2
+
+    session = env["factory"]()
+    from vulnops.assets.models import Asset
+
+    payments = session.query(Asset).filter_by(name="payments-01").one()
+    search = session.query(Asset).filter_by(name="search-01").one()
+    assert payments.owner == "payments-oncall"
+    assert payments.business_service_id == "svc-payments"
+    assert search.owner == "search-oncall"
+    assert search.business_service_id == "svc-search"
+    session.close()
+
+    by_name = env["post"]("hostname,owner,service\nsearch-name-01,search-oncall,Search\n")
+    assert by_name.status_code == 200
+    session = env["factory"]()
+    search_by_name = session.query(Asset).filter_by(name="search-name-01").one()
+    assert search_by_name.business_service_id == "svc-search"
+    session.close()
+
+    update = env["post"]("hostname,criticality\npayments-01,low\n")
+    assert update.status_code == 200
+    session = env["factory"]()
+    payments = session.query(Asset).filter_by(name="payments-01").one()
+    assert payments.owner == "payments-oncall"
+    assert payments.business_service_id == "svc-payments"
+    session.close()

@@ -8,7 +8,7 @@
 > API/console, CSV/CMDB import, candidate review, Jira link-back via
 > DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
 > `main`. Remaining pilot work includes ServiceNow and case-level projection,
-> ownership escalation, Greenbone evidence via DefectDojo, production IdP
+> Greenbone evidence via DefectDojo, production IdP
 > integration, shared adopter staging, certified backup/restore on MinIO/S3,
 > and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
@@ -121,8 +121,11 @@ and one non-production integrated environment.
   reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
   Greenbone evidence enters through DefectDojo; ServiceNow and case-level
   projection remain deferred until pilot feedback.
-- **(open)** Business-service mappings, improved asset reconciliation, and
-  ownership escalation.
+- **(shipped, minimal escalation)** Business-service mappings, improved asset
+  reconciliation, and ownership escalation. The ownership slice resolves
+  asset owner → business-service owner → configured default and records an
+  audit/flag for unassigned P0/P1 cases; richer notification channels remain
+  pilot follow-up.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
   on the local staging topology; certified production topology (MinIO/S3)
   remains open.

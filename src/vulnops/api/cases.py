@@ -136,6 +136,7 @@ def _serialize_case(case: RemediationCase) -> dict:
         "exposures": case.exposures,
         "sla_breached": case.sla_breached,
         "closure_reason": case.closure_reason,
+        "ownership_escalated": case.ownership_escalated,
         "created_at": case.created_at.isoformat() if case.created_at else None,
         "updated_at": case.updated_at.isoformat() if case.updated_at else None,
     }
@@ -226,6 +227,7 @@ async def create_case(org_id: str, request: Request, db: Session = Depends(get_d
         "version": case.version,
         "etag": f'"{case.version}"',
         "due_at": case.due_at.isoformat() if case.due_at else None,
+        "ownership_escalated": case.ownership_escalated,
     }
 
 

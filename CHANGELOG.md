@@ -40,6 +40,9 @@ intentional contract changes.
 - Console source-health page (freshness badges, degraded-source alert) and
   candidate review page (decision dialog writing audited reasons), with
   navigation gated by capability.
+- BusinessService create/list/get API, CSV asset owner/service linkage,
+  asset/service-aware case owner resolution, and audited P0/P1 escalation for
+  cases that remain unassigned.
 
 ### Changed
 

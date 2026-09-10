@@ -4,6 +4,7 @@ import csv
 import io
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
@@ -11,6 +12,7 @@ from vulnops.api.schemas import ProblemDetails
 from vulnops.assets.models import Asset
 from vulnops.assets.reconciliation import AssetService
 from vulnops.auth.dependencies import require_capability
+from vulnops.services.models import BusinessService
 
 router = APIRouter(
     tags=["assets"],
@@ -24,6 +26,33 @@ _VALID_CRITICALITY = {"critical", "high", "medium", "low"}
 _VALID_EXPOSURE = {"external", "internal", "unknown"}
 
 
+def _resolve_business_service_id(
+    db: Session,
+    organization_id: str,
+    explicit_id: str | None,
+    service_name: str | None,
+) -> str | None:
+    """Resolve an existing service without creating inventory from CSV input."""
+
+    if explicit_id:
+        resolved = db.scalar(
+            select(BusinessService.id).where(
+                BusinessService.organization_id == organization_id,
+                BusinessService.id == explicit_id,
+            )
+        )
+        if resolved:
+            return resolved
+    if service_name:
+        return db.scalar(
+            select(BusinessService.id).where(
+                BusinessService.organization_id == organization_id,
+                BusinessService.name == service_name,
+            )
+        )
+    return None
+
+
 @router.post(
     "/organizations/{org_id}/assets/import",
     dependencies=[Depends(require_capability("asset:write"))],
@@ -32,7 +61,8 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
     """Import a CSV asset inventory (CMDB export).
 
     Header row required; recognized columns: hostname (required identity),
-    name, criticality, environment, owner, internet_exposure, type.
+    name, criticality, environment, owner, internet_exposure, type,
+    business_service_id, service, service_name.
     Existing assets are matched by hostname alias and updated in place;
     unknown hostnames create assets with a hostname alias; ambiguous alias
     collisions are skipped for review, never merged.
@@ -72,6 +102,13 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
         environment = (row.get("environment") or "").strip() or None
         owner = (row.get("owner") or "").strip() or None
         asset_type = (row.get("type") or "host").strip() or "host"
+        service_name = (row.get("service") or row.get("service_name") or "").strip() or None
+        business_service_id = _resolve_business_service_id(
+            db,
+            org_id,
+            (row.get("business_service_id") or "").strip() or None,
+            service_name,
+        )
 
         result = service.reconcile_alias("hostname", hostname, organization_id=org_id)
         if result.status == "ambiguous":
@@ -85,6 +122,7 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
             asset.criticality = criticality
             asset.environment = environment or asset.environment
             asset.owner = owner or asset.owner
+            asset.business_service_id = business_service_id or asset.business_service_id
             asset.internet_exposure = internet_exposure or asset.internet_exposure
             updated += 1
         else:
@@ -94,8 +132,9 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
                 organization_id=org_id,
                 criticality=criticality,
                 environment=environment,
+                owner=owner,
+                business_service_id=business_service_id,
             )
-            asset.owner = owner
             asset.internet_exposure = internet_exposure
             service.add_alias(asset.id, "hostname", hostname, org_id)
             created += 1

@@ -64,6 +64,47 @@ class CaseCreateRequest(BaseModel):
         return value
 
 
+class BusinessServiceCreateRequest(BaseModel):
+    """Organization-scoped business-service inventory write contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    owner_team: str = Field(min_length=1)
+    criticality: str | None = Field(default=None, min_length=1)
+
+    @field_validator("name", "owner_team", mode="before")
+    @classmethod
+    def validate_required_service_text(cls, value: object) -> object:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("business service text fields must not be blank")
+        return value.strip()
+
+    @field_validator("criticality", mode="before")
+    @classmethod
+    def validate_criticality(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("business service criticality must not be blank")
+        return value.strip()
+
+
+class BusinessServiceResponse(BaseModel):
+    id: str
+    organization_id: str
+    name: str
+    owner_team: str
+    criticality: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class BusinessServiceListResponse(BaseModel):
+    items: list[BusinessServiceResponse]
+    total: int
+
+
 class TransitionRequest(BaseModel):
     """Actor-free case transition request contract."""
 
@@ -286,6 +327,7 @@ class CaseCreateResponse(BaseModel):
     version: int
     etag: str
     due_at: str | None = None
+    ownership_escalated: bool = False
 
 
 class AllowedTransitionsResponse(BaseModel):
@@ -361,6 +403,7 @@ class CaseDetailResponse(BaseModel):
     closure_reason: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    ownership_escalated: bool = False
 
 
 class CaseListResponse(BaseModel):

@@ -17,8 +17,10 @@ from vulnops.cases.models import (
     SlaClock,
     Verification,
 )
+from vulnops.cases.ownership import resolve_case_owner_team
 from vulnops.cases.sla import calculate_due_date
 from vulnops.cases.verification import evaluate_coverage
+from vulnops.config import Settings, get_settings
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 
@@ -224,8 +226,9 @@ def _canonicalize_risk_decision_expiry(decision: RiskDecision) -> RiskDecision:
 
 
 class CaseService:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, settings: Settings | None = None):
         self.session = session
+        self.settings = settings or get_settings()
 
     def create_case(
         self,
@@ -236,7 +239,37 @@ class CaseService:
         exposures: list[str] | None = None,
         policy_version: str | None = None,
         assignee: str | None = None,
+        asset_id: str | None = None,
     ) -> RemediationCase:
+        default_owner_team = (self.settings.default_case_owner_team or "unassigned").strip()
+        owner_team = (owner_team or "").strip() or default_owner_team
+        resolved_asset_id = asset_id
+        if resolved_asset_id is None and exposures:
+            # Manual callers commonly provide exposure IDs rather than an
+            # explicit asset. Resolve the first organization-scoped asset
+            # reference in that list while preserving the public request shape.
+            from vulnops.matching.models import Exposure
+
+            for exposure_id in exposures:
+                resolved_asset_id = self.session.scalar(
+                    select(Exposure.asset_id).where(
+                        Exposure.id == exposure_id,
+                        Exposure.organization_id == organization_id,
+                        Exposure.asset_id.is_not(None),
+                    )
+                )
+                if resolved_asset_id:
+                    break
+        if resolved_asset_id and owner_team.casefold() == default_owner_team.casefold():
+            owner_team = resolve_case_owner_team(
+                self.session,
+                organization_id=organization_id,
+                asset_id=resolved_asset_id,
+                default_owner_team=default_owner_team,
+            )
+        ownership_escalated = priority in {"P0", "P1"} and (
+            owner_team.casefold() == default_owner_team.casefold()
+        )
         case_id = f"case_{uuid.uuid4().hex[:12]}"
         now = _utcnow()
         due = calculate_due_date(priority, now)
@@ -253,6 +286,7 @@ class CaseService:
             version=1,
             due_at=due,
             exposures=exposures or [],
+            ownership_escalated=ownership_escalated,
         )
         try:
             self.session.add(case)
@@ -264,24 +298,47 @@ class CaseService:
                 due_at=due,
             )
             self.session.add(clock)
+            event_correlation_id = str(uuid.uuid4())
             audit = AuditEvent(
                 id=f"aud_{uuid.uuid4().hex[:12]}",
                 actor="system",
                 action="case.created",
                 subject_type="case",
                 subject_id=case_id,
-                correlation_id=str(uuid.uuid4()),
+                correlation_id=event_correlation_id,
                 new_state=CaseStatus.NEW,
                 reason="case created",
                 organization_id=organization_id,
             )
             self.session.add(audit)
+            if ownership_escalated:
+                self.session.add(
+                    AuditEvent(
+                        id=f"aud_{uuid.uuid4().hex[:12]}",
+                        actor="system",
+                        action="case.ownership.unassigned_high_priority",
+                        subject_type="case",
+                        subject_id=case_id,
+                        correlation_id=event_correlation_id,
+                        new_state="unassigned",
+                        reason=(
+                            f"{priority} case created without an asset or business-service owner"
+                        ),
+                        organization_id=organization_id,
+                    )
+                )
             outbox = OutboxEvent(
                 id=f"evt_{uuid.uuid4().hex[:12]}",
                 aggregate_type="case",
                 aggregate_id=case_id,
                 event_type="vulnops.case.created.v1",
-                payload={"case_id": case_id, "priority": priority, "exposures": exposures or []},
+                payload={
+                    "case_id": case_id,
+                    "priority": priority,
+                    "owner_team": owner_team,
+                    "ownership_escalated": ownership_escalated,
+                    "exposures": exposures or [],
+                },
                 correlation_id=audit.correlation_id,
             )
             self.session.add(outbox)

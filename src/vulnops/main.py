@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+# Register inventory models before test/dev metadata creation as well as via
+# the dependency initializer used by the running API.
+import vulnops.services.models  # noqa: F401
 from vulnops import __version__
 from vulnops.api.health import router as health_router
 from vulnops.auth.dependencies import (
@@ -166,6 +169,13 @@ def create_app() -> FastAPI:
         app.include_router(assets_router, prefix="/api/v1", dependencies=[Depends(get_principal)])
     except Exception as e:
         logger.warning("assets router not loaded: %s", e)
+
+    try:
+        from vulnops.api.services import router as services_router
+
+        app.include_router(services_router, prefix="/api/v1", dependencies=[Depends(get_principal)])
+    except Exception as e:
+        logger.warning("services router not loaded: %s", e)
 
     try:
         from vulnops.api.exposures import router as exposures_router
