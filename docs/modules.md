@@ -181,18 +181,19 @@ The bridge must never enable broad auto-create behavior against a production
 DefectDojo instance without a pre-mapped context; wrong asset creation is a data
 integrity failure, not a convenience.
 
-## 9. Wazuh and Greenbone bridges
+## 9. Wazuh and scanner evidence
 
 The Wazuh adapter imports managed endpoint identity, package inventory, Windows
 patch state where present, and vulnerability detection events. It preserves the
 Wazuh agent/index/event identifiers and treats Wazuh status as evidence, not
 the overall case state.
 
-The Greenbone adapter should initially consume completed, scoped reports through
-DefectDojo or Greenbone's documented management/scanner APIs. Direct scan
-initiation is outside the MVP. The adapter records report completeness, target
-definition, scan configuration, and credential/permission outcome to make
-negative results trustworthy.
+Greenbone/OpenVAS is an evidence producer behind DefectDojo, not a Hub-native
+adapter. DefectDojo imports and parses completed, scoped reports; the existing
+DefectDojo bridge consumes the resulting findings/tests and preserves report
+completeness, scan configuration, scanner identity, and credential/permission
+outcome. The Hub does not initiate Greenbone scans or add a Greenbone API/XML
+client. Direct scan initiation remains outside the MVP.
 
 ## 10. Notification and ITSM module
 

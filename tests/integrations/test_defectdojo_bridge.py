@@ -5,6 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from vulnops.db import Base
+from vulnops.db.models.audit_event import AuditEvent
+from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.integrations.defectdojo import DefectDojoBridge
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "defectdojo" / "finding.json"
@@ -46,6 +48,18 @@ def test_defectdojo_import_creates_evidence_and_exposure():
     assert result.exposure is not None or result.evidence_ref is not None
     # Scan completeness should be captured
     assert result.scan_metadata["scope_status"] == "complete"
+    assert result.scan_metadata["scanner"] == "Greenbone/OpenVAS"
+    assert result.scan_metadata["scan_type"] == "OpenVAS Scan"
+    assert result.scan_metadata["test_type"] == "OpenVAS Scan"
+    assert result.scan_metadata["test_id"] == 987
+    assert result.scan_metadata["reimport_version"] == 2
+
+    outbox = session.query(OutboxEvent).one()
+    assert outbox.payload["scanner"] == "Greenbone/OpenVAS"
+    assert outbox.payload["scan_type"] == "OpenVAS Scan"
+    assert outbox.payload["scan_metadata"]["scanner"] == "Greenbone/OpenVAS"
+    audit = session.query(AuditEvent).one()
+    assert "scanner=Greenbone/OpenVAS" in audit.reason
     session.close()
 
 
@@ -68,6 +82,47 @@ def test_defectdojo_replay_is_idempotent():
         text("SELECT COUNT(*) FROM source_snapshots WHERE source='defectdojo'")
     ).scalar()
     assert cnt_snap == 1
+    assert session.query(OutboxEvent).count() == 1
+    assert session.query(AuditEvent).count() == 1
+    assert r2.scan_metadata["scanner"] == "Greenbone/OpenVAS"
+    session.close()
+
+
+def test_defectdojo_generic_nested_scanner_provenance_is_preserved():
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+    bridge = DefectDojoBridge(session)
+
+    raw = {
+        "id": 654321,
+        "test": {
+            "id": 321,
+            "test_type_name": "Trivy Scan",
+            "test_type": {"name": "Trivy Scan"},
+        },
+        "test_type": {"name": "Trivy Scan"},
+        "found_by": {"name": "Trivy"},
+        "reimport": {"test_id": 321, "scan_type": "Trivy Scan", "version": 4},
+        "title": "CVE-2026-65432 in busybox",
+        "cve": "CVE-2026-65432",
+        "component_name": "busybox",
+        "component_version": "1.36.1",
+        "purl": "pkg:generic/busybox@1.36.1",
+        "verified": True,
+    }
+
+    result = bridge.ingest_finding(raw, organization_id="org1")
+
+    assert result.scan_metadata["scanner"] == "Trivy"
+    assert result.scan_metadata["scan_type"] == "Trivy Scan"
+    assert result.scan_metadata["test_type"] == "Trivy Scan"
+    assert result.scan_metadata["scan_id"] == 321
+    assert result.scan_metadata["test_id"] == 321
+    assert result.scan_metadata["reimport_version"] == 4
+    outbox = session.query(OutboxEvent).one()
+    assert outbox.payload["scanner"] == "Trivy"
+    assert outbox.payload["scan_type"] == "Trivy Scan"
     session.close()
 
 

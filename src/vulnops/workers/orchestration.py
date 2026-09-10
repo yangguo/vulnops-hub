@@ -470,6 +470,9 @@ class OutboxOrchestrator:
         component_name = payload.get("component_name") or "unknown"
         component_version = payload.get("component_version")
         verified = bool(payload.get("verified"))
+        scan_metadata = payload.get("scan_metadata") or {}
+        scanner = payload.get("scanner") or scan_metadata.get("scanner")
+        scan_type = payload.get("scan_type") or scan_metadata.get("scan_type")
 
         advisory: dict[str, Any] = {"id": cve, "affected": []}
         if purl:
@@ -481,9 +484,13 @@ class OutboxOrchestrator:
         component = _component_from_fields(
             raw_name=component_name, raw_version=component_version, purl=purl
         )
-        scanner_evidence = (
-            {"scanner_confirmed": True, "finding_id": finding_id} if verified else None
-        )
+        scanner_evidence = None
+        if verified:
+            scanner_evidence = {"scanner_confirmed": True, "finding_id": finding_id}
+            if scanner:
+                scanner_evidence["scanner"] = scanner
+            if scan_type:
+                scanner_evidence["scan_type"] = scan_type
         vex_status = self._vex_status_for(cve) if not verified else None
         result = self.matcher.evaluate(
             component, advisory, scanner_evidence=scanner_evidence, vex_status=vex_status
