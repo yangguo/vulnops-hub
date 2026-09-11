@@ -24,6 +24,7 @@
 - Modify: `frontend/package.json`
 - Modify: `frontend/pnpm-lock.yaml`
 - Modify: `.github/workflows/ci.yml`
+- Modify: `.github/workflows/security.yml`
 - Modify: `Dockerfile`
 
 1. Change the frontend Node engine to Node 24.x while retaining pnpm 9.x.
@@ -31,7 +32,8 @@
 3. Add a scoped override for Redocly's `js-yaml` dependency at 4.3.2.
 4. Regenerate the lockfile with Node 24 and pnpm 9.15.0.
 5. Change both CI Node pins and the container frontend stage to Node 24.
-6. Run `pnpm audit` and confirm zero known vulnerabilities.
+6. Upgrade Security workflow actions to Node 24-compatible majors.
+7. Run `pnpm audit` and confirm zero known vulnerabilities.
 
 ### Task 3: Synchronize current documentation
 

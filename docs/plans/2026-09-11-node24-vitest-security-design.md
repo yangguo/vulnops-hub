@@ -20,6 +20,9 @@ instead of declaring a compatible range.
   4.3.1 to the compatible patched 4.3.2 release.
 - Apply the runtime consistently in package engines, CI, the container build,
   and current developer documentation.
+- Move the Security workflow's checkout, Python setup, and gitleaks actions to
+  their Node 24-compatible majors so the workflow no longer relies on the
+  runner's deprecated Node 20 compatibility path.
 
 ## Alternatives considered
 
