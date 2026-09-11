@@ -9,7 +9,7 @@
 
 - Python 3.11 or newer; CI currently uses Python 3.12.
 - `uv` for Python dependency and virtual-environment management.
-- Node.js 22.22.2 and pnpm 9.15.0 for `frontend/`.
+- Node.js 24.21.0 and pnpm 9.15.0 for `frontend/`.
 - Docker with Compose for the multi-service evaluation stack.
 
 The Node version is pinned in `.nvmrc` and `.node-version`. The frontend uses

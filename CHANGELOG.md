@@ -16,7 +16,7 @@ intentional contract changes.
   frontend CI gates.
 - A loopback-only OIDC test issuer and Playwright enforcement flows for login,
   auditor read-only access, owner transitions, token expiry, and cross-org denial.
-- Node.js 22.22.2 and pnpm 9.15.0 development baseline.
+- Node.js 24.21.0 and pnpm 9.15.0 development baseline.
 - As-built development guide, MVP acceptance matrix, and OIDC/RBAC next-slice
   design and implementation plan.
 - Outbox orchestration worker (`orchestrator` compose service) that consumes
@@ -63,6 +63,9 @@ intentional contract changes.
 
 ### Fixed
 
+- Upgraded Vitest to 4.1.11 and forced Redocly's pinned `js-yaml` dependency
+  to 4.3.2, resolving the active frontend development-tool advisories.
+- Upgraded Security workflow actions to their Node 24-compatible majors.
 - Normalized nested Problem Details errors in the frontend.
 - Improved optimistic-lock conflict handling and lifecycle action feedback.
 - Granted the Security workflow the permission required to upload SARIF and

@@ -40,7 +40,7 @@ cases produced by the orchestration worker from a real OSV query.
 
 ## Quick start
 
-Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22.22.2,
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 24.21.0,
 and pnpm 9. The Node baseline is recorded in `.nvmrc` and `.node-version`, and pnpm
 rejects unsupported Node versions during install. The API can use a SQLite file
 (`vulnops.db`) for local evaluation, but an OIDC issuer and audience are required
@@ -119,7 +119,7 @@ built SPA is baked in and available at `http://localhost:8000`.
 ~~~bash
 make test                   # unit + integration + contract + e2e
 make lint                   # ruff
-make frontend-test          # Vue unit tests (Node 22 + pnpm 9)
+make frontend-test          # Vue unit tests (Node 24 + pnpm 9)
 make frontend-build         # build the production SPA
 ~~~
 
