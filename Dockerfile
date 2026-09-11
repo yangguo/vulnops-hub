@@ -1,4 +1,4 @@
-FROM node:22-alpine AS frontend
+FROM node:24.21.0-alpine AS frontend
 WORKDIR /app
 RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml /app/
