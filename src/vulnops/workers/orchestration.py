@@ -636,6 +636,7 @@ class OutboxOrchestrator:
         osv_cve_bound = False
         if purl:
             records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
+            self._persist_advisories(session, records)
             bound = _select_osv_record_for_cve(records, cve)
             if bound is not None:
                 advisory = _advisory_from_record(bound)
@@ -669,7 +670,7 @@ class OutboxOrchestrator:
                 )
 
         priority, policy_version, _kev = self._priority_for(
-            cve, result.match_class, result.confidence
+            cve, result.match_class, result.confidence, session=session
         )
         exposure, _created = upsert_exposure(
             session,

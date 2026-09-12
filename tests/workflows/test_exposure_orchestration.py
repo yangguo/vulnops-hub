@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+import vulnops.intelligence.models  # register intel metadata
 import vulnops.workers.orchestration  # noqa: F401  (register matching/cases metadata)
 from vulnops.config import Settings
 from vulnops.db import Base
@@ -1090,6 +1091,7 @@ class _WazuhDebMultiVulnOSV:
 
 def test_wazuh_derived_deb_purl_enables_deterministic_match_when_osv_binds_cve(db):
     from vulnops.cases.models import RemediationCase
+    from vulnops.intelligence.models import AdvisoryAssertion, AffectedRange
     from vulnops.matching.models import Exposure
     from vulnops.workers.orchestration import claim_events
 
@@ -1121,6 +1123,8 @@ def test_wazuh_derived_deb_purl_enables_deterministic_match_when_osv_binds_cve(d
     assert exp.match_class == "deterministic"
     assert exp.state == "active"
     assert db.query(RemediationCase).count() == 1
+    assert db.query(AdvisoryAssertion).filter_by(source="osv").count() == 1
+    assert db.query(AffectedRange).filter_by(source="osv").count() == 1
 
 
 def test_wazuh_osv_binds_matching_cve_when_not_first_osv_record(db):
