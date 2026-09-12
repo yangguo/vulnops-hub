@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     object_storage_access_key: str | None = Field(default=None)
     object_storage_secret_key: str | None = Field(default=None)
     object_storage_region: str = Field(default="us-east-1")
+    # MinIO and some on-prem S3 gateways require path-style addressing.
+    object_storage_force_path_style: bool = Field(default=True)
+    # When object storage is configured, also write under ./storage (dev drills).
+    object_storage_local_mirror: bool = Field(default=False)
 
     # Queue (Valkey/Redis)
     redis_url: str | None = Field(default=None)
@@ -125,6 +129,7 @@ class Settings(BaseSettings):
     poll_page_size: int = Field(default=100)
 
     # Orchestration
+    kev_refresh_interval_seconds: float = Field(default=86400.0)
     orchestrator_poll_interval_seconds: float = Field(default=5.0)
     orchestrator_batch_size: int = Field(default=50)
     orchestrator_max_attempts: int = Field(default=8)

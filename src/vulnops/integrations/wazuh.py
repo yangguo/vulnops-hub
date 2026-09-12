@@ -13,6 +13,7 @@ from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.evidence.raw_store import persist_evidence_bytes
 from vulnops.integrations.mapping import AssetMapper, MappingResult
+from vulnops.integrations.wazuh_purl import enrich_wazuh_package
 
 
 @dataclass
@@ -45,7 +46,8 @@ class WazuhBridge:
 
     def ingest_event(self, raw: dict[str, Any], organization_id: str) -> WazuhIngestResult:
         agent = raw.get("agent", {})
-        package = raw.get("package", {})
+        package_raw = raw.get("package", {}) or {}
+        package, purl_derivation = enrich_wazuh_package(package_raw, agent=agent)
         vulnerability = raw.get("vulnerability", {})
 
         agent_id = str(agent.get("id") or agent.get("agent_id") or "unknown")
@@ -122,6 +124,10 @@ class WazuhBridge:
                     "agent_id": agent_id,
                     "cve": cve,
                     "package": package,
+                    "purl_derivation": {
+                        "status": purl_derivation.status,
+                        "reason": purl_derivation.reason,
+                    },
                     "organization_id": organization_id,
                     "mapping": {"status": mapping.status, "asset_id": mapping.asset_id},
                     "scan_metadata": scan_metadata,

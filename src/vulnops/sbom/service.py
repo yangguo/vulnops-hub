@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.source_snapshot import SourceSnapshot
-from vulnops.evidence.raw_store import persist_sbom_bytes
+from vulnops.object_storage.object_store import persist_sbom_raw_bytes
 from vulnops.sbom.models import Component, ComponentOccurrence, SbomDocument
 from vulnops.sbom.parser import SBOMParser
 
@@ -86,7 +86,9 @@ class SBOMService:
         )
         # Persist raw bytes first so the recorded URI is retrievable and
         # digest-verifiable; bucket comes from deployment configuration.
-        object_uri = persist_sbom_bytes(raw_bytes, organization_id, digest)
+        object_uri = persist_sbom_raw_bytes(
+            raw_bytes, settings.object_storage_bucket, organization_id, digest, settings
+        )
 
         # Create source snapshot for provenance
         snapshot = SourceSnapshot(

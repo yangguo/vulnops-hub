@@ -270,10 +270,8 @@ export OIDC_ISSUER_URL=http://127.0.0.1:8082/realms/vulnops
 export OIDC_AUDIENCE=vulnops-api
 export DATABASE_URL=postgresql+psycopg2://vulnops:vulnops@127.0.0.1:5432/vulnops
 export REDIS_URL=redis://127.0.0.1:6379/0
-export OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
-export OBJECT_STORAGE_BUCKET=vulnops-snapshots
-export OBJECT_STORAGE_ACCESS_KEY=minioadmin
-export OBJECT_STORAGE_SECRET_KEY=minioadmin
+# MinIO object storage for raw SBOM evidence (see docs/operations/object-storage.md)
+set -a && source deploy/env/host-staging-object-storage.env && set +a
 export DEFECTDOJO_BASE_URL=http://127.0.0.1:8081
 export DEFECTDOJO_API_TOKEN='<dojo-api-key>'
 export POLL_ORGANIZATION_ID=org-demo

@@ -1,7 +1,7 @@
 # MVP Acceptance Matrix
 
-> **Status date:** 2026-09-10
-> **Baseline:** `main` at `0de66ef` (post-`v0.1.0-m1`)
+> **Status date:** 2026-09-12
+> **Baseline:** `main` at `d6187a9e` (post-PR #8 authenticated OpenVAS evidence)
 > **Purpose:** Separate fixture-level verification from integrated-environment
 > and production evidence. The M1 exit gate closed on 2026-09-09 with local
 > staging evidence (tag `v0.1.0-m1`); remaining Partial/Open rows track M2 pilot
@@ -29,7 +29,7 @@
 | Source outage | Partial | KEV, EPSS, OSV, and Vulnerability-Lookup contract tests preserve state and mark stale/degraded; *2026-09-09: source-health API shipped (`tests/api/test_source_health.py`), polling adapters write cursor/health checkpoints, and `SourceHealthView.vue` exposes freshness/degraded status to operators* | Prove source-health status is visible to operators in integrated staging (UI walkthrough evidence still open) |
 | Replay | Partial | Source snapshot, SBOM, DefectDojo, and Wazuh idempotency tests | Add durable cursor recovery, external projection deduplication, and replay drill evidence |
 | Access | Partial | OIDC/RBAC covers console and API routes; raw SBOM/snapshot downloads require `evidence:raw:read` with org-scoped `404`/`403` tests | Demonstrate raw-evidence permission with a configured production IdP in integrated staging |
-| OIDC authentication boundary | Verified | `tests/auth/test_oidc.py::test_valid_rsa_access_token_returns_verified_claims`; `tests/auth/test_oidc.py::test_registered_issuer_and_audience_are_checked`; `tests/auth/test_oidc.py::test_expired_token_is_rejected_using_injected_clock`; `tests/auth/test_oidc.py::test_unknown_kid_refreshes_jwks_once_then_fails_closed`; `tests/api/test_authentication.py::test_missing_bearer_token_returns_problem_details_401`; `tests/api/test_authentication.py::test_expired_bearer_token_returns_safe_invalid_token`; `tests/api/test_authentication.py::test_oidc_configuration_is_required_outside_explicit_test_bypass`; `frontend/e2e/cases.spec.ts::OIDC login authenticates the console`; `frontend/e2e/cases.spec.ts::expired access tokens are rejected by the API and login callback`. *2026-09-08: password-grant tokens from a configured Keycloak sandbox verified by the API — see [the staging evidence log](operations/integrated-staging.md)* | Demonstrate a real configured production/staging IdP; the checked-in issuer is test-only, and the Keycloak sandbox is local, not the adopter IdP |
+| OIDC authentication boundary | Verified | `tests/auth/test_oidc.py::test_valid_rsa_access_token_returns_verified_claims`; `tests/auth/test_oidc.py::test_registered_issuer_and_audience_are_checked`; `tests/auth/test_oidc.py::test_expired_token_is_rejected_using_injected_clock`; `tests/auth/test_oidc.py::test_unknown_kid_refreshes_jwks_once_then_fails_closed`; `tests/api/test_authentication.py::test_missing_bearer_token_returns_problem_details_401`; `tests/api/test_authentication.py::test_expired_bearer_token_returns_safe_invalid_token`; `tests/api/test_authentication.py::test_oidc_configuration_is_required_outside_explicit_test_bypass`; `tests/auth/test_production_idp_config.py`; `frontend/e2e/cases.spec.ts::OIDC login authenticates the console`; `frontend/e2e/cases.spec.ts::expired access tokens are rejected by the API and login callback`. *2026-09-08: password-grant tokens from a configured Keycloak sandbox verified by the API — see [the staging evidence log](operations/integrated-staging.md)* | Demonstrate a real configured production/staging IdP; scaffolding templates ship in [production IdP integration](operations/production-idp-integration.md) without claiming live certification |
 | Organization RBAC | Verified | `tests/api/test_authorization.py::test_all_business_routes_have_literal_principal_status_matrix`; `tests/api/test_authorization.py::test_cross_org_resource_is_hidden_before_capability_and_validation`; `tests/api/test_authorization.py::test_viewer_reads_cases_but_cannot_create_or_transition`; `tests/api/test_authorization.py::test_owner_can_create_transition_request_risk_and_submit_verification`; `tests/api/test_authorization.py::test_service_scope_is_limited_to_named_sbom_capability`; `frontend/e2e/cases.spec.ts::auditor can read a case but cannot mutate it`; `frontend/e2e/cases.spec.ts::owner can perform a permitted transition`; `frontend/e2e/cases.spec.ts::cross-organization access is denied without disclosing the case`. *2026-09-08: owner/cross-org/auditor/unauthenticated matrix demonstrated with Keycloak-signed organization and role claims — see [the staging evidence log](operations/integrated-staging.md)* | Demonstrate organization claims and role mapping with the configured IdP in integrated staging |
 
 ## MVP scope coverage
@@ -47,7 +47,7 @@
 | Risk acceptance | Verified in fixtures | Domain behavior, separation of request/approval, and authenticated approval provenance are tested; integrated IdP evidence remains open |
 | Verification and reopen | Verified in fixtures | Conservative closure and reopen behavior are tested |
 | Source health and coverage gaps | Partial | Adapter status models exist; *2026-09-09: source-health API shipped (freshness + degraded flags), product-level polling adapters write cursor/health checkpoints, and `SourceHealthView.vue` exposes operator visibility*; integrated staging proof that operators can act on degraded-source alerts remains open |
-| Secure self-hosted deployment | Partial | Compose, Helm, CI, SBOM, scan, Docker smoke, and fail-closed OIDC configuration exist; production certification remains open |
+| Secure self-hosted deployment | Partial | Compose, Helm, CI, SBOM, scan, Docker smoke, fail-closed OIDC configuration, and production IdP scaffold templates exist; live production certification remains open |
 
 ## Evidence required to close M1
 
@@ -75,8 +75,9 @@
 - [x] Backup/restore and outbox replay commands are executed against the actual
   supported deployment topology. *(2026-09-09: local staging topology —
   pg_dump/restore drill with identical row counts; object-store digest check
-  against the local backing store. A certified production topology with
-  MinIO/S3 remains open — see CHANGELOG known limitations.)*
+  against the local backing store; moto-backed MinIO/S3 put/get/digest tests and
+  host-staging `OBJECT_STORAGE_*` overlay shipped. A certified production
+  topology drill remains open — see CHANGELOG known limitations.)*
 - [x] The release commit has successful CI and Security workflow links.
   *(2026-09-09: tag `v0.1.0-m1` = commit 8b168df; CI run 34348813538 and
   Security run 34348813517 both successful.)*

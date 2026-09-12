@@ -37,6 +37,11 @@ intentional contract changes.
   exposure review API with audit trail, Jira issue-key link-back for
   scanner-confirmed auto-cases, and VEX statements via Vulnerability-Lookup
   feeding match policy (ADR 0002).
+- M2 Wazuh purl derivation: best-effort Package URLs from syscollector
+  `format`/name/version with agent-OS deb namespace (never package vendor) and
+  RPM vendor when mappable; orchestration binds OSV results to the Wazuh CVE
+  before auto-casing. APK/RPM rows may still land as matcher candidates when
+  the ecosystem is unsupported.
 - Greenbone/OpenVAS provenance support via DefectDojo: the poller and sandbox
   fetch request `related_fields=true`, and fixture-covered findings retain
   normalized scanner, scan-type, and test-type metadata through the existing
@@ -55,6 +60,19 @@ intentional contract changes.
 - Raw-evidence API authorization: SBOM and source-snapshot metadata no longer
   expose storage URIs without `evidence:raw:read`; authorized `/raw` downloads
   are org-scoped with `404`/`403` behavior aligned to existing OIDC/RBAC.
+- S3/MinIO object storage for SBOM raw evidence: boto3 client wiring,
+  host-staging env overlay, moto-backed tests, `scripts/object_storage_smoke.py`,
+  and [object storage operations guide](docs/operations/object-storage.md).
+- Intel-table persistence for OSV/KEV (and optional Vulnerability-Lookup)
+  enrichment: idempotent upserts into `Vulnerability`, `AffectedRange`, aliases,
+  and `AdvisoryAssertion`; KEV catalog refresh on orchestrator startup, periodic
+  orchestrator refresh (`KEV_REFRESH_INTERVAL_SECONDS`), and
+  `vulnops.workers.intel_refresh` worker entrypoint with source-health
+  checkpoints.
+- Production IdP integration scaffolding: HTTPS issuer/audience/JWKS requirements,
+  deploy and Helm example templates with safe defaults, frontend production OIDC
+  placeholders, and additional fail-closed startup checks for
+  `ENVIRONMENT=production` (no test bypass, no loopback opt-in, HTTPS issuer).
 
 ### Changed
 
@@ -85,22 +103,25 @@ intentional contract changes.
 
 ### Known limitations
 
-- Production IdP integration, production certification, and shared adopter
-  integrated-staging evidence remain open.
-- The complete authenticated OpenVAS → exposure/case flow still needs a live
-  operator run on Docker Desktop. The checked-in Keycloak profile requires the
-  API to run on the host; a containerized API needs a TLS-published issuer and
-  trusted CA.
+- Live production IdP certification and shared adopter integrated-staging
+  evidence remain open; scaffolding docs/templates ship without claiming a
+  certified enterprise IdP integration.
+- Live OpenVAS ingress/replay and the authenticated exposure/case contract are
+  verified separately in local staging. A live authenticated operator run and
+  shared adopter environment still require a TLS-published issuer and trusted CA.
 - External-ticket and notification delivery are delegated to DefectDojo's
   Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
   case-level projection, and broader notification channels remain open.
-- Wazuh package observations without purls do not produce deterministic
-  matches; name-only CVE correlation stays in the candidate review queue
-  (purl derivation from Wazuh package metadata remains open).
+- Wazuh purl derivation is best-effort only: deb rows need agent OS distro
+  hints, RPM without a recognizable vendor stays skipped, non-Linux formats and
+  unsupported matcher ecosystems (including many APK/RPM derivations) still
+  produce candidate exposures rather than guessed identities.
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
 - Backup/restore and outbox replay have been rehearsed against the local
-  staging topology (see the integrated-staging evidence log); a certified
-  production topology drill with MinIO/S3 object storage remains open.
-- Intel-table persistence (`Vulnerability`/`AffectedRange` upserts) and KEV
-  catalog periodic refresh are unimplemented; enrichment is on-demand only.
+  staging topology (see the integrated-staging evidence log). MinIO/S3 put/get
+  is implemented and CI-tested with moto; a certified production topology drill
+  (versioned bucket sync + PITR + live digest audit at scale) remains open.
+- EPSS bulk persistence and automatic clearing of CVEs removed from the CISA
+  KEV catalog remain open; OSV matching still uses live API queries (intel
+  tables are a cache/fallback, not the sole source of truth).

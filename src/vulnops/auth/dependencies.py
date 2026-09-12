@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -86,6 +87,21 @@ def validate_auth_configuration(settings: Settings) -> None:
         raise AuthenticationConfigurationError(
             "OIDC_ISSUER_URL and OIDC_AUDIENCE are required when test bypass is disabled"
         )
+
+    if settings.environment == "production":
+        if bypass_enabled:
+            raise AuthenticationConfigurationError(
+                "AUTH_TEST_BYPASS_ENABLED is not allowed when ENVIRONMENT=production"
+            )
+        if settings.oidc_allow_insecure_loopback:
+            raise AuthenticationConfigurationError(
+                "OIDC_ALLOW_INSECURE_LOOPBACK is not allowed when ENVIRONMENT=production"
+            )
+        issuer = (settings.oidc_issuer_url or "").strip()
+        if issuer and urlparse(issuer).scheme != "https":
+            raise AuthenticationConfigurationError(
+                "production deployments require an HTTPS OIDC_ISSUER_URL"
+            )
 
 
 def build_oidc_verifier(settings: Settings) -> OIDCVerifier | None:
