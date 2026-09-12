@@ -811,6 +811,21 @@ def _wazuh_event(cve="unknown", agent_id="000", org="org-demo"):
     )
 
 
+def test_select_osv_record_for_cve_scans_all_records():
+    from types import SimpleNamespace
+
+    from vulnops.workers.orchestration import _select_osv_record_for_cve
+
+    cve = "CVE-2026-8888"
+    records = [
+        SimpleNamespace(vulnerability_id="GHSA-other", aliases=["GHSA-other"]),
+        SimpleNamespace(vulnerability_id=cve, aliases=[cve]),
+    ]
+    picked = _select_osv_record_for_cve(records, cve)
+    assert picked is records[1]
+    assert _select_osv_record_for_cve(records[:1], cve) is None
+
+
 def test_wazuh_unknown_cve_creates_no_exposure(db):
     from vulnops.matching.models import Exposure
     from vulnops.workers.orchestration import claim_events
@@ -919,6 +934,71 @@ class _WazuhDebCveMismatchOSV:
         )
 
 
+class _WazuhDebMultiVulnOSV:
+    """First vuln unrelated; second carries the Wazuh CVE (regression for records[0] bias)."""
+
+    def __init__(self, cve: str = "CVE-2026-8888"):
+        self.cve = cve
+
+    def lookup_batch(self, components, **kwargs):
+        from vulnops.intelligence.osv import OSVAdapter
+
+        cve = self.cve
+        return OSVAdapter().lookup_batch(
+            components,
+            raw_fixture={
+                "results": [
+                    {
+                        "vulns": [
+                            {
+                                "id": "GHSA-unrelated",
+                                "aliases": ["GHSA-unrelated"],
+                                "affected": [
+                                    {
+                                        "package": {
+                                            "ecosystem": "Debian",
+                                            "purl": "pkg:deb/debian/openssl",
+                                        },
+                                        "ranges": [
+                                            {
+                                                "type": "ECOSYSTEM",
+                                                "events": [
+                                                    {"introduced": "0"},
+                                                    {"fixed": "9.9.9"},
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                            {
+                                "id": cve,
+                                "aliases": [cve],
+                                "affected": [
+                                    {
+                                        "package": {
+                                            "ecosystem": "Debian",
+                                            "purl": "pkg:deb/debian/openssl",
+                                        },
+                                        "ranges": [
+                                            {
+                                                "type": "ECOSYSTEM",
+                                                "events": [
+                                                    {"introduced": "0"},
+                                                    {"fixed": "3.0.3"},
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                ]
+            },
+        )
+
+
 def test_wazuh_derived_deb_purl_enables_deterministic_match_when_osv_binds_cve(db):
     from vulnops.cases.models import RemediationCase
     from vulnops.matching.models import Exposure
@@ -945,6 +1025,41 @@ def test_wazuh_derived_deb_purl_enables_deterministic_match_when_osv_binds_cve(d
     )
     db.commit()
     orch = _orch(db, osv=_WazuhDebOSV(cve=cve))
+    ev = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, ev)
+
+    exp = db.query(Exposure).one()
+    assert exp.match_class == "deterministic"
+    assert exp.state == "active"
+    assert db.query(RemediationCase).count() == 1
+
+
+def test_wazuh_osv_binds_matching_cve_when_not_first_osv_record(db):
+    from vulnops.cases.models import RemediationCase
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    cve = "CVE-2026-8888"
+    package = {
+        "name": "openssl",
+        "version": "3.0.2",
+        "format": "deb",
+        "purl": "pkg:deb/debian/openssl@3.0.2",
+    }
+    db.add(
+        _outbox(
+            "vulnops.evidence.wazuh.ingested.v1",
+            {
+                "agent_id": "007",
+                "cve": cve,
+                "organization_id": "org-demo",
+                "package": package,
+                "purl_derivation": {"status": "derived", "reason": "deb"},
+            },
+        )
+    )
+    db.commit()
+    orch = _orch(db, osv=_WazuhDebMultiVulnOSV(cve=cve))
     ev = claim_events(db, batch_size=10, max_attempts=8)[0]
     orch.process_event(db, ev)
 

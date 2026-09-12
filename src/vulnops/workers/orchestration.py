@@ -188,6 +188,15 @@ def _osv_record_matches_cve(record: Any, cve: str) -> bool:
     return any(str(alias).upper() == target for alias in record.aliases or [])
 
 
+def _select_osv_record_for_cve(records: list[Any], cve: str) -> Any | None:
+    """Return the first OSV record whose id or aliases includes ``cve``."""
+
+    for record in records:
+        if _osv_record_matches_cve(record, cve):
+            return record
+    return None
+
+
 def _component_from_occurrence(occurrence: Any) -> ParsedComponent:
     return ParsedComponent(
         raw_name=occurrence.raw_name,
@@ -557,12 +566,11 @@ class OutboxOrchestrator:
         osv_cve_bound = False
         if purl:
             records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
-            if records and _osv_record_matches_cve(records[0], cve):
-                advisory = _advisory_from_record(records[0])
+            bound = _select_osv_record_for_cve(records, cve)
+            if bound is not None:
+                advisory = _advisory_from_record(bound)
                 advisory["id"] = advisory.get("id") or cve
                 osv_cve_bound = True
-            elif records:
-                osv_cve_bound = False
 
         component = _component_from_fields(
             raw_name=component_name, raw_version=component_version, purl=purl
