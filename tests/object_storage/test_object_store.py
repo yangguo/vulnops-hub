@@ -183,7 +183,10 @@ def test_ensure_bucket_create_already_owned_by_you_is_success():
 def test_ensure_bucket_does_not_create_on_head_forbidden():
     client = MagicMock()
     client.head_bucket.side_effect = ClientError(
-        {"Error": {"Code": "403", "Message": "Forbidden"}, "ResponseMetadata": {"HTTPStatusCode": 403}},
+        {
+            "Error": {"Code": "403", "Message": "Forbidden"},
+            "ResponseMetadata": {"HTTPStatusCode": 403},
+        },
         "HeadBucket",
     )
     with pytest.raises(ClientError):
