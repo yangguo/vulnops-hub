@@ -172,7 +172,29 @@ def _advisory_from_record(record: Any) -> dict[str, Any]:
                 "ranges": [{"type": rng.get("type") or "ECOSYSTEM", "events": events}],
             }
         )
-    return {"id": record.vulnerability_id, "affected": affected}
+    return {
+        "id": record.vulnerability_id,
+        "aliases": list(record.aliases or []),
+        "affected": affected,
+    }
+
+
+def _osv_record_matches_cve(record: Any, cve: str) -> bool:
+    """True when the OSV record id or aliases includes the Wazuh-reported CVE."""
+
+    target = cve.upper()
+    if str(record.vulnerability_id).upper() == target:
+        return True
+    return any(str(alias).upper() == target for alias in record.aliases or [])
+
+
+def _select_osv_record_for_cve(records: list[Any], cve: str) -> Any | None:
+    """Return the first OSV record whose id or aliases includes ``cve``."""
+
+    for record in records:
+        if _osv_record_matches_cve(record, cve):
+            return record
+    return None
 
 
 def _component_from_occurrence(occurrence: Any) -> ParsedComponent:
@@ -604,22 +626,73 @@ class OutboxOrchestrator:
         if not cve or cve == "unknown":
             return f"wazuh={agent_id} no-cve"
         organization_id = payload.get("organization_id") or "default"
+        package = payload.get("package") or {}
+        purl = package.get("purl")
+        component_name = package.get("name") or "unknown"
+        component_version = package.get("version")
+        purl_derivation = payload.get("purl_derivation") or {}
+
+        advisory: dict[str, Any] = {"id": cve, "affected": []}
+        osv_cve_bound = False
+        if purl:
+            records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
+            self._persist_advisories(session, records)
+            bound = _select_osv_record_for_cve(records, cve)
+            if bound is not None:
+                advisory = _advisory_from_record(bound)
+                advisory["id"] = advisory.get("id") or cve
+                osv_cve_bound = True
+
+        component = _component_from_fields(
+            raw_name=component_name, raw_version=component_version, purl=purl
+        )
+        vex_status = self._vex_status_for(cve)
+        result = self.matcher.evaluate(component, advisory, vex_status=vex_status)
+        limitations = list(result.limitations)
+        if not purl:
+            limitations.append("package inventory without purl; review required")
+        elif purl_derivation.get("status") == "derived":
+            limitations.append("purl derived from Wazuh package metadata (best-effort)")
+        if purl and not osv_cve_bound:
+            limitations.append(
+                "osv lookup did not confirm the Wazuh CVE; package-version match alone is insufficient"
+            )
+            if result.match_class in _CASE_CLASSES:
+                result = result.__class__(
+                    match_class="candidate",
+                    confidence=min(result.confidence, 0.4),
+                    should_create_case=False,
+                    case_id=None,
+                    matched_rules=["wazuh.osv-cve-unbound"],
+                    limitations=limitations,
+                    matcher_version=result.matcher_version,
+                    explanation=result.explanation,
+                )
+
+        priority, policy_version, _kev = self._priority_for(
+            cve, result.match_class, result.confidence, session=session
+        )
         exposure, _created = upsert_exposure(
             session,
             organization_id=organization_id,
             vulnerability_id=cve,
-            match_class="candidate",
-            confidence=0.35,
+            match_class=result.match_class,
+            confidence=result.confidence,
             detection_context=f"wazuh:{agent_id}",
             component_occurrence_id=None,
-            matched_rules=["wazuh.package-candidate"],
+            asset_id=(payload.get("mapping") or {}).get("asset_id"),
+            matched_rules=result.matched_rules,
             evidence_refs=[event.id],
-            limitations=["package inventory without purl; review required"],
-            matcher_version="2026.1",
+            limitations=limitations,
+            matcher_version=result.matcher_version,
+            priority=priority,
+            policy_version=policy_version,
             evidence_ref=event.id,
         )
         session.commit()
-        return f"wazuh={agent_id} match=candidate exposure={exposure.id}"
+        if purl and osv_cve_bound:
+            self._maybe_create_case(session, exposure, component_name)
+        return f"wazuh={agent_id} match={result.match_class} exposure={exposure.id}"
 
 
 def main() -> None:
