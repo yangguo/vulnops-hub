@@ -259,7 +259,7 @@ Key variables (full list in `.env.example`, parsed in `src/vulnops/config.py`):
 | --- | --- | --- |
 | `DATABASE_URL` | `sqlite:///./vulnops.db` | SQLAlchemy DSN — use `postgresql+psycopg2://...` for anything shared |
 | `REDIS_URL` | – | Ingestion queue; the worker idles when unset |
-| `OBJECT_STORAGE_ENDPOINT` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | – | S3/MinIO for raw source snapshots |
+| `OBJECT_STORAGE_*` | – | S3/MinIO for raw SBOM evidence ([object storage runbook](docs/operations/object-storage.md)) |
 | `PUBLIC_URL`, `ENVIRONMENT`, `LOG_LEVEL` | `http://localhost:8000`, `development`, `INFO` | Core posture |
 | `OIDC_ISSUER_URL` / `OIDC_AUDIENCE` | required | OIDC discovery/JWKS issuer and access-token audience; all business `/api/v1` routes require a valid bearer token (health probes remain public) |
 | `OIDC_ALLOW_INSECURE_LOOPBACK` | `false` | Explicit local-staging-only opt-in for a host-run API and an IP-loopback HTTP issuer; never use for a containerized or production API |

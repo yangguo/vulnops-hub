@@ -11,7 +11,7 @@
 > fixture/orchestration path are implemented; live poller `related_fields`
 > verification remains pending. Remaining pilot work includes ServiceNow and
 > case-level projection, production IdP
-> integration, shared adopter staging, certified backup/restore on MinIO/S3,
+> integration, shared adopter staging, certified production backup/restore drill,
 > and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
 
@@ -141,7 +141,8 @@ and one non-production integrated environment.
   audit/flag for unassigned P0/P1 cases; richer notification channels remain
   pilot follow-up.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
-  on the local staging topology; certified production topology (MinIO/S3)
+  on the local staging topology; MinIO/S3 client wiring, host-staging overlay,
+  moto tests, and smoke helper shipped — certified production bucket/PITR drill
   remains open.
 
 **Exit gate:** a pilot team runs its normal remediation cycle with measurable

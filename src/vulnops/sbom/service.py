@@ -13,6 +13,7 @@ from vulnops.config import get_settings
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.source_snapshot import SourceSnapshot
+from vulnops.object_storage.object_store import persist_sbom_raw_bytes
 from vulnops.sbom.models import Component, ComponentOccurrence, SbomDocument
 from vulnops.sbom.parser import SBOMParser
 
@@ -23,27 +24,6 @@ def _utcnow():
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def _persist_raw_bytes(raw_bytes: bytes, bucket: str, organization_id: str, digest: str) -> str:
-    """Persist raw SBOM bytes to local storage and return the object URI.
-
-    Uses the configured bucket name instead of a hard-coded default so the
-    recorded URI always matches deployment configuration. Returns an
-    ``s3://`` logical URI; locally the bytes live under ``./storage`` for
-    replay and digest verification.
-    """
-    import os
-
-    object_uri = f"s3://{bucket}/sbom/{organization_id}/{digest}.json"
-    # Local backing store for MVP / dev (MinIO/S3 in production).
-    local_path = os.path.join("storage", "sbom", organization_id, f"{digest}.json")
-    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    # Idempotent write: only write when missing or digest differs.
-    if not os.path.exists(local_path):
-        with open(local_path, "wb") as f:
-            f.write(raw_bytes)
-    return object_uri
 
 
 class SBOMService:
@@ -108,8 +88,8 @@ class SBOMService:
         settings = get_settings()
         # Persist raw bytes first so the recorded URI is retrievable and
         # digest-verifiable; bucket comes from deployment configuration.
-        object_uri = _persist_raw_bytes(
-            raw_bytes, settings.object_storage_bucket, organization_id, digest
+        object_uri = persist_sbom_raw_bytes(
+            raw_bytes, settings.object_storage_bucket, organization_id, digest, settings
         )
 
         # Create source snapshot for provenance
