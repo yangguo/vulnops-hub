@@ -52,6 +52,10 @@ intentional contract changes.
 - BusinessService create/list/get API, CSV asset owner/service linkage,
   asset/service-aware case owner resolution, and audited P0/P1 escalation for
   cases that remain unassigned.
+- Production IdP integration scaffolding: HTTPS issuer/audience/JWKS requirements,
+  deploy and Helm example templates with safe defaults, frontend production OIDC
+  placeholders, and additional fail-closed startup checks for
+  `ENVIRONMENT=production` (no test bypass, no loopback opt-in, HTTPS issuer).
 
 ### Changed
 
@@ -82,8 +86,10 @@ intentional contract changes.
 
 ### Known limitations
 
-- Production IdP integration, production certification, shared adopter
-  integrated-staging evidence, and raw-evidence authorization remain open.
+- Live production IdP certification and shared adopter integrated-staging
+  evidence remain open; scaffolding docs/templates ship without claiming a
+  certified enterprise IdP integration.
+- Raw-evidence authorization remains open (see open PRs on `main`).
 - The complete authenticated OpenVAS → exposure/case flow still needs a live
   operator run on Docker Desktop. The checked-in Keycloak profile requires the
   API to run on the host; a containerized API needs a TLS-published issuer and
