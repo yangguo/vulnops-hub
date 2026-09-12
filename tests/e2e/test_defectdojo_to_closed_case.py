@@ -372,9 +372,11 @@ def test_authenticated_staging_workflow_reads_openvas_case(monkeypatch: pytest.M
             }
             bridge = DefectDojoBridge(session)
             bridge.ingest_finding(raw, organization_id="org-demo")
-            event = session.query(OutboxEvent).filter_by(
-                event_type="vulnops.evidence.defectdojo.ingested.v1"
-            ).one()
+            event = (
+                session.query(OutboxEvent)
+                .filter_by(event_type="vulnops.evidence.defectdojo.ingested.v1")
+                .one()
+            )
 
             orchestrator = OutboxOrchestrator(
                 session_factory=lambda: session,
