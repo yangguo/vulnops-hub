@@ -21,6 +21,21 @@ def _engine():
     return eng
 
 
+def test_wazuh_bridge_derives_purl_when_missing_from_payload():
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+    bridge = WazuhBridge(session)
+
+    raw = json.loads(FIXTURE.read_text())
+    del raw["package"]["purl"]
+    raw["package"]["format"] = "deb"
+    result = bridge.ingest_event(raw, organization_id="org1")
+
+    assert result.package_purl == "pkg:deb/debian/openssl@3.0.2?arch=x86_64"
+    session.close()
+
+
 def test_wazuh_import_preserves_agent_and_package_identity():
     eng = _engine()
     Session = sessionmaker(bind=eng)

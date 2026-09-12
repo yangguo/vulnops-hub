@@ -140,6 +140,10 @@ and one non-production integrated environment.
   asset owner → business-service owner → configured default and records an
   audit/flag for unassigned P0/P1 cases; richer notification channels remain
   pilot follow-up.
+- **(shipped)** Best-effort Package URL derivation for Wazuh syscollector packages
+  (`deb`/`apk`/`rpm` with recognizable distro namespace) so orchestration can
+  run deterministic OSV matching when metadata is sufficient; ambiguous rows
+  remain in the candidate review queue.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
   on the local staging topology; certified production topology (MinIO/S3)
   remains open.
