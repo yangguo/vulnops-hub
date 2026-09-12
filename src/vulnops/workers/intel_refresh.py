@@ -51,6 +51,8 @@ class IntelRefreshWorker:
                     logger.info("intel refresh applied %s KEV record(s)", stats["kev"])
             except Exception:
                 logger.exception("intel refresh loop error; backing off")
+            if max_iterations is not None and iterations >= max_iterations:
+                break
             time.sleep(self.settings.kev_refresh_interval_seconds)
 
 
