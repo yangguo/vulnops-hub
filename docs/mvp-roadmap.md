@@ -7,11 +7,10 @@
 > in an **M2 operational pilot** phase: polling adapters, source-health
 > API/console, CSV/CMDB import, candidate review, Jira link-back via
 > DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
-> `main`. Greenbone-via-DefectDojo provenance and its tested
-> fixture/orchestration path are implemented; live poller `related_fields`
-> verification remains pending. Remaining pilot work includes ServiceNow and
-> case-level projection, production IdP
-> integration, shared adopter staging, certified backup/restore on MinIO/S3,
+> `main`. Greenbone-via-DefectDojo ingress, replay, authenticated case creation,
+> and Jira-key linkage are verified in local staging. Remaining pilot work includes ServiceNow and
+> case-level projection, **live production IdP certification** (production-shaped
+> scaffolding and fail-closed config checks are shipped), shared adopter staging, certified backup/restore on MinIO/S3,
 > and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
 
@@ -143,6 +142,11 @@ and one non-production integrated environment.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
   on the local staging topology; certified production topology (MinIO/S3)
   remains open.
+- **(shipped, scaffolding only)** Production IdP integration templates and
+  documentation (`docs/operations/production-idp-integration.md`,
+  `deploy/.env.production.example`, Helm overlay). Startup rejects production
+  misconfiguration (HTTP issuer, test bypass, loopback opt-in). Live login and
+  role-mapping evidence against an adopter IdP remains open.
 
 **Exit gate:** a pilot team runs its normal remediation cycle with measurable
 case ownership, SLA, verification, and replay evidence.
