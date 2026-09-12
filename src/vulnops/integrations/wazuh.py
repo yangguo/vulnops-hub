@@ -46,7 +46,7 @@ class WazuhBridge:
     def ingest_event(self, raw: dict[str, Any], organization_id: str) -> WazuhIngestResult:
         agent = raw.get("agent", {})
         package_raw = raw.get("package", {}) or {}
-        package, purl_derivation = enrich_wazuh_package(package_raw)
+        package, purl_derivation = enrich_wazuh_package(package_raw, agent=agent)
         vulnerability = raw.get("vulnerability", {})
 
         agent_id = str(agent.get("id") or agent.get("agent_id") or "unknown")

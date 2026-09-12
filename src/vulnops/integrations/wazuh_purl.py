@@ -1,12 +1,14 @@
 """Best-effort Package URL derivation from Wazuh syscollector package rows.
 
 Wazuh inventory payloads often omit ``purl`` even when ``format``, ``name``,
-and ``version`` are present. We derive a purl only for well-known Linux package
-managers when the identity is unambiguous; otherwise we skip and leave matching
-to the candidate review path.
+and ``version`` are present. We derive a purl only when package identity and
+distro namespace are unambiguous; otherwise we skip and leave matching to the
+candidate review path.
 
-Skipped (non-exhaustive): missing name/version, unsupported ``format``, RPM
-without a recognizable vendor/distro namespace, empty or placeholder versions.
+Deb packages require a reliable distro hint from the Wazuh agent OS (never
+from package vendor/maintainer fields). RPM requires a recognizable vendor
+string mapped to a distro namespace. APK uses the alpine namespace when format
+is apk (matcher may still treat the ecosystem as unsupported).
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ from urllib.parse import quote
 # Wazuh / syscollector placeholder values that must not become purl versions.
 _INVALID_VERSIONS = frozenset({"", "-", "(none)", "unknown", "n/a"})
 
-# RPM vendor strings -> purl namespace segment (distro).
+# RPM vendor needles -> purl namespace segment (distro). Longest needles first
+# so ``opensuse`` is not swallowed by ``suse``.
 _RPM_VENDOR_NAMESPACE: dict[str, str] = {
     "fedora": "fedora",
     "red hat": "redhat",
@@ -29,10 +32,13 @@ _RPM_VENDOR_NAMESPACE: dict[str, str] = {
     "almalinux": "almalinux",
     "amazon": "amazon",
     "amzn": "amazon",
-    "suse": "suse",
     "opensuse": "opensuse",
+    "suse": "suse",
     "oracle": "oracle",
 }
+_RPM_VENDOR_NEEDLES: tuple[tuple[str, str], ...] = tuple(
+    sorted(_RPM_VENDOR_NAMESPACE.items(), key=lambda item: (-len(item[0]), item[0]))
+)
 
 
 @dataclass(frozen=True)
@@ -49,21 +55,38 @@ def _clean(value: Any) -> str | None:
     return text or None
 
 
-def _deb_namespace(vendor: str | None) -> str:
-    if vendor:
-        lower = vendor.lower()
-        if "ubuntu" in lower:
-            return "ubuntu"
-        if "debian" in lower:
-            return "debian"
-    return "debian"
+def _agent_distro_text(agent: dict[str, Any] | None) -> str:
+    if not agent:
+        return ""
+    parts: list[str] = []
+    os_info = agent.get("os")
+    if isinstance(os_info, dict):
+        for key in ("name", "version", "platform"):
+            val = os_info.get(key)
+            if val:
+                parts.append(str(val))
+    for key in ("os_name", "os_version", "platform"):
+        val = agent.get(key)
+        if val:
+            parts.append(str(val))
+    return " ".join(parts).lower()
+
+
+def _deb_namespace_from_distro(distro_text: str) -> str | None:
+    if not distro_text:
+        return None
+    if "ubuntu" in distro_text:
+        return "ubuntu"
+    if "debian" in distro_text:
+        return "debian"
+    return None
 
 
 def _rpm_namespace(vendor: str | None) -> str | None:
     if not vendor:
         return None
     lower = vendor.lower()
-    for needle, namespace in _RPM_VENDOR_NAMESPACE.items():
+    for needle, namespace in _RPM_VENDOR_NEEDLES:
         if needle in lower:
             return namespace
     return None
@@ -75,7 +98,11 @@ def _encode_purl_name(name: str) -> str:
     return quote(name, safe="._-+")
 
 
-def derive_purl_from_wazuh_package(package: dict[str, Any]) -> PurlDerivationResult:
+def derive_purl_from_wazuh_package(
+    package: dict[str, Any],
+    *,
+    agent: dict[str, Any] | None = None,
+) -> PurlDerivationResult:
     """Return a derivation outcome without mutating ``package``."""
 
     existing = _clean(package.get("purl"))
@@ -100,8 +127,11 @@ def derive_purl_from_wazuh_package(package: dict[str, Any]) -> PurlDerivationRes
     skip_reason: str | None = None
 
     if fmt == "deb":
-        namespace = _deb_namespace(vendor)
-        base = f"pkg:deb/{namespace}/{encoded_name}@{encoded_version}"
+        namespace = _deb_namespace_from_distro(_agent_distro_text(agent))
+        if not namespace:
+            skip_reason = "deb_distro_unknown"
+        else:
+            base = f"pkg:deb/{namespace}/{encoded_name}@{encoded_version}"
     elif fmt == "apk":
         base = f"pkg:apk/alpine/{encoded_name}@{encoded_version}"
     elif fmt == "rpm":
@@ -126,10 +156,14 @@ def derive_purl_from_wazuh_package(package: dict[str, Any]) -> PurlDerivationRes
     return PurlDerivationResult(status="derived", purl=purl, reason=fmt)
 
 
-def enrich_wazuh_package(package: dict[str, Any]) -> tuple[dict[str, Any], PurlDerivationResult]:
+def enrich_wazuh_package(
+    package: dict[str, Any],
+    *,
+    agent: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], PurlDerivationResult]:
     """Copy ``package`` and attach a derived ``purl`` when reliable."""
 
-    result = derive_purl_from_wazuh_package(package)
+    result = derive_purl_from_wazuh_package(package, agent=agent)
     if result.status == "derived" and result.purl:
         merged = {**package, "purl": result.purl}
         return merged, result

@@ -38,9 +38,10 @@ intentional contract changes.
   scanner-confirmed auto-cases, and VEX statements via Vulnerability-Lookup
   feeding match policy (ADR 0002).
 - M2 Wazuh purl derivation: best-effort Package URLs from syscollector
-  `format`/name/version (and RPM vendor when mappable) on ingest; orchestration
-  runs the standard OSV matcher when a purl is present and keeps candidate
-  review for skipped or ambiguous inventory rows.
+  `format`/name/version with agent-OS deb namespace (never package vendor) and
+  RPM vendor when mappable; orchestration binds OSV results to the Wazuh CVE
+  before auto-casing. APK/RPM rows may still land as matcher candidates when
+  the ecosystem is unsupported.
 - Greenbone/OpenVAS provenance support via DefectDojo: the poller and sandbox
   fetch request `related_fields=true`, and fixture-covered findings retain
   normalized scanner, scan-type, and test-type metadata through the existing
@@ -95,9 +96,10 @@ intentional contract changes.
 - External-ticket and notification delivery are delegated to DefectDojo's
   Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
   case-level projection, and broader notification channels remain open.
-- Wazuh purl derivation is best-effort only: RPM without a recognizable vendor,
-  non-Linux formats, and incomplete syscollector rows still produce candidate
-  exposures rather than guessed identities.
+- Wazuh purl derivation is best-effort only: deb rows need agent OS distro
+  hints, RPM without a recognizable vendor stays skipped, non-Linux formats and
+  unsupported matcher ecosystems (including many APK/RPM derivations) still
+  produce candidate exposures rather than guessed identities.
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
 - Backup/restore and outbox replay have been rehearsed against the local

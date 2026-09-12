@@ -172,7 +172,20 @@ def _advisory_from_record(record: Any) -> dict[str, Any]:
                 "ranges": [{"type": rng.get("type") or "ECOSYSTEM", "events": events}],
             }
         )
-    return {"id": record.vulnerability_id, "affected": affected}
+    return {
+        "id": record.vulnerability_id,
+        "aliases": list(record.aliases or []),
+        "affected": affected,
+    }
+
+
+def _osv_record_matches_cve(record: Any, cve: str) -> bool:
+    """True when the OSV record id or aliases includes the Wazuh-reported CVE."""
+
+    target = cve.upper()
+    if str(record.vulnerability_id).upper() == target:
+        return True
+    return any(str(alias).upper() == target for alias in record.aliases or [])
 
 
 def _component_from_occurrence(occurrence: Any) -> ParsedComponent:
@@ -541,11 +554,15 @@ class OutboxOrchestrator:
         purl_derivation = payload.get("purl_derivation") or {}
 
         advisory: dict[str, Any] = {"id": cve, "affected": []}
+        osv_cve_bound = False
         if purl:
             records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
-            if records:
+            if records and _osv_record_matches_cve(records[0], cve):
                 advisory = _advisory_from_record(records[0])
                 advisory["id"] = advisory.get("id") or cve
+                osv_cve_bound = True
+            elif records:
+                osv_cve_bound = False
 
         component = _component_from_fields(
             raw_name=component_name, raw_version=component_version, purl=purl
@@ -557,6 +574,21 @@ class OutboxOrchestrator:
             limitations.append("package inventory without purl; review required")
         elif purl_derivation.get("status") == "derived":
             limitations.append("purl derived from Wazuh package metadata (best-effort)")
+        if purl and not osv_cve_bound:
+            limitations.append(
+                "osv lookup did not confirm the Wazuh CVE; package-version match alone is insufficient"
+            )
+            if result.match_class in _CASE_CLASSES:
+                result = result.__class__(
+                    match_class="candidate",
+                    confidence=min(result.confidence, 0.4),
+                    should_create_case=False,
+                    case_id=None,
+                    matched_rules=["wazuh.osv-cve-unbound"],
+                    limitations=limitations,
+                    matcher_version=result.matcher_version,
+                    explanation=result.explanation,
+                )
 
         priority, policy_version, _kev = self._priority_for(
             cve, result.match_class, result.confidence
@@ -579,7 +611,7 @@ class OutboxOrchestrator:
             evidence_ref=event.id,
         )
         session.commit()
-        if purl:
+        if purl and osv_cve_bound:
             self._maybe_create_case(session, exposure, component_name)
         return f"wazuh={agent_id} match={result.match_class} exposure={exposure.id}"
 
