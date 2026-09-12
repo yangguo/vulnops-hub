@@ -75,8 +75,9 @@
 - [x] Backup/restore and outbox replay commands are executed against the actual
   supported deployment topology. *(2026-09-09: local staging topology —
   pg_dump/restore drill with identical row counts; object-store digest check
-  against the local backing store. A certified production topology with
-  MinIO/S3 remains open — see CHANGELOG known limitations.)*
+  against the local backing store; moto-backed MinIO/S3 put/get/digest tests and
+  host-staging `OBJECT_STORAGE_*` overlay shipped. A certified production
+  topology drill remains open — see CHANGELOG known limitations.)*
 - [x] The release commit has successful CI and Security workflow links.
   *(2026-09-09: tag `v0.1.0-m1` = commit 8b168df; CI run 34348813538 and
   Security run 34348813517 both successful.)*

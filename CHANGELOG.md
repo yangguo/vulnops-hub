@@ -57,6 +57,9 @@ intentional contract changes.
 - BusinessService create/list/get API, CSV asset owner/service linkage,
   asset/service-aware case owner resolution, and audited P0/P1 escalation for
   cases that remain unassigned.
+- S3/MinIO object storage for SBOM raw evidence: boto3 client wiring,
+  host-staging env overlay, moto-backed tests, `scripts/object_storage_smoke.py`,
+  and [object storage operations guide](docs/operations/object-storage.md).
 - Intel-table persistence for OSV/KEV (and optional Vulnerability-Lookup)
   enrichment: idempotent upserts into `Vulnerability`, `AffectedRange`, aliases,
   and `AdvisoryAssertion`; KEV catalog refresh on orchestrator startup, periodic
@@ -114,8 +117,9 @@ intentional contract changes.
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
 - Backup/restore and outbox replay have been rehearsed against the local
-  staging topology (see the integrated-staging evidence log); a certified
-  production topology drill with MinIO/S3 object storage remains open.
+  staging topology (see the integrated-staging evidence log). MinIO/S3 put/get
+  is implemented and CI-tested with moto; a certified production topology drill
+  (versioned bucket sync + PITR + live digest audit at scale) remains open.
 - EPSS bulk persistence and automatic clearing of CVEs removed from the CISA
   KEV catalog remain open; OSV matching still uses live API queries (intel
   tables are a cache/fallback, not the sole source of truth).

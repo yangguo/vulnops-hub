@@ -10,10 +10,11 @@
 > `main`. Live Greenbone-via-DefectDojo ingress/replay and the authenticated
 > exposure/case/Jira contract are verified separately in local staging; a live
 > authenticated operator run remains pending. Production-shaped IdP scaffolding,
-> fail-closed configuration checks, intel-table upserts, and periodic KEV refresh
-> are shipped. Remaining pilot work includes live adopter IdP certification,
-> shared adopter staging, certified backup/restore on MinIO/S3, and EPSS bulk
-> persistence. ServiceNow and case-level projection remain explicitly deferred.
+> fail-closed configuration checks, intel-table upserts, periodic KEV refresh,
+> and MinIO/S3 client wiring are shipped. Remaining pilot work includes live
+> adopter IdP certification, shared adopter staging, a certified production
+> bucket/PITR drill, and EPSS bulk persistence. ServiceNow and case-level
+> projection remain explicitly deferred.
 > See [the intel persistence plan](plans/2026-09-12-m2-intel-persistence.md),
 > [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
@@ -149,7 +150,8 @@ and one non-production integrated environment.
   APK/RPM and unsupported ecosystems often remain candidate review via the
   matcher; ambiguous rows stay in the queue.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
-  on the local staging topology; certified production topology (MinIO/S3)
+  on the local staging topology; MinIO/S3 client wiring, host-staging overlay,
+  moto tests, and smoke helper shipped — certified production bucket/PITR drill
   remains open.
 - **(shipped)** Intel-table persistence (`Vulnerability` / `AffectedRange` /
   aliases / assertions) at OSV and KEV enrichment boundaries; KEV catalog
