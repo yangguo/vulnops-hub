@@ -304,6 +304,13 @@ class OutboxOrchestrator:
             logger.info("KEV catalog refreshed and persisted")
         except Exception as exc:
             session.rollback()
+            try:
+                from vulnops.intelligence.persistence import upsert_source_health
+
+                upsert_source_health(session, self.kev.get_health())
+                session.commit()
+            except Exception:
+                session.rollback()
             logger.warning("KEV catalog refresh failed: %s", exc)
         finally:
             session.close()
@@ -311,9 +318,17 @@ class OutboxOrchestrator:
     def _persist_advisories(self, session: Session, records: list[Any]) -> None:
         if not records:
             return
-        from vulnops.intelligence.persistence import upsert_advisory_records
+        try:
+            from vulnops.intelligence.persistence import upsert_advisory_records
 
-        upsert_advisory_records(session, records)
+            upsert_advisory_records(session, records)
+        except Exception as exc:
+            session.rollback()
+            logger.warning(
+                "intel cache persist failed for %d record(s); matching continues: %s",
+                len(records),
+                exc,
+            )
 
     def run_forever(self, max_iterations: int | None = None) -> None:
         iterations = 0

@@ -68,8 +68,8 @@ class KEVAdapter(IntelligenceAdapter):
         return raw
 
     def is_kev(self, cve_id: str, session=None) -> bool:
-        if self._catalog is not None and cve_id in self._catalog:
-            return True
+        if self._catalog is not None:
+            return cve_id in self._catalog
         if session is not None:
             from vulnops.intelligence.persistence import is_kev_persisted
 

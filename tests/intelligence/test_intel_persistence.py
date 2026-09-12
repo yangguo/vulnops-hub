@@ -103,6 +103,29 @@ def test_kev_refresh_persists_catalog_and_health(db):
     assert first_assertions == second_assertions
 
 
+def test_kev_loaded_catalog_overrides_stale_persisted_assertion(db):
+    """After CISA drops a CVE, in-memory catalog negatives win over DB kev=true."""
+
+    data = json.loads(KEV_FIXTURE.read_text())
+    adapter = KEVAdapter()
+    adapter.fetch_catalog(raw_fixture=data)
+    dropped_cve = "CVE-2026-DROPPED"
+    db.add(
+        AdvisoryAssertion(
+            id="adv_kev_dropped_manual",
+            vulnerability_id=dropped_cve,
+            source="kev",
+            kev=True,
+            content={"cveID": dropped_cve},
+        )
+    )
+    db.commit()
+
+    assert is_kev_persisted(db, dropped_cve) is True
+    assert dropped_cve not in adapter._catalog
+    assert adapter.is_kev(dropped_cve, session=db) is False
+
+
 def test_kev_adapter_apply_delegates_to_persistence(db):
     adapter = KEVAdapter()
     adapter.fetch_catalog(raw_fixture=json.loads(KEV_FIXTURE.read_text()))

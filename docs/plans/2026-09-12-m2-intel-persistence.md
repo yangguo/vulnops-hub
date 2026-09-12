@@ -29,7 +29,10 @@ rows with `source=kev` and `kev=true`.
 ## Residual risks
 
 - CVEs removed from the CISA catalog are not automatically cleared in intel
-  tables; stale KEV flags may remain until a later reconciliation slice.
+  tables; stale `kev=true` rows may remain but do not affect escalation while
+  the in-memory catalog is loaded (`is_kev` uses the catalog for negatives).
+- `AffectedRange` stable ids omit package name when only ecosystem/purl differ
+  ambiguously; collision risk is low for OSV-sourced ranges.
 - EPSS remains on-demand (not bulk-persisted).
 - OSV partial failures still mark adapter health stale without deleting prior
   assertions.

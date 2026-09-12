@@ -460,6 +460,33 @@ def _orch(db, settings=None, osv=None):
     )
 
 
+def test_sbom_intel_persist_failure_still_creates_exposure(db, monkeypatch):
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import claim_events
+
+    def _fail_upsert(*_args, **_kwargs):
+        raise RuntimeError("intel cache unavailable")
+
+    monkeypatch.setattr(
+        "vulnops.intelligence.persistence.upsert_advisory_records",
+        _fail_upsert,
+    )
+
+    db.add(_occurrence())
+    db.add(_sbom_event("sbom_1"))
+    db.commit()
+
+    orch = _orch(db)
+    event = claim_events(db, batch_size=10, max_attempts=8)[0]
+    orch.process_event(db, event)
+
+    exposures = db.query(Exposure).all()
+    assert len(exposures) == 1
+    assert exposures[0].match_class == "deterministic"
+    assert event.delivered_at is not None
+    assert event.attempts == 0
+
+
 def test_sbom_event_creates_deterministic_exposure_and_case(db):
     from vulnops.cases.models import RemediationCase
     from vulnops.matching.models import Exposure
