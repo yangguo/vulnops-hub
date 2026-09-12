@@ -129,6 +129,7 @@ class Settings(BaseSettings):
     poll_page_size: int = Field(default=100)
 
     # Orchestration
+    kev_refresh_interval_seconds: float = Field(default=86400.0)
     orchestrator_poll_interval_seconds: float = Field(default=5.0)
     orchestrator_batch_size: int = Field(default=50)
     orchestrator_max_attempts: int = Field(default=8)

@@ -30,7 +30,9 @@ class KEVAdapter(IntelligenceAdapter):
         raise NotImplementedError
 
     def apply(self, records: list[AdvisoryRecord], session):
-        return len(records)
+        from vulnops.intelligence.persistence import upsert_advisory_records
+
+        return upsert_advisory_records(session, records)
 
     def checkpoint(self, result):
         return None, self._status
@@ -65,11 +67,14 @@ class KEVAdapter(IntelligenceAdapter):
         self._status.error = None
         return raw
 
-    def is_kev(self, cve_id: str) -> bool:
-        if self._catalog is None:
-            # Try fetch? For tests, catalog must be loaded via fetch_catalog with fixture
-            return False
-        return cve_id in self._catalog
+    def is_kev(self, cve_id: str, session=None) -> bool:
+        if self._catalog is not None:
+            return cve_id in self._catalog
+        if session is not None:
+            from vulnops.intelligence.persistence import is_kev_persisted
+
+            return is_kev_persisted(session, cve_id)
+        return False
 
     def get_record(
         self, cve_id: str, retrieved_at: datetime | None = None, source_url: str | None = None

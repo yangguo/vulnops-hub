@@ -172,7 +172,29 @@ def _advisory_from_record(record: Any) -> dict[str, Any]:
                 "ranges": [{"type": rng.get("type") or "ECOSYSTEM", "events": events}],
             }
         )
-    return {"id": record.vulnerability_id, "affected": affected}
+    return {
+        "id": record.vulnerability_id,
+        "aliases": list(record.aliases or []),
+        "affected": affected,
+    }
+
+
+def _osv_record_matches_cve(record: Any, cve: str) -> bool:
+    """True when the OSV record id or aliases includes the Wazuh-reported CVE."""
+
+    target = cve.upper()
+    if str(record.vulnerability_id).upper() == target:
+        return True
+    return any(str(alias).upper() == target for alias in record.aliases or [])
+
+
+def _select_osv_record_for_cve(records: list[Any], cve: str) -> Any | None:
+    """Return the first OSV record whose id or aliases includes ``cve``."""
+
+    for record in records:
+        if _osv_record_matches_cve(record, cve):
+            return record
+    return None
 
 
 def _component_from_occurrence(occurrence: Any) -> ParsedComponent:
@@ -216,6 +238,7 @@ class OutboxOrchestrator:
         self.settings = settings or get_settings()
         self.matcher = MatchingService()
         self.policy = RiskPolicyEngine()
+        self._last_kev_refresh_monotonic = 0.0
 
     # -- dispatch ----------------------------------------------------------
 
@@ -278,10 +301,71 @@ class OutboxOrchestrator:
         finally:
             session.close()
 
+    def _is_kev(self, vulnerability_id: str, session: Session | None = None) -> bool:
+        if self.kev is None:
+            return False
+        try:
+            return bool(self.kev.is_kev(vulnerability_id, session=session))
+        except TypeError:
+            return bool(self.kev.is_kev(vulnerability_id))
+
+    def _maybe_refresh_kev_catalog(self) -> None:
+        if self.kev is None:
+            return
+        interval = self.settings.kev_refresh_interval_seconds
+        now = time.monotonic()
+        if now - self._last_kev_refresh_monotonic < interval:
+            return
+        from vulnops.intelligence.persistence import refresh_kev_catalog
+
+        session = self.session_factory()
+        try:
+            refresh_kev_catalog(session, self.kev)
+            session.commit()
+            self._last_kev_refresh_monotonic = now
+            logger.info("KEV catalog refreshed and persisted")
+        except Exception as exc:
+            session.rollback()
+            try:
+                from vulnops.intelligence.persistence import upsert_source_health
+
+                upsert_source_health(session, self.kev.get_health())
+                session.commit()
+            except Exception:
+                session.rollback()
+            logger.warning("KEV catalog refresh failed: %s", exc)
+        finally:
+            session.close()
+
+    def _persist_advisories(self, handler_session: Session, records: list[Any]) -> None:
+        """Best-effort intel cache write on an isolated session (never poisons handler txn)."""
+
+        if not records:
+            return
+        cache_session = self.session_factory()
+        owns_cache_session = cache_session is not handler_session
+        try:
+            from vulnops.intelligence.persistence import upsert_advisory_records
+
+            upsert_advisory_records(cache_session, records)
+            cache_session.flush()
+            cache_session.commit()
+        except Exception as exc:
+            cache_session.rollback()
+            logger.warning(
+                "intel cache persist failed for %d record(s); matching continues: %s",
+                len(records),
+                exc,
+            )
+        finally:
+            if owns_cache_session:
+                cache_session.close()
+
     def run_forever(self, max_iterations: int | None = None) -> None:
         iterations = 0
         while max_iterations is None or iterations < max_iterations:
             iterations += 1
+            self._maybe_refresh_kev_catalog()
             try:
                 count = self.run_once()
                 if count:
@@ -292,8 +376,14 @@ class OutboxOrchestrator:
 
     # -- priority ----------------------------------------------------------
 
-    def _priority_for(self, vulnerability_id: str, match_class: str, confidence: float):
-        kev = bool(self.kev is not None and self.kev.is_kev(vulnerability_id))
+    def _priority_for(
+        self,
+        vulnerability_id: str,
+        match_class: str,
+        confidence: float,
+        session: Session | None = None,
+    ):
+        kev = self._is_kev(vulnerability_id, session=session)
         epss_score = 0.0
         epss_percentile = None
         if self.epss is not None:
@@ -415,6 +505,7 @@ class OutboxOrchestrator:
         ordered = [o for o in occurrences if o.purl and o.raw_version]
         query_components = [{"purl": o.purl, "version": o.raw_version} for o in ordered]
         records = self.osv.lookup_batch(query_components) if query_components else []
+        self._persist_advisories(session, records)
 
         by_index: dict[int, list[Any]] = {}
         for rec in records:
@@ -428,7 +519,7 @@ class OutboxOrchestrator:
                 vex_status = self._vex_status_for(rec.vulnerability_id)
                 result = self.matcher.evaluate(component, advisory, vex_status=vex_status)
                 priority, policy_version, _kev = self._priority_for(
-                    rec.vulnerability_id, result.match_class, result.confidence
+                    rec.vulnerability_id, result.match_class, result.confidence, session=session
                 )
                 exposure, _created = upsert_exposure(
                     session,
@@ -477,6 +568,7 @@ class OutboxOrchestrator:
         advisory: dict[str, Any] = {"id": cve, "affected": []}
         if purl:
             records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
+            self._persist_advisories(session, records)
             if records:
                 advisory = _advisory_from_record(records[0])
                 advisory["id"] = advisory.get("id") or cve
@@ -496,7 +588,7 @@ class OutboxOrchestrator:
             component, advisory, scanner_evidence=scanner_evidence, vex_status=vex_status
         )
         priority, policy_version, _kev = self._priority_for(
-            cve, result.match_class, result.confidence
+            cve, result.match_class, result.confidence, session=session
         )
         exposure, _created = upsert_exposure(
             session,
@@ -534,22 +626,73 @@ class OutboxOrchestrator:
         if not cve or cve == "unknown":
             return f"wazuh={agent_id} no-cve"
         organization_id = payload.get("organization_id") or "default"
+        package = payload.get("package") or {}
+        purl = package.get("purl")
+        component_name = package.get("name") or "unknown"
+        component_version = package.get("version")
+        purl_derivation = payload.get("purl_derivation") or {}
+
+        advisory: dict[str, Any] = {"id": cve, "affected": []}
+        osv_cve_bound = False
+        if purl:
+            records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
+            self._persist_advisories(session, records)
+            bound = _select_osv_record_for_cve(records, cve)
+            if bound is not None:
+                advisory = _advisory_from_record(bound)
+                advisory["id"] = advisory.get("id") or cve
+                osv_cve_bound = True
+
+        component = _component_from_fields(
+            raw_name=component_name, raw_version=component_version, purl=purl
+        )
+        vex_status = self._vex_status_for(cve)
+        result = self.matcher.evaluate(component, advisory, vex_status=vex_status)
+        limitations = list(result.limitations)
+        if not purl:
+            limitations.append("package inventory without purl; review required")
+        elif purl_derivation.get("status") == "derived":
+            limitations.append("purl derived from Wazuh package metadata (best-effort)")
+        if purl and not osv_cve_bound:
+            limitations.append(
+                "osv lookup did not confirm the Wazuh CVE; package-version match alone is insufficient"
+            )
+            if result.match_class in _CASE_CLASSES:
+                result = result.__class__(
+                    match_class="candidate",
+                    confidence=min(result.confidence, 0.4),
+                    should_create_case=False,
+                    case_id=None,
+                    matched_rules=["wazuh.osv-cve-unbound"],
+                    limitations=limitations,
+                    matcher_version=result.matcher_version,
+                    explanation=result.explanation,
+                )
+
+        priority, policy_version, _kev = self._priority_for(
+            cve, result.match_class, result.confidence, session=session
+        )
         exposure, _created = upsert_exposure(
             session,
             organization_id=organization_id,
             vulnerability_id=cve,
-            match_class="candidate",
-            confidence=0.35,
+            match_class=result.match_class,
+            confidence=result.confidence,
             detection_context=f"wazuh:{agent_id}",
             component_occurrence_id=None,
-            matched_rules=["wazuh.package-candidate"],
+            asset_id=(payload.get("mapping") or {}).get("asset_id"),
+            matched_rules=result.matched_rules,
             evidence_refs=[event.id],
-            limitations=["package inventory without purl; review required"],
-            matcher_version="2026.1",
+            limitations=limitations,
+            matcher_version=result.matcher_version,
+            priority=priority,
+            policy_version=policy_version,
             evidence_ref=event.id,
         )
         session.commit()
-        return f"wazuh={agent_id} match=candidate exposure={exposure.id}"
+        if purl and osv_cve_bound:
+            self._maybe_create_case(session, exposure, component_name)
+        return f"wazuh={agent_id} match={result.match_class} exposure={exposure.id}"
 
 
 def main() -> None:
@@ -561,11 +704,20 @@ def main() -> None:
     settings = get_settings()
     engine = get_engine()
     kev = KEVAdapter()
+    kev_loaded = False
+    session = get_sessionmaker(engine)()
     try:
-        kev.fetch_catalog()
-        logger.info("KEV catalog loaded")
+        from vulnops.intelligence.persistence import refresh_kev_catalog
+
+        refresh_kev_catalog(session, kev)
+        session.commit()
+        kev_loaded = True
+        logger.info("KEV catalog loaded and persisted")
     except Exception as exc:
+        session.rollback()
         logger.warning("KEV catalog unavailable at startup: %s", exc)
+    finally:
+        session.close()
 
     orchestrator = OutboxOrchestrator(
         session_factory=lambda: get_sessionmaker(engine)(),
@@ -573,6 +725,8 @@ def main() -> None:
         epss=EPSSAdapter(),
         settings=settings,
     )
+    if kev_loaded:
+        orchestrator._last_kev_refresh_monotonic = time.monotonic()
     orchestrator.run_forever()
 
 
