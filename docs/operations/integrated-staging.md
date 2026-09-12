@@ -248,7 +248,7 @@ Get a token and keep it in the shell only:
 
 ```bash
 export ACCESS_TOKEN="$(
-  curl -fsS http://localhost:8082/realms/vulnops/protocol/openid-connect/token \
+  curl -fsS http://127.0.0.1:8082/realms/vulnops/protocol/openid-connect/token \
   -d grant_type=password -d client_id=vulnops-console \
   -d username=admin-demo -d 'password=sandbox-admin-user-password' \
   -d scope=openid |
