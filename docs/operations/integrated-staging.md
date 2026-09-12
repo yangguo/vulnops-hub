@@ -29,9 +29,13 @@ credential below is a sandbox default and must never be reused elsewhere.
 
 - Docker Desktop with the WSL2 backend, disk image location on `D:\Docker`
   (see the project memory notes; C-drive space is scarce).
-- The VulnOps stack running: `docker compose up -d` from the repo root, then
-  `docker compose exec api alembic upgrade head` if migrations were not
-  applied during image start.
+- The VulnOps stack running: `docker compose up -d` from the repo root. The
+  one-shot `migrate` service runs `alembic` before API, poller, worker, or
+  orchestrator services start; inspect `docker compose logs migrate` if the
+  dependent services remain in `Created` state.
+- Configure `OIDC_ISSUER_URL` and `OIDC_AUDIENCE` before expecting the API to
+  become ready. The compose stack deliberately fails closed without them;
+  do not enable the test authentication bypass for a staging demonstration.
 - Copy credentials: `cp deploy/.env.staging.example deploy/.env.staging`.
 - **TLS-intercepting networks (corporate MITM):** the product `Dockerfile`
   fails with `SELF_SIGNED_CERT_IN_CHAIN` inside build containers. The local
@@ -186,9 +190,14 @@ curl -s http://localhost:8082/realms/vulnops/protocol/openid-connect/token \
   -d scope=openid | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
 ```
 
-Point the VulnOps stack at it: set `OIDC_ISSUER_URL=http://host.docker.internal:8082/realms/vulnops`
-and `OIDC_AUDIENCE=vulnops-api` on the api/worker services, then restart the
-stack. **Removing `AUTH_TEST_BYPASS_ENABLED` is mandatory for this evidence.**
+For a host-run API, set
+`OIDC_ISSUER_URL=http://127.0.0.1:8082/realms/vulnops` and
+`OIDC_AUDIENCE=vulnops-api`. The verifier intentionally permits a plain-HTTP
+issuer only when its hostname is loopback. Consequently a Dockerized API must
+use a TLS-published issuer (or a deployment topology whose issuer is a trusted
+HTTPS URL); `http://host.docker.internal:8082` is rejected by design. The
+worker/poller do not need an issuer for source-ingestion evidence.
+**Removing `AUTH_TEST_BYPASS_ENABLED` is mandatory for API evidence.**
 
 ### Vulnerability-Lookup
 
@@ -246,3 +255,5 @@ network connect) and restart. Smoke check:
 | 2026-09-09 | af5bcd7 | Ops finding: test-suite pollution of staging DB | local Postgres | OPEN | The developer `.env` points `DATABASE_URL` at the staging Postgres, so every API test run writes fixtures there (757 test-residue cases). Use a dedicated test database for suite runs; the 4 DB-dependent auth failures fail only against the polluted instance and pass on a fresh one |
 | 2026-09-09 | af5bcd7 | Source outage: OSV unreachable during SBOM evaluation | dead-proxy simulation | PASS | Per-component failure logged with identity (WARNING), event NOT delivered (0 delivered), deferred with ERROR to next poll; exposures table unchanged (119) — no silent downgrade. Poison path: attempts pushed to cap → ERROR "dead-lettered after 8 attempts", event excluded from future claims; exposures still unchanged |
 | 2026-09-09 | 3265d9b | Vulnerability-Lookup sandbox bring-up | local clone + official compose | PASS (import ongoing) | Stack deployed and healthy (app + kvrocks + valkey + postgres), first-start source import (CSAF feeds) in progress; API smoke deferred until the web server binds :10001. Gotchas recorded: clone with CRLF breaks its startup script (`sleep infinity\r`) — fix with `sed -i 's/\r$//'` on *.sh and rebuild; `poetry install` in build is flaky on the intercepted network (retry); compose needs the Docker bin dir on PATH for the credential helper |
+| 2026-09-12 | c0017ca | Public OpenVAS report parsed by DefectDojo, then product poller → Valkey → worker → outbox/orchestrator | Docker Desktop + DefectDojo 2.51 sandbox | PASS (ingress/replay) | A public legacy OpenVAS XML fixture was sanitized to 31 parser-valid results and imported/reimported as **OpenVAS Parser v2**; DefectDojo held 24 findings. The live poller fetched the real `related_fields=true` API shape, persisted the `defectdojo` source-health cursor at 24, and delivered 24 evidence outbox events. The sandbox ignored `id__gt`; the poller now pages with `offset` and filters by cursor locally. After the saved cursor was restored following the pre-fix test, two 15-second cycles left 48 existing snapshots/events and queue depth 0 (no new work). Migration gating was also exercised: `migrate` completed before dependent services started. API/case and Jira-link evidence remain open here because this run intentionally had no configured OIDC issuer/audience and no Jira integration. |
+| 2026-09-12 | c0017ca | Containerized API against local Keycloak | Docker Desktop + Keycloak 26.3 | BLOCKED BY SAFE CONFIGURATION | Keycloak realm initialized, but its plain-HTTP issuer is `127.0.0.1` on the host. Pointing the API container to `host.docker.internal` is rejected by the verifier's loopback-only HTTP rule; test bypass was not enabled. Use TLS for a containerized API acceptance run, or run the API on the host for this local sandbox. |

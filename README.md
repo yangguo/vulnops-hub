@@ -24,19 +24,25 @@ MVP 退出条件。运行方式见下文 Quick start。
 
 ## Console screenshots
 
-Captured from the Vue 3 operations console against the local staging stack
-(see `docs/operations/integrated-staging.md`); OIDC login goes through the
-sandbox Keycloak realm. The demo data includes auto-created remediation
-cases produced by the orchestration worker from a real OSV query.
+Captured from the Vue 3 operations console against a local staging dataset
+(see `docs/operations/integrated-staging.md`). Login uses the sandbox Keycloak
+realm; the screens then follow the operational path from source health and
+candidate review to a case, a time-bounded risk decision, and verification.
+The actions shown in drawers are intentionally unsubmitted screenshots, so
+they document the required evidence without changing a remediation state.
 
 | | |
 | --- | --- |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Case list](docs/screenshots/cases.png) |
-| *Dashboard — open cases, SLA and priority distribution* | *Case list — deterministic matches auto-create cases with SLA clocks* |
-| ![Case detail](docs/screenshots/case-detail.png) | ![Source health](docs/screenshots/source-health.png) |
-| *Case detail — lifecycle stepper, metadata, exposures* | *Source health — polling cursor and freshness per source* |
-| ![Candidate review](docs/screenshots/candidate-review.png) | ![SBOM submit](docs/screenshots/sbom-submit.png) |
-| *Candidate review — ambiguous matches wait for an audited decision* | *SBOM submit — CycloneDX/SPDX ingestion entry point* |
+| ![Login](docs/screenshots/login.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| *1. Login — OIDC redirects to the organization identity provider* | *2. Dashboard — open work, SLA and priority distribution* |
+| ![Source health](docs/screenshots/source-health.png) | ![Candidate review](docs/screenshots/candidate-review.png) |
+| *3. Source health — cursor, freshness and upstream degradation signals* | *4. Candidate queue — lower-confidence matches wait for a human decision* |
+| ![Candidate decision](docs/screenshots/candidate-decision.png) | ![Case list](docs/screenshots/cases.png) |
+| *5. Candidate decision — a required reason becomes part of the audit trail* | *6. Case list — priority, owner, SLA and current lifecycle state* |
+| ![Case detail](docs/screenshots/case-detail.png) | ![Risk decision](docs/screenshots/risk-decision.png) |
+| *7. Case detail — lifecycle stepper, evidence tabs and metadata* | *8. Risk acceptance — evidence and expiry are mandatory* |
+| ![Verification](docs/screenshots/verification.png) | ![SBOM submit](docs/screenshots/sbom-submit.png) |
+| *9. Verification — partial, failed or stale evidence cannot close a case* | *10. SBOM submit — CycloneDX/SPDX ingestion entry point* |
 
 ## Quick start
 

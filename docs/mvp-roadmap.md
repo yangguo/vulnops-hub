@@ -121,13 +121,17 @@ and one non-production integrated environment.
 - **(shipped)** Scanner-confirmed cases link to Jira via DefectDojo's native
   integration, recording the issue key as the case's external-ticket
   reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
-- **(implemented; live poller verification pending)** Greenbone/OpenVAS
-  evidence enters through DefectDojo: the DefectDojo poller and sandbox fetch
-  request `related_fields=true`, while scanner provenance is retained in the
-  existing evidence/audit/outbox structures and verified findings use the
-  tested generic scanner-confirmed exposure/case path. No Hub-native
-  Greenbone bridge is present; ServiceNow and case-level projection remain
-  deferred until pilot feedback.
+- **(live ingress/replay verified; workflow evidence partial)** Greenbone/OpenVAS
+  evidence enters through DefectDojo: a public report was imported into the
+  local DefectDojo sandbox and the product poller consumed the real
+  `related_fields=true` response, retaining cursor/source-health and outbox
+  evidence without re-enqueueing already-seen findings. Scanner provenance is
+  retained in the existing evidence/audit/outbox structures and verified
+  findings use the tested generic scanner-confirmed exposure/case path. A
+  configured OIDC provider, matching asset/SBOM, and Jira integration are
+  still required to demonstrate the API/case/link-back portion live. No
+  Hub-native Greenbone bridge is present; ServiceNow and case-level projection
+  remain deferred until pilot feedback.
 - **(shipped, minimal escalation)** Business-service mappings, improved asset
   reconciliation, and ownership escalation. The ownership slice resolves
   asset owner → business-service owner → configured default and records an
