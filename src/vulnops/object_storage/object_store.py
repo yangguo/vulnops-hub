@@ -47,8 +47,22 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _validate_organization_id(organization_id: str) -> str:
+    value = str(organization_id)
+    unsafe = (
+        not value.strip()
+        or value in {".", ".."}
+        or "/" in value
+        or "\\" in value
+        or "\x00" in value
+    )
+    if unsafe:
+        raise ValueError("organization_id must be a non-empty path-safe segment")
+    return value
+
+
 def sbom_object_key(organization_id: str, digest: str) -> str:
-    return f"sbom/{organization_id}/{digest}.json"
+    return f"sbom/{_validate_organization_id(organization_id)}/{digest}.json"
 
 
 def object_uri(bucket: str, key: str) -> str:
@@ -60,15 +74,22 @@ def is_object_storage_configured(settings: Settings | None = None) -> bool:
 
 
 def _local_sbom_path(organization_id: str, digest: str) -> str:
-    return os.path.join("storage", "sbom", organization_id, f"{digest}.json")
+    return os.path.join(
+        "storage", "sbom", _validate_organization_id(organization_id), f"{digest}.json"
+    )
 
 
 def _write_local_sbom(raw_bytes: bytes, organization_id: str, digest: str) -> None:
     local_path = _local_sbom_path(organization_id, digest)
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    if not os.path.exists(local_path):
-        with open(local_path, "wb") as f:
-            f.write(raw_bytes)
+    if os.path.exists(local_path):
+        with open(local_path, "rb") as f:
+            existing = f.read()
+        if sha256_hex(existing) != digest:
+            raise RuntimeError("existing local SBOM digest mismatch")
+        return
+    with open(local_path, "wb") as f:
+        f.write(raw_bytes)
 
 
 @lru_cache(maxsize=1)

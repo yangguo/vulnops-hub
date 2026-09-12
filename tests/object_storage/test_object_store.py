@@ -107,6 +107,27 @@ def test_local_fallback_without_object_storage(monkeypatch, tmp_path):
     clear_s3_client_cache()
 
 
+def test_local_fallback_rejects_corrupt_existing_content(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for var in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    get_settings.cache_clear()
+
+    raw = b'{"a":1}'
+    digest = hashlib.sha256(raw).hexdigest()
+    local = tmp_path / "storage" / "sbom" / "org1" / f"{digest}.json"
+    local.parent.mkdir(parents=True)
+    local.write_bytes(b"corrupt")
+
+    with pytest.raises(RuntimeError, match="digest mismatch"):
+        persist_sbom_raw_bytes(raw, "bucket", "org1", digest, get_settings())
+    assert local.read_bytes() == b"corrupt"
+
+
 _PARTIAL_ENV_CASES: list[tuple[dict[str, str | None], str]] = [
     ({"OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000"}, "endpoint only"),
     ({"OBJECT_STORAGE_ACCESS_KEY": "access"}, "access key only"),
@@ -250,6 +271,41 @@ def test_persist_rejects_digest_mismatch():
     digest = hashlib.sha256(raw).hexdigest()
     with pytest.raises(ValueError, match="digest does not match"):
         persist_sbom_raw_bytes(raw, "bucket", "org1", digest + "0")
+
+
+@pytest.mark.parametrize(
+    "organization_id", ["..", ".", "../outside", "team/subteam", r"team\subteam"]
+)
+def test_persist_rejects_unsafe_organization_path_segments(monkeypatch, tmp_path, organization_id):
+    monkeypatch.chdir(tmp_path)
+    for var in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    get_settings.cache_clear()
+    clear_s3_client_cache()
+
+    raw = b'{"a":1}'
+    digest = hashlib.sha256(raw).hexdigest()
+    with pytest.raises(ValueError, match="organization_id"):
+        persist_sbom_raw_bytes(raw, "bucket", organization_id, digest, get_settings())
+    assert not (tmp_path / "storage").exists()
+
+
+def test_local_get_rejects_unsafe_organization_path_segment(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for var in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    get_settings.cache_clear()
+
+    with pytest.raises(ValueError, match="organization_id"):
+        get_object_bytes("s3://bucket/sbom/../evidence.json", get_settings())
 
 
 @mock_aws
