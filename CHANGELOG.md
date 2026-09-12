@@ -125,3 +125,5 @@ intentional contract changes.
 - EPSS bulk persistence and automatic clearing of CVEs removed from the CISA
   KEV catalog remain open; OSV matching still uses live API queries (intel
   tables are a cache/fallback, not the sole source of truth).
+- DefectDojo/Wazuh raw payload backing remains node-local; shared object storage
+  for scanner evidence is required before horizontally scaled deployment.

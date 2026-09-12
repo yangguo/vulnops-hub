@@ -81,7 +81,15 @@ def _load_sbom(db: Session, org_id: str, sbom_id: str) -> SbomDocument:
 def _raw_response(raw_bytes: bytes, digest: str) -> Response:
     if hashlib.sha256(raw_bytes).hexdigest() != digest:
         raise AuthorizationError("resource_not_found")
-    return Response(content=raw_bytes, media_type="application/json")
+    return Response(
+        content=raw_bytes,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="{digest}.json"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get(
@@ -116,7 +124,7 @@ async def get_source_snapshot_raw(
 ):
     snapshot = _load_snapshot(db, org_id, snapshot_id)
     authorize_capability(request, principal, "evidence:raw:read")
-    raw_bytes = read_raw_bytes(org_id, snapshot.content_sha256)
+    raw_bytes = read_raw_bytes(org_id, snapshot.content_sha256, snapshot.object_uri)
     if raw_bytes is None:
         raise AuthorizationError("resource_not_found")
     return _raw_response(raw_bytes, snapshot.content_sha256)
@@ -135,7 +143,7 @@ async def get_sbom_raw(
 ):
     doc = _load_sbom(db, org_id, sbom_id)
     authorize_capability(request, principal, "evidence:raw:read")
-    raw_bytes = read_raw_bytes(org_id, doc.content_sha256)
+    raw_bytes = read_raw_bytes(org_id, doc.content_sha256, doc.object_uri)
     if raw_bytes is None:
         raise AuthorizationError("resource_not_found")
     return _raw_response(raw_bytes, doc.content_sha256)

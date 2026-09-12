@@ -47,7 +47,7 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _validate_organization_id(organization_id: str) -> str:
+def validate_organization_id(organization_id: str) -> str:
     value = str(organization_id)
     unsafe = (
         not value.strip()
@@ -62,7 +62,7 @@ def _validate_organization_id(organization_id: str) -> str:
 
 
 def sbom_object_key(organization_id: str, digest: str) -> str:
-    return f"sbom/{_validate_organization_id(organization_id)}/{digest}.json"
+    return f"sbom/{validate_organization_id(organization_id)}/{digest}.json"
 
 
 def object_uri(bucket: str, key: str) -> str:
@@ -75,7 +75,7 @@ def is_object_storage_configured(settings: Settings | None = None) -> bool:
 
 def _local_sbom_path(organization_id: str, digest: str) -> str:
     return os.path.join(
-        "storage", "sbom", _validate_organization_id(organization_id), f"{digest}.json"
+        "storage", "sbom", validate_organization_id(organization_id), f"{digest}.json"
     )
 
 

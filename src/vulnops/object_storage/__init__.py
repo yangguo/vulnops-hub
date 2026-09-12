@@ -11,6 +11,7 @@ from vulnops.object_storage.object_store import (
     require_complete_object_storage_config,
     sbom_object_key,
     sha256_hex,
+    validate_organization_id,
     verify_sbom_object_digest,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "require_complete_object_storage_config",
     "sbom_object_key",
     "sha256_hex",
+    "validate_organization_id",
     "verify_sbom_object_digest",
 ]

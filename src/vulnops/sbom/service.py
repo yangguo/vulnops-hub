@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from vulnops.config import get_settings
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.source_snapshot import SourceSnapshot
@@ -84,6 +85,7 @@ class SBOMService:
             or parsed.raw.get("documentNamespace")
             or sbom_id
         )
+        settings = get_settings()
         # Persist raw bytes first so the recorded URI is retrievable and
         # digest-verifiable; bucket comes from deployment configuration.
         object_uri = persist_sbom_raw_bytes(

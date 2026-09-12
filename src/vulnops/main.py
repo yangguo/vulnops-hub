@@ -189,9 +189,7 @@ def create_app() -> FastAPI:
     try:
         from vulnops.api.evidence import router as evidence_router
 
-        app.include_router(
-            evidence_router, prefix="/api/v1", dependencies=[Depends(get_principal)]
-        )
+        app.include_router(evidence_router, prefix="/api/v1", dependencies=[Depends(get_principal)])
     except Exception as e:
         logger.warning("evidence router not loaded: %s", e)
 

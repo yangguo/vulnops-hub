@@ -5,11 +5,13 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from moto import mock_aws
 from sqlalchemy import select
 
 from vulnops.config import get_settings
 from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.main import create_app
+from vulnops.object_storage.object_store import clear_s3_client_cache
 
 
 class ClaimsVerifier:
@@ -142,6 +144,46 @@ def test_raw_read_permission_can_download_sbom_bytes(monkeypatch: pytest.MonkeyP
     assert response.status_code == 200, response.text
     payload = json.loads(response.content)
     assert payload["bomFormat"] == "CycloneDX"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"].startswith("attachment;")
+
+
+@mock_aws
+def test_raw_read_downloads_sbom_from_s3_without_local_mirror(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("OBJECT_STORAGE_ENDPOINT", "https://s3.amazonaws.com")
+    monkeypatch.setenv("OBJECT_STORAGE_BUCKET", "vulnops-snapshots")
+    monkeypatch.setenv("OBJECT_STORAGE_ACCESS_KEY", "testing")
+    monkeypatch.setenv("OBJECT_STORAGE_SECRET_KEY", "testing")
+    monkeypatch.setenv("OBJECT_STORAGE_REGION", "us-east-1")
+    monkeypatch.setenv("OBJECT_STORAGE_LOCAL_MIRROR", "false")
+    get_settings.cache_clear()
+    clear_s3_client_cache()
+    try:
+        organization_id = f"org-s3-{uuid4().hex[:8]}"
+        writer = _client(
+            monkeypatch,
+            _claims(organization_ids=[organization_id], scopes="sbom:write"),
+        )
+        submitted = _submit_sbom(writer, organization_id)
+        assert not (tmp_path / "storage").exists()
+
+        reader = _client(
+            monkeypatch,
+            _claims(organization_ids=[organization_id], scopes="evidence:raw:read"),
+        )
+        response = reader.get(
+            f"/api/v1/organizations/{organization_id}/sboms/{submitted['id']}/raw",
+            headers=_headers(),
+        )
+        assert response.status_code == 200, response.text
+        assert json.loads(response.content)["bomFormat"] == "CycloneDX"
+    finally:
+        get_settings.cache_clear()
+        clear_s3_client_cache()
 
 
 def test_human_permission_can_download_sbom_raw(monkeypatch: pytest.MonkeyPatch):
@@ -205,9 +247,7 @@ def test_auditor_reads_snapshot_metadata_without_raw_uri(monkeypatch: pytest.Mon
 
     db = next(deps.get_db())
     snapshot = (
-        db.execute(
-            select(SourceSnapshot).where(SourceSnapshot.organization_id == organization_id)
-        )
+        db.execute(select(SourceSnapshot).where(SourceSnapshot.organization_id == organization_id))
         .scalars()
         .first()
     )
@@ -231,9 +271,7 @@ def test_auditor_cannot_download_snapshot_raw(monkeypatch: pytest.MonkeyPatch):
 
     db = next(deps.get_db())
     snapshot = (
-        db.execute(
-            select(SourceSnapshot).where(SourceSnapshot.organization_id == organization_id)
-        )
+        db.execute(select(SourceSnapshot).where(SourceSnapshot.organization_id == organization_id))
         .scalars()
         .first()
     )

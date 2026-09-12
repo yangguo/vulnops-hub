@@ -20,10 +20,14 @@ or a named service scope. It is not implied by `viewer`, `owner`, `auditor`, or
 
 ## Storage paths
 
-Logical URIs on `source_snapshots` and `sbom_documents` point at object storage
-(`s3://…`). Development and CI mirror bytes under `./storage/sbom/…` and
-`./storage/evidence/…`. Direct filesystem or bucket access must remain network-
-isolated; product authorization is enforced only on the API routes above.
+SBOM logical URIs point at configured S3/MinIO storage (`s3://…`); when object
+storage is not configured, the content-addressed fallback is
+`./storage/sbom/…`. `OBJECT_STORAGE_LOCAL_MIRROR=true` can retain that SBOM
+copy during staging drills. DefectDojo and Wazuh adapter payloads currently use
+the node-local `./storage/evidence/…` backing store while their snapshot URI
+retains the provider reference. Direct filesystem or bucket access must remain
+network-isolated; product authorization is enforced only on the API routes
+above.
 
 ## Residual exposure
 
@@ -31,3 +35,5 @@ isolated; product authorization is enforced only on the API routes above.
   and audit object access separately.
 - Historical snapshots ingested before local persistence was enabled may return
   `404` on `/raw` even when metadata exists; re-import or restore from backup.
+- DefectDojo/Wazuh raw payloads are node-local in this pilot and require a
+  shared evidence store before horizontally scaled or ephemeral deployment.
