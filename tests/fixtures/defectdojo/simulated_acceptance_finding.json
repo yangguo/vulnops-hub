@@ -1,0 +1,30 @@
+{
+  "id": "simulated-template",
+  "title": "[SIMULATED ACCEPTANCE] CVE-2026-12345 in openssl 3.0.2",
+  "severity": "High",
+  "cve": "CVE-2026-12345",
+  "component_name": "openssl",
+  "component_version": "3.0.2",
+  "purl": "pkg:deb/debian/openssl@3.0.2",
+  "url": "https://simulated.invalid/defectdojo/findings/template",
+  "verified": true,
+  "active": true,
+  "is_mitigated": false,
+  "host": "payments-api-3",
+  "service": "payments-api-3",
+  "asset_hints": [
+    {"namespace": "hostname", "value": "payments-api-3"}
+  ],
+  "related_fields": {
+    "test": {
+      "id": "simulated-openvas-test",
+      "title": "[SIMULATED ACCEPTANCE] OpenVAS Scan",
+      "test_type": {"name": "OpenVAS Scan"}
+    },
+    "jira": {"key": "VULN-77"}
+  },
+  "simulation": {
+    "kind": "defectdojo-shaped-fixture",
+    "purpose": "M2 acceptance closure; not a real scanner result"
+  }
+}
