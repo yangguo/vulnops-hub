@@ -52,6 +52,12 @@ intentional contract changes.
 - BusinessService create/list/get API, CSV asset owner/service linkage,
   asset/service-aware case owner resolution, and audited P0/P1 escalation for
   cases that remain unassigned.
+- Intel-table persistence for OSV/KEV (and optional Vulnerability-Lookup)
+  enrichment: idempotent upserts into `Vulnerability`, `AffectedRange`, aliases,
+  and `AdvisoryAssertion`; KEV catalog refresh on orchestrator startup, periodic
+  orchestrator refresh (`KEV_REFRESH_INTERVAL_SECONDS`), and
+  `vulnops.workers.intel_refresh` worker entrypoint with source-health
+  checkpoints.
 - Production IdP integration scaffolding: HTTPS issuer/audience/JWKS requirements,
   deploy and Helm example templates with safe defaults, frontend production OIDC
   placeholders, and additional fail-closed startup checks for
@@ -90,9 +96,9 @@ intentional contract changes.
   evidence remain open; scaffolding docs/templates ship without claiming a
   certified enterprise IdP integration.
 - Raw-evidence authorization remains open (see open PRs on `main`).
-- The authenticated OpenVAS → exposure/case flow is verified in local staging.
-  A shared adopter environment still requires a TLS-published issuer and trusted
-  CA before the containerized API can repeat that evidence.
+- Live OpenVAS ingress/replay and the authenticated exposure/case contract are
+  verified separately in local staging. A live authenticated operator run and
+  shared adopter environment still require a TLS-published issuer and trusted CA.
 - External-ticket and notification delivery are delegated to DefectDojo's
   Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
   case-level projection, and broader notification channels remain open.
@@ -104,5 +110,6 @@ intentional contract changes.
 - Backup/restore and outbox replay have been rehearsed against the local
   staging topology (see the integrated-staging evidence log); a certified
   production topology drill with MinIO/S3 object storage remains open.
-- Intel-table persistence (`Vulnerability`/`AffectedRange` upserts) and KEV
-  catalog periodic refresh are unimplemented; enrichment is on-demand only.
+- EPSS bulk persistence and automatic clearing of CVEs removed from the CISA
+  KEV catalog remain open; OSV matching still uses live API queries (intel
+  tables are a cache/fallback, not the sole source of truth).
