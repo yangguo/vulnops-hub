@@ -376,7 +376,7 @@ def test_staging_loopback_http_requires_explicit_opt_in():
 
 def test_staging_loopback_http_can_be_enabled_without_allowing_docker_hostnames():
     material = KeyMaterial.create()
-    loopback_issuer = "http://127.0.0.1:8082/realms/vulnops"
+    loopback_issuer = "http://127.0.0.1:9000"
     server = OIDCServer([material.public_jwk], issuer=loopback_issuer)
     client = httpx.Client(transport=httpx.MockTransport(server.handler))
     settings = SimpleNamespace(

@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from vulnops.assets.models import Asset, AssetAlias
 from vulnops.cases.service import CaseService
@@ -41,7 +42,11 @@ class _AuthenticatedStagingVerifier:
 
 
 def _engine():
-    eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     import vulnops.db.models.source_snapshot  # noqa
     import vulnops.db.models.audit_event
     import vulnops.db.models.outbox_event
