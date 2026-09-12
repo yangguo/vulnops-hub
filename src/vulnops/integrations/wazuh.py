@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.source_snapshot import SourceSnapshot
+from vulnops.evidence.raw_store import persist_evidence_bytes
 from vulnops.integrations.mapping import AssetMapper, MappingResult
 from vulnops.integrations.wazuh_purl import enrich_wazuh_package
 
@@ -83,6 +84,7 @@ class WazuhBridge:
         scan_metadata = self._extract_scan_metadata(raw)
 
         object_uri = f"wazuh://agent/{agent_id}/event/{digest[:12]}"
+        persist_evidence_bytes(raw_bytes, organization_id, digest)
         snapshot = SourceSnapshot(
             id=f"ss_{uuid.uuid4().hex[:12]}",
             source="wazuh",

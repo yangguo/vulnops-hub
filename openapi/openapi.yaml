@@ -598,8 +598,7 @@ paths:
                   title: Evidence Ids
                   type: array
                 expires_at:
-                  description: Timezone-aware timestamp in the future; final future
-                    validation is domain-owned.
+                  description: Timezone-aware timestamp in the future; final future validation is domain-owned.
                   format: date-time
                   title: Expires At
                   type: string
@@ -713,8 +712,7 @@ paths:
           application/json:
             schema:
               additionalProperties: false
-              description: Actor-free risk approval contract; identity comes from
-                the token.
+              description: Actor-free risk approval contract; identity comes from the token.
               properties:
                 outcome:
                   enum:
@@ -900,8 +898,7 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Import Assets Api V1 Organizations  Org Id  Assets
-                  Import Post
+                title: Response Import Assets Api V1 Organizations  Org Id  Assets Import Post
         '401':
           description: Authentication required
           content:
@@ -1182,6 +1179,142 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExposureReviewResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/source-snapshots/{snapshot_id}:
+    get:
+      tags:
+      - evidence
+      summary: Get Source Snapshot
+      operationId: get_source_snapshot_api_v1_organizations__org_id__source_snapshots__snapshot_id__get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Snapshot Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceSnapshotResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/source-snapshots/{snapshot_id}/raw:
+    get:
+      tags:
+      - evidence
+      summary: Get Source Snapshot Raw
+      operationId: get_source_snapshot_raw_api_v1_organizations__org_id__source_snapshots__snapshot_id__raw_get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Snapshot Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Insufficient permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/organizations/{org_id}/sboms/{sbom_id}/raw:
+    get:
+      tags:
+      - evidence
+      summary: Get Sbom Raw
+      operationId: get_sbom_raw_api_v1_organizations__org_id__sboms__sbom_id__raw_get
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Org Id
+      - name: sbom_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Sbom Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
         '401':
           description: Authentication required
           content:
@@ -1746,7 +1879,9 @@ components:
           type: string
           title: Content Sha256
         object_uri:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Object Uri
         created_at:
           type: string
@@ -1757,7 +1892,6 @@ components:
       - organization_id
       - format
       - content_sha256
-      - object_uri
       - created_at
       title: SbomResponse
     SbomSubmitResponse:
@@ -1859,6 +1993,53 @@ components:
       - total
       - degraded_sources
       title: SourceHealthResponse
+    SourceSnapshotResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        organization_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Id
+        source:
+          type: string
+          title: Source
+        source_record_id:
+          type: string
+          title: Source Record Id
+        content_sha256:
+          type: string
+          title: Content Sha256
+        content_size:
+          type: integer
+          title: Content Size
+        validation_state:
+          type: string
+          title: Validation State
+        retrieved_at:
+          type: string
+          title: Retrieved At
+        created_at:
+          type: string
+          title: Created At
+        object_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Object Uri
+      type: object
+      required:
+      - id
+      - source
+      - source_record_id
+      - content_sha256
+      - content_size
+      - validation_state
+      - retrieved_at
+      - created_at
+      title: SourceSnapshotResponse
     TransitionResponse:
       properties:
         id:

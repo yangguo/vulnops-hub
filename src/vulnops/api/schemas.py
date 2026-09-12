@@ -381,8 +381,21 @@ class SbomResponse(BaseModel):
     format: str
     spec_version: str | None = None
     content_sha256: str
-    object_uri: str
+    object_uri: str | None = None
     created_at: str
+
+
+class SourceSnapshotResponse(BaseModel):
+    id: str
+    organization_id: str | None = None
+    source: str
+    source_record_id: str
+    content_sha256: str
+    content_size: int
+    validation_state: str
+    retrieved_at: str
+    created_at: str
+    object_uri: str | None = None
 
 
 class CaseDetailResponse(BaseModel):

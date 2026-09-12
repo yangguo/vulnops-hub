@@ -57,6 +57,9 @@ intentional contract changes.
 - BusinessService create/list/get API, CSV asset owner/service linkage,
   asset/service-aware case owner resolution, and audited P0/P1 escalation for
   cases that remain unassigned.
+- Raw-evidence API authorization: SBOM and source-snapshot metadata no longer
+  expose storage URIs without `evidence:raw:read`; authorized `/raw` downloads
+  are org-scoped with `404`/`403` behavior aligned to existing OIDC/RBAC.
 - S3/MinIO object storage for SBOM raw evidence: boto3 client wiring,
   host-staging env overlay, moto-backed tests, `scripts/object_storage_smoke.py`,
   and [object storage operations guide](docs/operations/object-storage.md).
@@ -103,7 +106,6 @@ intentional contract changes.
 - Live production IdP certification and shared adopter integrated-staging
   evidence remain open; scaffolding docs/templates ship without claiming a
   certified enterprise IdP integration.
-- Raw-evidence authorization remains open (see open PRs on `main`).
 - Live OpenVAS ingress/replay and the authenticated exposure/case contract are
   verified separately in local staging. A live authenticated operator run and
   shared adopter environment still require a TLS-published issuer and trusted CA.
@@ -123,3 +125,5 @@ intentional contract changes.
 - EPSS bulk persistence and automatic clearing of CVEs removed from the CISA
   KEV catalog remain open; OSV matching still uses live API queries (intel
   tables are a cache/fallback, not the sole source of truth).
+- DefectDojo/Wazuh raw payload backing remains node-local; shared object storage
+  for scanner evidence is required before horizontally scaled deployment.
