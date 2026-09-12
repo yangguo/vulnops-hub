@@ -53,9 +53,7 @@ class DefectDojoClient:
             resp.raise_for_status()
             page = resp.json().get("results", [])
             records.extend(
-                record
-                for record in page
-                if cursor_id is None or int(record["id"]) > cursor_id
+                record for record in page if cursor_id is None or int(record["id"]) > cursor_id
             )
             if len(page) < page_size:
                 break

@@ -2,7 +2,6 @@ from pathlib import Path
 
 import yaml
 
-
 COMPOSE_PATH = Path(__file__).parents[2] / "docker-compose.yml"
 DOCKERFILE_PATH = Path(__file__).parents[2] / "Dockerfile"
 
