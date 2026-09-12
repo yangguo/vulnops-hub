@@ -42,6 +42,8 @@ page.on('response', (r) => {
 
 // Real OIDC login through the configured identity provider
 await page.goto('http://localhost:5173/login')
+await page.screenshot({ path: `${OUT}/login.png`, fullPage: false })
+console.log('captured 登录 -> docs/screenshots/login.png')
 await page.getByRole('button', { name: '使用企业账号登录' }).click()
 await page.waitForURL(/realms\/vulnops/, { timeout: 20000 })
 await page.locator('#username').fill('owner-demo')
@@ -75,6 +77,11 @@ await page.waitForTimeout(800)
 await page.screenshot({ path: `${OUT}/case-detail.png`, fullPage: false })
 console.log('captured 工单详情 -> docs/screenshots/case-detail.png')
 
+await page.getByRole('button', { name: '接受风险…' }).click()
+await page.screenshot({ path: `${OUT}/risk-decision.png`, fullPage: false })
+console.log('captured 风险接受 -> docs/screenshots/risk-decision.png')
+await page.keyboard.press('Escape')
+
 await navigateMenu('源健康')
 await page.screenshot({ path: `${OUT}/source-health.png`, fullPage: false })
 console.log('captured 源健康 -> docs/screenshots/source-health.png')
@@ -82,6 +89,19 @@ console.log('captured 源健康 -> docs/screenshots/source-health.png')
 await navigateMenu('候选审查')
 await page.screenshot({ path: `${OUT}/candidate-review.png`, fullPage: false })
 console.log('captured 候选审查 -> docs/screenshots/candidate-review.png')
+
+await page.getByRole('button', { name: '确认' }).first().click()
+await page.screenshot({ path: `${OUT}/candidate-decision.png`, fullPage: false })
+console.log('captured 候选确认 -> docs/screenshots/candidate-decision.png')
+await page.keyboard.press('Escape')
+
+await navigateMenu('工单')
+await page.locator('.el-table__body-wrapper tbody tr', { hasText: '待复测' }).first().click()
+await page.waitForURL(/\/cases\//, { timeout: 15000 })
+await page.waitForLoadState('networkidle')
+await page.getByRole('button', { name: '提交复测证据…' }).click()
+await page.screenshot({ path: `${OUT}/verification.png`, fullPage: false })
+console.log('captured 复测证据 -> docs/screenshots/verification.png')
 
 // SBOM 提交需要 sbom:write：以 admin-demo 在独立上下文登录后截取
 const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
