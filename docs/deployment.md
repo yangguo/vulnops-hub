@@ -99,6 +99,7 @@ deployments:
 | `OIDC_ISSUER_URL` | required | HTTPS issuer URL used for discovery and JWKS retrieval; local staging may explicitly opt into an IP-loopback HTTP issuer with `OIDC_ALLOW_INSECURE_LOOPBACK=true` |
 | `OIDC_AUDIENCE` | required | Audience accepted on API access tokens |
 | `OIDC_ALLOWED_ALGORITHMS` | default `RS256` | Allowed asymmetric signing algorithms |
+| `OIDC_ALLOW_INSECURE_LOOPBACK` | default `false` | Staging-only host-run opt-in for an IP-loopback HTTP issuer; rejected outside `ENVIRONMENT=staging` |
 | `OIDC_ORGANIZATION_CLAIM` | default `organizations` | Claim containing organization IDs |
 | `OIDC_ROLE_CLAIM` | default `roles` | Human role claim |
 | `OIDC_SERVICE_SCOPE_CLAIM` | default `scope` | Named service-token scope claim |

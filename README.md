@@ -262,6 +262,7 @@ Key variables (full list in `.env.example`, parsed in `src/vulnops/config.py`):
 | `OBJECT_STORAGE_ENDPOINT` / `_BUCKET` / `_ACCESS_KEY` / `_SECRET_KEY` | – | S3/MinIO for raw source snapshots |
 | `PUBLIC_URL`, `ENVIRONMENT`, `LOG_LEVEL` | `http://localhost:8000`, `development`, `INFO` | Core posture |
 | `OIDC_ISSUER_URL` / `OIDC_AUDIENCE` | required | OIDC discovery/JWKS issuer and access-token audience; all business `/api/v1` routes require a valid bearer token (health probes remain public) |
+| `OIDC_ALLOW_INSECURE_LOOPBACK` | `false` | Explicit local-staging-only opt-in for a host-run API and an IP-loopback HTTP issuer; never use for a containerized or production API |
 | `DEFECTDOJO_BASE_URL` / `WAZUH_BASE_URL` / `VULNERABILITY_LOOKUP_BASE_URL` | – | Adapter endpoints; disabled while unset |
 
 Production hardening requirements (identity, secrets, network isolation,
