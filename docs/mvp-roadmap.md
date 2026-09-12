@@ -12,7 +12,9 @@
 > verification remains pending. Remaining pilot work includes ServiceNow and
 > case-level projection, production IdP
 > integration, shared adopter staging, certified backup/restore on MinIO/S3,
-> and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)
+> and EPSS bulk persistence. Intel-table upserts and KEV periodic refresh are
+> shipped on `main` (see [intel persistence plan](plans/2026-09-12-m2-intel-persistence.md)).
+> See [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
 
 ## 1. Product thesis
@@ -143,6 +145,10 @@ and one non-production integrated environment.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
   on the local staging topology; certified production topology (MinIO/S3)
   remains open.
+- **(shipped)** Intel-table persistence (`Vulnerability` / `AffectedRange` /
+  aliases / assertions) at OSV and KEV enrichment boundaries; KEV catalog
+  refresh without process restart (orchestrator interval + `intel_refresh`
+  worker).
 
 **Exit gate:** a pilot team runs its normal remediation cycle with measurable
 case ownership, SLA, verification, and replay evidence.

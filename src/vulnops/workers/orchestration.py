@@ -216,6 +216,7 @@ class OutboxOrchestrator:
         self.settings = settings or get_settings()
         self.matcher = MatchingService()
         self.policy = RiskPolicyEngine()
+        self._last_kev_refresh_monotonic = 0.0
 
     # -- dispatch ----------------------------------------------------------
 
@@ -278,10 +279,47 @@ class OutboxOrchestrator:
         finally:
             session.close()
 
+    def _is_kev(self, vulnerability_id: str, session: Session | None = None) -> bool:
+        if self.kev is None:
+            return False
+        try:
+            return bool(self.kev.is_kev(vulnerability_id, session=session))
+        except TypeError:
+            return bool(self.kev.is_kev(vulnerability_id))
+
+    def _maybe_refresh_kev_catalog(self) -> None:
+        if self.kev is None:
+            return
+        interval = self.settings.kev_refresh_interval_seconds
+        now = time.monotonic()
+        if now - self._last_kev_refresh_monotonic < interval:
+            return
+        from vulnops.intelligence.persistence import refresh_kev_catalog
+
+        session = self.session_factory()
+        try:
+            refresh_kev_catalog(session, self.kev)
+            session.commit()
+            self._last_kev_refresh_monotonic = now
+            logger.info("KEV catalog refreshed and persisted")
+        except Exception as exc:
+            session.rollback()
+            logger.warning("KEV catalog refresh failed: %s", exc)
+        finally:
+            session.close()
+
+    def _persist_advisories(self, session: Session, records: list[Any]) -> None:
+        if not records:
+            return
+        from vulnops.intelligence.persistence import upsert_advisory_records
+
+        upsert_advisory_records(session, records)
+
     def run_forever(self, max_iterations: int | None = None) -> None:
         iterations = 0
         while max_iterations is None or iterations < max_iterations:
             iterations += 1
+            self._maybe_refresh_kev_catalog()
             try:
                 count = self.run_once()
                 if count:
@@ -292,8 +330,14 @@ class OutboxOrchestrator:
 
     # -- priority ----------------------------------------------------------
 
-    def _priority_for(self, vulnerability_id: str, match_class: str, confidence: float):
-        kev = bool(self.kev is not None and self.kev.is_kev(vulnerability_id))
+    def _priority_for(
+        self,
+        vulnerability_id: str,
+        match_class: str,
+        confidence: float,
+        session: Session | None = None,
+    ):
+        kev = self._is_kev(vulnerability_id, session=session)
         epss_score = 0.0
         epss_percentile = None
         if self.epss is not None:
@@ -415,6 +459,7 @@ class OutboxOrchestrator:
         ordered = [o for o in occurrences if o.purl and o.raw_version]
         query_components = [{"purl": o.purl, "version": o.raw_version} for o in ordered]
         records = self.osv.lookup_batch(query_components) if query_components else []
+        self._persist_advisories(session, records)
 
         by_index: dict[int, list[Any]] = {}
         for rec in records:
@@ -428,7 +473,7 @@ class OutboxOrchestrator:
                 vex_status = self._vex_status_for(rec.vulnerability_id)
                 result = self.matcher.evaluate(component, advisory, vex_status=vex_status)
                 priority, policy_version, _kev = self._priority_for(
-                    rec.vulnerability_id, result.match_class, result.confidence
+                    rec.vulnerability_id, result.match_class, result.confidence, session=session
                 )
                 exposure, _created = upsert_exposure(
                     session,
@@ -477,6 +522,7 @@ class OutboxOrchestrator:
         advisory: dict[str, Any] = {"id": cve, "affected": []}
         if purl:
             records = self.osv.lookup_batch([{"purl": purl, "version": component_version}])
+            self._persist_advisories(session, records)
             if records:
                 advisory = _advisory_from_record(records[0])
                 advisory["id"] = advisory.get("id") or cve
@@ -496,7 +542,7 @@ class OutboxOrchestrator:
             component, advisory, scanner_evidence=scanner_evidence, vex_status=vex_status
         )
         priority, policy_version, _kev = self._priority_for(
-            cve, result.match_class, result.confidence
+            cve, result.match_class, result.confidence, session=session
         )
         exposure, _created = upsert_exposure(
             session,
@@ -561,11 +607,20 @@ def main() -> None:
     settings = get_settings()
     engine = get_engine()
     kev = KEVAdapter()
+    kev_loaded = False
+    session = get_sessionmaker(engine)()
     try:
-        kev.fetch_catalog()
-        logger.info("KEV catalog loaded")
+        from vulnops.intelligence.persistence import refresh_kev_catalog
+
+        refresh_kev_catalog(session, kev)
+        session.commit()
+        kev_loaded = True
+        logger.info("KEV catalog loaded and persisted")
     except Exception as exc:
+        session.rollback()
         logger.warning("KEV catalog unavailable at startup: %s", exc)
+    finally:
+        session.close()
 
     orchestrator = OutboxOrchestrator(
         session_factory=lambda: get_sessionmaker(engine)(),
@@ -573,6 +628,8 @@ def main() -> None:
         epss=EPSSAdapter(),
         settings=settings,
     )
+    if kev_loaded:
+        orchestrator._last_kev_refresh_monotonic = time.monotonic()
     orchestrator.run_forever()
 
 
