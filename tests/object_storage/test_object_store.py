@@ -107,11 +107,76 @@ def test_local_fallback_without_object_storage(monkeypatch, tmp_path):
     clear_s3_client_cache()
 
 
-def test_partial_object_storage_config_fails_closed(monkeypatch, tmp_path):
+_PARTIAL_ENV_CASES: list[tuple[dict[str, str | None], str]] = [
+    ({"OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000"}, "endpoint only"),
+    ({"OBJECT_STORAGE_ACCESS_KEY": "access"}, "access key only"),
+    ({"OBJECT_STORAGE_SECRET_KEY": "secret"}, "secret key only"),
+    (
+        {
+            "OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
+            "OBJECT_STORAGE_ACCESS_KEY": "access",
+        },
+        "endpoint + access",
+    ),
+    (
+        {
+            "OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
+            "OBJECT_STORAGE_SECRET_KEY": "secret",
+        },
+        "endpoint + secret",
+    ),
+    (
+        {
+            "OBJECT_STORAGE_ACCESS_KEY": "access",
+            "OBJECT_STORAGE_SECRET_KEY": "secret",
+        },
+        "access + secret without endpoint",
+    ),
+    (
+        {
+            "OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
+            "OBJECT_STORAGE_ACCESS_KEY": " ",
+            "OBJECT_STORAGE_SECRET_KEY": "secret",
+        },
+        "endpoint + whitespace access",
+    ),
+    (
+        {
+            "OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
+            "OBJECT_STORAGE_ACCESS_KEY": "access",
+            "OBJECT_STORAGE_SECRET_KEY": "  ",
+        },
+        "endpoint + whitespace secret",
+    ),
+    (
+        {
+            "OBJECT_STORAGE_ENDPOINT": "  ",
+            "OBJECT_STORAGE_ACCESS_KEY": "access",
+            "OBJECT_STORAGE_SECRET_KEY": "secret",
+        },
+        "whitespace endpoint with keys",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "env_overrides",
+    [overrides for overrides, _ in _PARTIAL_ENV_CASES],
+    ids=[label for _, label in _PARTIAL_ENV_CASES],
+)
+def test_partial_object_storage_config_fails_closed(monkeypatch, tmp_path, env_overrides):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OBJECT_STORAGE_ENDPOINT", "http://127.0.0.1:9000")
-    monkeypatch.delenv("OBJECT_STORAGE_ACCESS_KEY", raising=False)
-    monkeypatch.delenv("OBJECT_STORAGE_SECRET_KEY", raising=False)
+    for var in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    for var, value in env_overrides.items():
+        if value is None:
+            monkeypatch.delenv(var, raising=False)
+        else:
+            monkeypatch.setenv(var, value)
     get_settings.cache_clear()
     clear_s3_client_cache()
 
@@ -121,14 +186,61 @@ def test_partial_object_storage_config_fails_closed(monkeypatch, tmp_path):
     with pytest.raises(ObjectStorageConfigurationError):
         persist_sbom_raw_bytes(raw, settings.object_storage_bucket, "org1", digest, settings)
     assert not (tmp_path / "storage").exists()
-
-    monkeypatch.setenv("OBJECT_STORAGE_ACCESS_KEY", "key")
-    monkeypatch.setenv("OBJECT_STORAGE_SECRET_KEY", "secret")
-    monkeypatch.delenv("OBJECT_STORAGE_ENDPOINT", raising=False)
     get_settings.cache_clear()
+    clear_s3_client_cache()
+
+
+@pytest.mark.parametrize(
+    "env_overrides",
+    [
+        {"OBJECT_STORAGE_ENDPOINT": "   "},
+        {"OBJECT_STORAGE_ACCESS_KEY": "  \t "},
+        {"OBJECT_STORAGE_SECRET_KEY": " \n "},
+    ],
+    ids=["whitespace endpoint", "whitespace access", "whitespace secret"],
+)
+def test_whitespace_only_fields_count_as_disabled(monkeypatch, tmp_path, env_overrides):
+    monkeypatch.chdir(tmp_path)
+    for var in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    for var, value in env_overrides.items():
+        monkeypatch.setenv(var, value)
+    get_settings.cache_clear()
+    clear_s3_client_cache()
+
+    raw = b'{"a":1}'
+    digest = hashlib.sha256(raw).hexdigest()
+    settings = get_settings()
+    uri = persist_sbom_raw_bytes(raw, settings.object_storage_bucket, "org1", digest, settings)
+    assert uri.startswith("s3://")
+    assert (tmp_path / "storage" / "sbom" / "org1" / f"{digest}.json").exists()
+    get_settings.cache_clear()
+    clear_s3_client_cache()
+
+
+def test_partial_config_raises_before_returning_s3_uri(monkeypatch, tmp_path):
+    """Partial config must not return an s3:// URI (regression: keys-only was disabled)."""
+    monkeypatch.chdir(tmp_path)
+    for var in (
+        "OBJECT_STORAGE_ENDPOINT",
+        "OBJECT_STORAGE_ACCESS_KEY",
+        "OBJECT_STORAGE_SECRET_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("OBJECT_STORAGE_ACCESS_KEY", "only-access")
+    get_settings.cache_clear()
+    clear_s3_client_cache()
+
+    raw = b'{"a":1}'
+    digest = hashlib.sha256(raw).hexdigest()
+    settings = get_settings()
     with pytest.raises(ObjectStorageConfigurationError):
-        persist_sbom_raw_bytes(raw, settings.object_storage_bucket, "org1", digest, settings)
-    assert not (tmp_path / "storage").exists()
+        uri = persist_sbom_raw_bytes(raw, settings.object_storage_bucket, "org1", digest, settings)
+        pytest.fail(f"unexpected uri {uri}")
     get_settings.cache_clear()
     clear_s3_client_cache()
 

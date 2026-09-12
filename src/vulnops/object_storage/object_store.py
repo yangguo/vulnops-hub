@@ -17,16 +17,22 @@ class ObjectStorageConfigurationError(RuntimeError):
     """Raised when OBJECT_STORAGE_* is only partially set."""
 
 
+def _config_field_present(value: str | None) -> bool:
+    return bool(value and str(value).strip())
+
+
 def object_storage_config_state(settings: Settings | None = None) -> str:
     """Return ``disabled``, ``enabled``, or ``partial`` for object storage env."""
     cfg = settings or get_settings()
-    has_endpoint = bool(cfg.object_storage_endpoint and str(cfg.object_storage_endpoint).strip())
-    has_keys = bool(cfg.object_storage_access_key and cfg.object_storage_secret_key)
-    if has_endpoint and has_keys:
+    has_endpoint = _config_field_present(cfg.object_storage_endpoint)
+    has_access = _config_field_present(cfg.object_storage_access_key)
+    has_secret = _config_field_present(cfg.object_storage_secret_key)
+    present = (has_endpoint, has_access, has_secret)
+    if all(present):
         return "enabled"
-    if has_endpoint or has_keys:
-        return "partial"
-    return "disabled"
+    if not any(present):
+        return "disabled"
+    return "partial"
 
 
 def require_complete_object_storage_config(settings: Settings | None = None) -> None:
