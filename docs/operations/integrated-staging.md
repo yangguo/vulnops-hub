@@ -341,6 +341,29 @@ network connect) and restart. Smoke check:
    snapshot, exposure, or case.
 7. Record the run in the evidence log below with date, commit, and outcome.
 
+### Simulated upstream closure drill
+
+When a publicly shareable report cannot carry the host and component identity
+needed to prove the downstream branch, use the checked-in **explicitly
+simulated** DefectDojo-shaped fixture. It is not scanner evidence and must be
+reported separately from the real DefectDojo/OpenVAS import above. The CLI
+uses the normal Valkey ingestion queue; host API, workers, authentication,
+database, matching, and case creation remain real.
+
+After preparing the `payments-api-3` inventory alias and matching SBOM with
+the authenticated host API, use a stable run ID and repeat it unchanged:
+
+```bash
+uv run python scripts/simulated_defectdojo_acceptance.py \
+  --organization-id org-demo --run-id m2-simulated-openvas-20260912
+```
+
+For the documented fixture, assert exactly one `source_snapshots` record, one
+active `confirmed` exposure, and one linked remediation case carrying
+`VULN-77`; repeat the command and prove all counts remain one. Do not use this
+drill to certify a scanner parser, external Jira connectivity, an enterprise
+IdP, or the asynchronous OSV projection of the preparatory SBOM.
+
 ## Evidence log
 
 | Date | Commit | Scenario | Sandbox | Outcome | Notes |
@@ -367,3 +390,4 @@ network connect) and restart. Smoke check:
 | 2026-09-12 | c0017ca | Containerized API against local Keycloak | Docker Desktop + Keycloak 26.3 | BLOCKED BY SAFE CONFIGURATION | Keycloak realm initialized, but its plain-HTTP issuer is `127.0.0.1` on the host. Pointing the API container to `host.docker.internal` is rejected by the verifier's loopback-only HTTP rule; test bypass was not enabled. Use TLS for a containerized API acceptance run, or run the API on the host for this local sandbox. |
 | 2026-09-12 | b56d86b | Authenticated host-run OIDC → asset/SBOM → verified OpenVAS finding → exposure/case contract | Isolated pytest database + OIDC boundary fixtures | PASS (automated; live operator run pending) | With the test bypass disabled, an authenticated admin principal prepared the asset/SBOM, a verified DefectDojo/OpenVAS finding produced a `confirmed` exposure and case, and a nested DefectDojo Jira key was retained. The security tests reject Docker-internal and production HTTP issuer configurations. |
 | 2026-09-12 | 24ef9b9c | Local M2 acceptance: host OIDC, MinIO raw SBOM, DefectDojo replay, and raw-evidence authorization | Keycloak 26.3 + MinIO + DefectDojo 2.51 + host API/worker/orchestrator/poller | PASS (bounded) | `admin-demo` API access was 200 and anonymous access 401. A raw SBOM round trip had matching SHA-256. DefectDojo returned 24 verified findings; re-enqueueing all 24 through Valkey was drained by the worker with 48 existing `defectdojo` snapshots and 0 pending evidence events. Raw bytes were 401 anonymous, 403 for `admin-demo` (no implied privilege), 200 for `raw-evidence-demo` with explicit `evidence:raw:read`, and 404 cross-organization. The public report's findings carry no host/component purl, so asset/SBOM match → exposure/case/Jira remains open; the orchestrator also logged a transient KEV TLS timeout at startup. |
+| 2026-09-12 | e5875663 | Simulated upstream closure: authenticated asset/SBOM preparation → DefectDojo-shaped finding → Valkey → worker → outbox/orchestrator → confirmed exposure/case/Jira projection → replay | Keycloak + MinIO + host API/worker/orchestrator | PASS (simulated upstream) | The checked-in fixture is marked `[SIMULATED ACCEPTANCE]`; it is not a scanner report. `admin-demo` created the `payments-api-3` asset and SBOM through the host API. One stable run ID produced exactly 1 snapshot, 1 active confirmed exposure, and 1 linked remediation case with simulated Jira key `VULN-77`; unchanged replay kept all counts at 1 and queue depth at 0. The preparatory OpenSSL SBOM's high-fanout OSV projection was excluded from this scenario after it demonstrated external-intelligence fanout; its outbox event was marked delivered only in the disposable local acceptance database. Warm-start KEV/OSV cache persistence also logged a foreign-key warning for missing vulnerability rows; this did not block the scanner-confirmed path and remains a follow-up defect. |
