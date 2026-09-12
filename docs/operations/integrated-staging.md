@@ -15,9 +15,11 @@ credential below is a sandbox default and must never be reused elsewhere.
 
 - Sandboxes are defined in `deploy/docker-compose.staging.yml`, one profile
   per stack, with their own volumes, and publish host ports only.
-- The VulnOps api/worker containers (from the root `docker-compose.yml`)
-  reach sandboxes through `http://host.docker.internal:<port>`, so the
-  application compose file stays untouched.
+- The VulnOps worker/poller containers (from the root `docker-compose.yml`)
+  can reach sandboxes through `http://host.docker.internal:<port>`, so the
+  application compose file stays untouched. The authenticated workflow below
+  runs the API on the host because the checked-in Keycloak profile publishes a
+  loopback HTTP issuer.
 - DefectDojo/Wazuh records enter the pipeline via the queue: the product-level
   poller (or `scripts/sandbox_fetch.py` for a direct sandbox run) → Valkey
   `vulnops:ingest` → ingestion worker → bridges. The poller checkpoints only
@@ -43,6 +45,24 @@ credential below is a sandbox default and must never be reused elsewhere.
   `docker-compose.override.yml` that selects it, both injecting the corporate
   root CA via `NODE_EXTRA_CA_CERTS` / `PIP_CERT` / `update-ca-certificates`.
   See the evidence log entry dated 2026-09-08.
+
+### Authenticated workflow topology
+
+This slice uses the **host-run API/worker/poller path** for local staging. It
+is the supported runnable path for the checked-in Keycloak profile:
+
+1. Keycloak publishes `http://127.0.0.1:8082/realms/vulnops` on the host.
+2. The API, ingestion worker, orchestrator, and poller run with `uv` on the
+   host and use the host-published PostgreSQL, Valkey, and MinIO ports.
+3. `ENVIRONMENT=staging` plus the explicit
+   `OIDC_ALLOW_INSECURE_LOOPBACK=true` opt-in allows only that IP-loopback
+   HTTP issuer. `AUTH_TEST_BYPASS_ENABLED` remains `false`.
+
+This is not a general HTTP exception: `OIDCVerifier` still rejects
+`host.docker.internal`, bridge addresses, and all other non-loopback HTTP
+issuers, and production cannot enable the loopback opt-in. A containerized API
+requires a TLS-published Keycloak issuer and a trusted CA; do not configure
+`http://host.docker.internal:8082` as its issuer.
 
 ## Sandbox bring-up
 
@@ -98,10 +118,39 @@ To import a report into the DefectDojo sandbox:
    `test` and `found_by` may be integer IDs rather than labels. Read the
    scanner provenance from `related_fields.test.test_type.name` and the test
    identifier from `related_fields.test.id`. If the list response does not
-   include the related test object, fetch
-   `/api/v2/tests/{test_id}/` and inspect its `test_type.name`. A verified
-   finding can carry a Jira key from DefectDojo's native Jira integration.
-3. Fetch the finding through the existing DefectDojo path. For a direct
+   include the related test object, fetch `/api/v2/tests/{test_id}/` and
+   inspect its `test_type.name`. A verified finding can carry a Jira key from
+   DefectDojo's native Jira integration.
+3. Prepare the authenticated Hub-side join before enqueueing the finding. The
+   asset alias must match the finding's `host` or `service` value (the fixture
+   uses `payments-api-3`), and the finding must have `verified=true`, a CVE,
+   and a `purl`/`component_purl` plus component version. The purl is the
+   deterministic join to the SBOM component; without it the bridge retains
+   evidence but deliberately does not auto-create a case.
+
+   ```bash
+   export HUB_API=http://127.0.0.1:8000
+   curl -fsS -X POST "$HUB_API/api/v1/organizations/org-demo/assets/import" \
+     -H "Authorization: Bearer $ACCESS_TOKEN" \
+     -H "Content-Type: text/csv" \
+     --data-binary $'hostname,name,criticality,internet_exposure\npayments-api-3,Payments API,critical,external\n'
+
+   curl -fsS -X POST "$HUB_API/api/v1/organizations/org-demo/sboms" \
+     -H "Authorization: Bearer $ACCESS_TOKEN" \
+     -H "Idempotency-Key: openvas-evidence-sbom" \
+     -H "Content-Type: application/json" \
+     --data '{"bomFormat":"CycloneDX","specVersion":"1.5","components":[{"type":"library","name":"openssl","version":"3.0.2","purl":"pkg:deb/debian/openssl@3.0.2"}]}'
+   ```
+
+   Inspect the real finding before proceeding:
+
+   ```bash
+   curl -fsS "http://localhost:8081/api/v2/findings/?limit=10&ordering=-id&related_fields=true" \
+     -H "Authorization: Token <dojo-api-key>" |
+     jq '.results[] | {id, verified, cve, host, service, component_purl, component_version, related_fields}'
+   ```
+
+4. Fetch the finding through the existing DefectDojo path. For a direct
    sandbox run, inspect first and then enqueue it with:
 
    ```bash
@@ -112,13 +161,22 @@ To import a report into the DefectDojo sandbox:
    ```
 
    For the product polling path, set `DEFECTDOJO_BASE_URL`,
-   `DEFECTDOJO_API_TOKEN`, and `POLL_ORGANIZATION_ID` for the root compose
-   stack, then run `docker compose up -d poller`.
-4. Watch `docker compose logs -f worker orchestrator poller`. The existing
+   `DEFECTDOJO_API_TOKEN`, and `POLL_ORGANIZATION_ID` as shown in the
+   host-run setup, then run `uv run python -m vulnops.workers.polling`.
+5. Watch the host worker/orchestrator/poller terminals. The existing
    DefectDojo bridge persists scanner provenance in `scan_metadata`, the
    ingestion outbox, and the audit reason. Verified findings continue through
    the generic `scanner_confirmed` path; the orchestrator creates the exposure
-   and case and records any DefectDojo Jira issue key as the external ticket.
+   and case and records any DefectDojo Jira issue key (including
+   `related_fields.jira.key`) as the external ticket. Confirm the authenticated
+   result:
+
+   ```bash
+   curl -fsS "$HUB_API/api/v1/organizations/org-demo/exposures?state=active" \
+     -H "Authorization: Bearer $ACCESS_TOKEN" | jq .
+   curl -fsS "$HUB_API/api/v1/organizations/org-demo/cases" \
+     -H "Authorization: Bearer $ACCESS_TOKEN" | jq .
+   ```
 
 No Greenbone-specific poller, API client, XML parser, or Hub-native bridge is
 required for this procedure. Re-running the fetch is expected to be
@@ -179,25 +237,70 @@ both clients for scripted evidence runs):
 | `approver-demo` | org-demo | owner, risk_approver |
 | `auditor-demo` | org-demo | auditor |
 | `viewer-demo` | org-demo | viewer |
+| `admin-demo` | org-demo | admin |
 | `owner-other` | org-other | owner |
 
-Get a token and demonstrate organization claims:
+For the full evidence path, use the seeded `admin-demo` identity because
+`asset:write` and `sbom:write` are required to prepare matching inventory.
+Get a token and keep it in the shell only:
 
 ```bash
-curl -s http://localhost:8082/realms/vulnops/protocol/openid-connect/token \
+export ACCESS_TOKEN="$(
+  curl -fsS http://localhost:8082/realms/vulnops/protocol/openid-connect/token \
   -d grant_type=password -d client_id=vulnops-console \
-  -d username=owner-demo -d 'password=sandbox-owner-password' \
-  -d scope=openid | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+  -d username=admin-demo -d 'password=sandbox-admin-user-password' \
+  -d scope=openid |
+  python -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+)"
+test -n "$ACCESS_TOKEN"
 ```
 
-For a host-run API, set
-`OIDC_ISSUER_URL=http://127.0.0.1:8082/realms/vulnops` and
-`OIDC_AUDIENCE=vulnops-api`. The verifier intentionally permits a plain-HTTP
-issuer only when its hostname is loopback. Consequently a Dockerized API must
-use a TLS-published issuer (or a deployment topology whose issuer is a trusted
-HTTPS URL); `http://host.docker.internal:8082` is rejected by design. The
-worker/poller do not need an issuer for source-ingestion evidence.
-**Removing `AUTH_TEST_BYPASS_ENABLED` is mandatory for API evidence.**
+For a host-run API, use this shell configuration and start only the backing
+services from the root compose file:
+
+```bash
+docker compose up -d postgres valkey minio
+
+export ENVIRONMENT=staging
+export AUTH_TEST_BYPASS_ENABLED=false
+export OIDC_ALLOW_INSECURE_LOOPBACK=true
+export OIDC_ISSUER_URL=http://127.0.0.1:8082/realms/vulnops
+export OIDC_AUDIENCE=vulnops-api
+export DATABASE_URL=postgresql+psycopg2://vulnops:vulnops@127.0.0.1:5432/vulnops
+export REDIS_URL=redis://127.0.0.1:6379/0
+export OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
+export OBJECT_STORAGE_BUCKET=vulnops-snapshots
+export OBJECT_STORAGE_ACCESS_KEY=minioadmin
+export OBJECT_STORAGE_SECRET_KEY=minioadmin
+export DEFECTDOJO_BASE_URL=http://127.0.0.1:8081
+export DEFECTDOJO_API_TOKEN='<dojo-api-key>'
+export POLL_ORGANIZATION_ID=org-demo
+export DEFECTDOJO_POLL_INTERVAL_SECONDS=15
+
+uv run alembic upgrade head
+```
+
+In four host terminals, run the API and the existing product paths:
+
+```bash
+uv run uvicorn vulnops.main:app --host 127.0.0.1 --port 8000
+uv run python -m vulnops.workers.ingestion
+uv run python -m vulnops.workers.orchestration
+uv run python -m vulnops.workers.polling
+```
+
+Confirm that the token is accepted without the test bypass:
+
+```bash
+curl -fsS http://127.0.0.1:8000/api/v1/organizations/org-demo/cases \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+The worker and poller do not need an issuer for source-ingestion evidence, but
+they use the same host database and Valkey settings above. Do not start the
+root `api` service for this path; its container cannot use the loopback
+Keycloak issuer. A Dockerized API instead needs a TLS-published issuer and a
+trusted CA. Removing `AUTH_TEST_BYPASS_ENABLED` is mandatory for API evidence.
 
 ### Vulnerability-Lookup
 
@@ -224,14 +327,18 @@ network connect) and restart. Smoke check:
 
 ## End-to-end verification loop
 
-1. Start the VulnOps stack and the sandbox profiles needed for the scenario.
-2. Submit an SBOM or asset so matching has a target.
-3. Run `scripts/sandbox_fetch.py` for the source under test.
-4. Watch the worker: `docker compose logs -f worker`.
-5. Confirm the exposure/case appears (`/api/v1/organizations/org-demo/cases`)
-   and that replaying the same fetch does not duplicate cases (the bridge
-   deduplicates by source record id and digest).
-6. Record the run in the evidence log below with date, commit, and outcome.
+1. Start Keycloak, DefectDojo, and the host-run API/worker/orchestrator/poller
+   using the authenticated workflow topology above.
+2. Obtain the Keycloak token with `AUTH_TEST_BYPASS_ENABLED=false`.
+3. Submit the matching asset and SBOM with that bearer token.
+4. Import/reimport the OpenVAS report in DefectDojo and inspect the verified
+   finding's host, purl/version, and optional Jira key.
+5. Let the product poller enqueue the finding and watch the host worker and
+   orchestrator terminals.
+6. Confirm the active `scanner_confirmed` exposure and case through the
+   authenticated API, then replay the same poll and confirm no duplicate
+   snapshot, exposure, or case.
+7. Record the run in the evidence log below with date, commit, and outcome.
 
 ## Evidence log
 

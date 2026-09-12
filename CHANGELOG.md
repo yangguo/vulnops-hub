@@ -42,6 +42,10 @@ intentional contract changes.
   normalized scanner, scan-type, and test-type metadata through the existing
   poller → bridge → orchestration path. Live Greenbone/DefectDojo verification
   remains pending; no native Greenbone bridge is added.
+- Authenticated local staging workflow for a verified DefectDojo/OpenVAS
+  finding: an explicit staging-only loopback OIDC opt-in supports the
+  host-run API path, and coverage proves asset/SBOM setup, scanner-confirmed
+  exposure/case creation, replay safety, and DefectDojo Jira-key recording.
 - Console source-health page (freshness badges, degraded-source alert) and
   candidate review page (decision dialog writing audited reasons), with
   navigation gated by capability.
@@ -80,6 +84,10 @@ intentional contract changes.
 
 - Production IdP integration, production certification, shared adopter
   integrated-staging evidence, and raw-evidence authorization remain open.
+- The complete authenticated OpenVAS → exposure/case flow still needs a live
+  operator run on Docker Desktop. The checked-in Keycloak profile requires the
+  API to run on the host; a containerized API needs a TLS-published issuer and
+  trusted CA.
 - External-ticket and notification delivery are delegated to DefectDojo's
   Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
   case-level projection, and broader notification channels remain open.

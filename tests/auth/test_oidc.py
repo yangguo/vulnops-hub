@@ -357,6 +357,80 @@ def test_loopback_http_fixture_is_allowed_in_explicit_development_or_test_mode(e
         client.close()
 
 
+def test_staging_loopback_http_requires_explicit_opt_in():
+    _require_implementation()
+
+    settings = SimpleNamespace(
+        oidc_issuer_url="http://127.0.0.1:8082/realms/vulnops",
+        oidc_audience=AUDIENCE,
+        oidc_allowed_algorithms=("RS256",),
+        environment="staging",
+        oidc_allow_insecure_loopback=False,
+    )
+
+    with pytest.raises(OIDCVerificationError) as exc_info:
+        OIDCVerifier.from_settings(settings)
+
+    assert exc_info.value.category == "configuration"
+
+
+def test_staging_loopback_http_can_be_enabled_without_allowing_docker_hostnames():
+    material = KeyMaterial.create()
+    loopback_issuer = "http://127.0.0.1:8082/realms/vulnops"
+    server = OIDCServer([material.public_jwk], issuer=loopback_issuer)
+    client = httpx.Client(transport=httpx.MockTransport(server.handler))
+    settings = SimpleNamespace(
+        oidc_issuer_url=loopback_issuer,
+        oidc_audience=AUDIENCE,
+        oidc_allowed_algorithms=("RS256",),
+        environment="staging",
+        oidc_allow_insecure_loopback=True,
+    )
+    verifier = OIDCVerifier.from_settings(
+        settings,
+        http_client=client,
+        clock=lambda: NOW,
+    )
+    try:
+        claims = verifier.verify_token(material.token(payload={"iss": loopback_issuer}))
+        assert claims["iss"] == loopback_issuer
+    finally:
+        client.close()
+
+    for issuer in (
+        "http://host.docker.internal:8082/realms/vulnops",
+        "http://172.17.0.1:8082/realms/vulnops",
+    ):
+        with pytest.raises(OIDCVerificationError) as exc_info:
+            OIDCVerifier.from_settings(
+                SimpleNamespace(
+                    oidc_issuer_url=issuer,
+                    oidc_audience=AUDIENCE,
+                    oidc_allowed_algorithms=("RS256",),
+                    environment="staging",
+                    oidc_allow_insecure_loopback=True,
+                )
+            )
+        assert exc_info.value.category == "configuration"
+
+
+def test_production_settings_cannot_opt_into_loopback_http():
+    _require_implementation()
+
+    with pytest.raises(OIDCVerificationError) as exc_info:
+        OIDCVerifier.from_settings(
+            SimpleNamespace(
+                oidc_issuer_url="http://127.0.0.1:8082/realms/vulnops",
+                oidc_audience=AUDIENCE,
+                oidc_allowed_algorithms=("RS256",),
+                environment="production",
+                oidc_allow_insecure_loopback=True,
+            )
+        )
+
+    assert exc_info.value.category == "configuration"
+
+
 def test_remote_http_issuer_is_rejected_even_in_loopback_exception_mode():
     _require_implementation()
 

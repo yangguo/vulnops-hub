@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     oidc_role_claim: str = Field(default="roles")
     oidc_service_scope_claim: str = Field(default="scope")
     oidc_principal_type_claim: str = Field(default="principal_type")
+    # Local integrated staging may run the API on the host beside a loopback
+    # Keycloak publisher.  This is intentionally opt-in for the staging
+    # environment; production and containerized deployments must use HTTPS.
+    oidc_allow_insecure_loopback: bool = Field(default=False)
     auth_test_bypass_enabled: bool = Field(default=False)
     auth_test_principal_subject: str = Field(default="test-principal")
 

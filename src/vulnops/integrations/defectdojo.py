@@ -219,7 +219,7 @@ class DefectDojoBridge:
                     "component_name": component_name,
                     "component_version": component_version,
                     "verified": bool(raw.get("verified")),
-                    "jira_key": (raw.get("jira_issue") or {}).get("key") or raw.get("jira_key"),
+                    "jira_key": self._extract_jira_key(raw),
                     "scanner": scan_metadata["scanner"],
                     "scan_type": scan_metadata["scan_type"],
                     "test_type": scan_metadata["test_type"],
@@ -305,6 +305,32 @@ class DefectDojoBridge:
             "scan_type": scan_type,
             "test_type": test_type,
         }
+
+    @classmethod
+    def _extract_jira_key(cls, raw: dict[str, Any]) -> str | None:
+        """Read a Jira issue key from the DefectDojo response shape.
+
+        DefectDojo deployments expose the native Jira projection either as a
+        top-level field or under ``related_fields``.  Keep this extraction
+        read-only and limited to an issue-key-shaped field; URLs and arbitrary
+        nested metadata must not become a Hub ticket reference.
+        """
+
+        related_fields = raw.get("related_fields")
+        related = related_fields if isinstance(related_fields, dict) else {}
+        candidates = (
+            raw.get("jira_key"),
+            raw.get("jira_issue"),
+            raw.get("jira"),
+            related.get("jira"),
+            related.get("jira_issue"),
+            related.get("jira_key"),
+        )
+        for candidate in candidates:
+            key = cls._dd_label(candidate, "key", "issue_key", "jira_key")
+            if key:
+                return key
+        return None
 
     @staticmethod
     def _dd_label(value: Any, *keys: str) -> str | None:

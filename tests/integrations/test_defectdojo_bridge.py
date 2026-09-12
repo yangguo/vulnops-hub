@@ -145,6 +145,21 @@ def test_defectdojo_generic_nested_scanner_provenance_is_preserved():
     session.close()
 
 
+def test_defectdojo_nested_jira_projection_is_retained():
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+    bridge = DefectDojoBridge(session)
+
+    raw = json.loads(POLLER_FIXTURE.read_text())
+    raw["related_fields"]["jira"] = {"key": "VULN-123"}
+    bridge.ingest_finding(raw, organization_id="org1")
+
+    outbox = session.query(OutboxEvent).one()
+    assert outbox.payload["jira_key"] == "VULN-123"
+    session.close()
+
+
 def test_defectdojo_conflicting_asset_hints_creates_reconciliation_work():
     eng = _engine()
     Session = sessionmaker(bind=eng)

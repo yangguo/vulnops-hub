@@ -121,15 +121,18 @@ and one non-production integrated environment.
 - **(shipped)** Scanner-confirmed cases link to Jira via DefectDojo's native
   integration, recording the issue key as the case's external-ticket
   reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
-- **(live ingress/replay verified; workflow evidence partial)** Greenbone/OpenVAS
-  evidence enters through DefectDojo: a public report was imported into the
-  local DefectDojo sandbox and the product poller consumed the real
-  `related_fields=true` response, retaining cursor/source-health and outbox
-  evidence without re-enqueueing already-seen findings. Scanner provenance is
-  retained in the existing evidence/audit/outbox structures and verified
-  findings use the tested generic scanner-confirmed exposure/case path. A
-  configured OIDC provider, matching asset/SBOM, and Jira integration are
-  still required to demonstrate the API/case/link-back portion live. No
+- **(live ingress/replay verified; authenticated local workflow implemented and
+  tested)** Greenbone/OpenVAS evidence enters through DefectDojo: a public
+  report was imported into the local DefectDojo sandbox and the product
+  poller consumed the real `related_fields=true` response, retaining
+  cursor/source-health and outbox evidence without re-enqueueing already-seen
+  findings. The supported local workflow runs the API/worker/poller on the
+  host beside the loopback Keycloak profile, with an explicit
+  `ENVIRONMENT=staging` loopback opt-in and no test bypass. It documents and
+  tests an authenticated asset/SBOM setup followed by a verified finding to
+  `scanner_confirmed` exposure/case, including DefectDojo Jira-key
+  recording. A live operator run of this complete path remains pending, and a
+  containerized API still requires a TLS-published Keycloak issuer. No
   Hub-native Greenbone bridge is present; ServiceNow and case-level projection
   remain deferred until pilot feedback.
 - **(shipped, minimal escalation)** Business-service mappings, improved asset
