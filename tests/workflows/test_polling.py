@@ -193,7 +193,7 @@ def test_defectdojo_client_filters_a_cursor_ignored_by_the_upstream():
     assert records == [{"id": 3}]
     assert cursor == "3"
     assert transport.urls == [
-        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0"
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0&id__gt=2"
     ]
 
 
@@ -233,8 +233,8 @@ def test_defectdojo_client_pages_past_the_saved_cursor():
     assert records == [{"id": 101}]
     assert cursor == "101"
     assert transport.urls == [
-        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0",
-        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=100",
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0&id__gt=100",
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=100&id__gt=100",
     ]
 
 

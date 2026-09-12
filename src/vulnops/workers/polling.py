@@ -45,6 +45,8 @@ class DefectDojoClient:
                 "/api/v2/findings/"
                 f"?ordering=id&limit={page_size}&related_fields=true&offset={offset}"
             )
+            if cursor_id is not None:
+                query += f"&id__gt={cursor_id}"
             resp = self.http_client.get(
                 f"{self.base_url}{query}", headers={"authorization": f"Token {self.token}"}
             )
