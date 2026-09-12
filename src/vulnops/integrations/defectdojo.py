@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,10 @@ from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.integrations.mapping import AssetMapper, MappingResult
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
+
+# Atlassian issue keys: project key (uppercase letter + alphanumerics) + "-" + number.
+_JIRA_ISSUE_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
+_JIRA_ISSUE_KEY_MAX_LEN = 50
 
 
 @dataclass
@@ -219,7 +224,7 @@ class DefectDojoBridge:
                     "component_name": component_name,
                     "component_version": component_version,
                     "verified": bool(raw.get("verified")),
-                    "jira_key": (raw.get("jira_issue") or {}).get("key") or raw.get("jira_key"),
+                    "jira_key": self._extract_jira_key(raw),
                     "scanner": scan_metadata["scanner"],
                     "scan_type": scan_metadata["scan_type"],
                     "test_type": scan_metadata["test_type"],
@@ -305,6 +310,46 @@ class DefectDojoBridge:
             "scan_type": scan_type,
             "test_type": test_type,
         }
+
+    @classmethod
+    def _extract_jira_key(cls, raw: dict[str, Any]) -> str | None:
+        """Read a Jira issue key from the DefectDojo response shape.
+
+        DefectDojo deployments expose the native Jira projection either as a
+        top-level field or under ``related_fields``.  Keep this extraction
+        read-only and limited to an issue-key-shaped field; URLs and arbitrary
+        nested metadata must not become a Hub ticket reference.
+        """
+
+        related_fields = raw.get("related_fields")
+        related = related_fields if isinstance(related_fields, dict) else {}
+        candidates = (
+            related.get("jira"),
+            related.get("jira_issue"),
+            related.get("jira_key"),
+            raw.get("jira_key"),
+            raw.get("jira_issue"),
+            raw.get("jira"),
+        )
+        for candidate in candidates:
+            key = cls._dd_label(candidate, "key", "issue_key", "jira_key")
+            normalized = cls._normalize_jira_issue_key(key)
+            if normalized:
+                return normalized
+        return None
+
+    @classmethod
+    def _normalize_jira_issue_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate or len(candidate) > _JIRA_ISSUE_KEY_MAX_LEN:
+            return None
+        if "://" in candidate or "<" in candidate or ">" in candidate:
+            return None
+        if not _JIRA_ISSUE_KEY_RE.fullmatch(candidate):
+            return None
+        return candidate
 
     @staticmethod
     def _dd_label(value: Any, *keys: str) -> str | None:

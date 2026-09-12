@@ -264,10 +264,11 @@ class OIDCVerifier:
         algorithms = getattr(settings, "oidc_allowed_algorithms", ("RS256",))
         allow_insecure_loopback = kwargs.pop("allow_insecure_loopback", None)
         if allow_insecure_loopback is None:
-            allow_insecure_loopback = getattr(settings, "environment", None) in {
-                "development",
-                "test",
-            }
+            environment = getattr(settings, "environment", None)
+            allow_insecure_loopback = environment in {"development", "test"} or (
+                environment == "staging"
+                and getattr(settings, "oidc_allow_insecure_loopback", False) is True
+            )
         return cls(
             issuer_url=issuer_url,
             audience=audience,

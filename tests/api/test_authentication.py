@@ -246,6 +246,21 @@ def test_auth_bypass_is_rejected_outside_test_environment(
         create_app()
 
 
+@pytest.mark.parametrize("environment", ["development", "test", "production"])
+def test_loopback_http_opt_in_is_rejected_outside_staging(
+    monkeypatch: pytest.MonkeyPatch, environment: str
+):
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setenv("AUTH_TEST_BYPASS_ENABLED", "false")
+    monkeypatch.setenv("OIDC_ISSUER_URL", "http://127.0.0.1:8082/realms/vulnops")
+    monkeypatch.setenv("OIDC_AUDIENCE", "vulnops-api")
+    monkeypatch.setenv("OIDC_ALLOW_INSECURE_LOOPBACK", "true")
+    get_settings.cache_clear()
+
+    with pytest.raises(RuntimeError, match="OIDC_ALLOW_INSECURE_LOOPBACK"):
+        create_app()
+
+
 @pytest.mark.parametrize("environment", ["development", "staging", "production"])
 def test_oidc_configuration_is_required_outside_explicit_test_bypass(
     monkeypatch: pytest.MonkeyPatch, environment: str

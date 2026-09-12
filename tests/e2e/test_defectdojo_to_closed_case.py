@@ -1,15 +1,19 @@
 import json
 from pathlib import Path
 
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from vulnops.assets.models import Asset, AssetAlias
 from vulnops.cases.service import CaseService
-from vulnops.config import Settings
+from vulnops.config import Settings, get_settings
 from vulnops.db import Base
 from vulnops.integrations.defectdojo import DefectDojoBridge
 from vulnops.integrations.wazuh import WazuhBridge
+from vulnops.main import create_app
 from vulnops.matching.service import MatchingService
 from vulnops.risk.policy import PolicyInput, RiskPolicyEngine
 from vulnops.sbom.parser import ParsedComponent
@@ -19,8 +23,30 @@ DOJO_FIXTURE = Path(__file__).parent.parent / "fixtures" / "defectdojo" / "findi
 WAZUH_FIXTURE = Path(__file__).parent.parent / "fixtures" / "wazuh" / "event.json"
 
 
+class _AuthenticatedStagingVerifier:
+    def verify_token(self, token: str) -> dict:
+        if token != "keycloak-owner-token":
+            raise AssertionError("unexpected test token")
+        return {
+            "iss": "https://issuer.example",
+            "aud": "vulnops-api",
+            "exp": 4_000_000_000,
+            "sub": "owner-demo",
+            "principal_type": "human",
+            "organizations": ["org-demo"],
+            "roles": ["admin"],
+        }
+
+    def close(self) -> None:
+        return None
+
+
 def _engine():
-    eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     import vulnops.db.models.source_snapshot  # noqa
     import vulnops.db.models.audit_event
     import vulnops.db.models.outbox_event
@@ -232,7 +258,7 @@ def test_greenbone_defectdojo_ingest_orchestrates_confirmed_case_with_provenance
 
     raw = json.loads(DOJO_FIXTURE.read_text())
     raw["asset_hints"] = [{"namespace": "hostname", "value": "payments-api-3"}]
-    raw["jira_key"] = "VULN-GREENBONE"
+    raw["jira_key"] = "VULN-12345"
     bridge = DefectDojoBridge(session)
     result = bridge.ingest_finding(raw, organization_id="org1")
 
@@ -254,7 +280,7 @@ def test_greenbone_defectdojo_ingest_orchestrates_confirmed_case_with_provenance
     exposure = session.query(Exposure).one()
     assert exposure.match_class == "confirmed"
     case = session.query(RemediationCase).one()
-    assert case.external_ticket_id == "VULN-GREENBONE"
+    assert case.external_ticket_id == "VULN-12345"
     link = session.query(AuditEvent).filter_by(action="case.external_ticket.linked").one()
     assert link.reason == "jira via defectdojo finding 123456"
 
@@ -269,3 +295,122 @@ def test_greenbone_defectdojo_ingest_orchestrates_confirmed_case_with_provenance
     assert session.query(Exposure).count() == 1
     assert session.query(RemediationCase).count() == 1
     session.close()
+
+
+def test_authenticated_staging_workflow_reads_openvas_case(monkeypatch: pytest.MonkeyPatch):
+    """The host-run staging path keeps OIDC enabled through the workflow."""
+
+    from vulnops.api import deps
+    from vulnops.cases.models import RemediationCase
+    from vulnops.db.models.outbox_event import OutboxEvent
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import OutboxOrchestrator
+
+    class _NoopOSV:
+        def lookup_batch(self, components, **kwargs):
+            return []
+
+    eng = _engine()
+    Session = sessionmaker(bind=eng, expire_on_commit=False)
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    monkeypatch.setenv("AUTH_TEST_BYPASS_ENABLED", "false")
+    monkeypatch.setenv("OIDC_ISSUER_URL", "https://issuer.example")
+    monkeypatch.setenv("OIDC_AUDIENCE", "vulnops-api")
+    monkeypatch.setenv("OIDC_ALLOW_INSECURE_LOOPBACK", "false")
+    get_settings.cache_clear()
+
+    app = create_app()
+    app.state.oidc_verifier = _AuthenticatedStagingVerifier()
+
+    def _override_db():
+        session = Session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[deps.get_db] = _override_db
+    auth = {"Authorization": "Bearer keycloak-owner-token"}
+    session = None
+    try:
+        with TestClient(app) as client:
+            asset_response = client.post(
+                "/api/v1/organizations/org-demo/assets/import",
+                content=(
+                    "hostname,name,criticality,internet_exposure\n"
+                    "payments-api-3,Payments API,critical,external\n"
+                ),
+                headers={**auth, "Content-Type": "text/csv"},
+            )
+            assert asset_response.status_code == 200, asset_response.text
+            assert asset_response.json()["created"] == 1
+
+            sbom_response = client.post(
+                "/api/v1/organizations/org-demo/sboms",
+                json={
+                    "bomFormat": "CycloneDX",
+                    "specVersion": "1.5",
+                    "components": [
+                        {
+                            "type": "library",
+                            "name": "openssl",
+                            "version": "3.0.2",
+                            "purl": "pkg:deb/debian/openssl@3.0.2",
+                        }
+                    ],
+                },
+                headers={**auth, "Idempotency-Key": "staging-openvas-evidence"},
+            )
+            assert sbom_response.status_code == 201, sbom_response.text
+
+            session = Session()
+            raw = json.loads(DOJO_FIXTURE.read_text())
+            raw["asset_hints"] = [{"namespace": "hostname", "value": "payments-api-3"}]
+            raw["related_fields"] = {
+                "test": {"id": 987, "test_type": {"name": "OpenVAS Scan"}},
+                "jira": {"key": "VULN-77"},
+            }
+            bridge = DefectDojoBridge(session)
+            bridge.ingest_finding(raw, organization_id="org-demo")
+            event = (
+                session.query(OutboxEvent)
+                .filter_by(event_type="vulnops.evidence.defectdojo.ingested.v1")
+                .one()
+            )
+
+            orchestrator = OutboxOrchestrator(
+                session_factory=lambda: session,
+                osv=_NoopOSV(),
+                settings=Settings(
+                    _env_file=None,
+                    environment="staging",
+                    oidc_issuer_url="http://127.0.0.1:8082/realms/vulnops",
+                    oidc_audience="vulnops-api",
+                ),
+            )
+            orchestrator.process_event(session, event)
+
+            exposure = session.query(Exposure).one()
+            case = session.query(RemediationCase).one()
+            assert exposure.match_class == "confirmed"
+            assert exposure.asset_id is not None
+            assert case.external_ticket_id == "VULN-77"
+            assert app.state.settings.auth_test_bypass_enabled is False
+
+            exposure_response = client.get(
+                "/api/v1/organizations/org-demo/exposures?state=active",
+                headers=auth,
+            )
+            assert exposure_response.status_code == 200, exposure_response.text
+            assert exposure_response.json()["items"][0]["match_class"] == "confirmed"
+
+            cases_response = client.get(
+                "/api/v1/organizations/org-demo/cases",
+                headers=auth,
+            )
+            assert cases_response.status_code == 200, cases_response.text
+            assert cases_response.json()["total"] == 1
+    finally:
+        if session is not None:
+            session.close()
+        get_settings.cache_clear()

@@ -75,6 +75,11 @@ def validate_auth_configuration(settings: Settings) -> None:
             "AUTH_TEST_BYPASS_ENABLED requires ENVIRONMENT=test; test bypass is not allowed"
         )
 
+    if settings.oidc_allow_insecure_loopback and settings.environment != "staging":
+        raise AuthenticationConfigurationError(
+            "OIDC_ALLOW_INSECURE_LOOPBACK requires ENVIRONMENT=staging"
+        )
+
     # A test-only bypass is the sole configuration allowed to run without an
     # issuer.  Every real deployment, including development, must fail closed.
     if not bypass_enabled and (not settings.oidc_issuer_url or not settings.oidc_audience):
