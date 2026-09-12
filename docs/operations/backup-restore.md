@@ -23,11 +23,13 @@ psql -c "SELECT count(*) FROM source_snapshots;"
 
 ## Object Storage (MinIO/S3)
 
-- Raw scanner reports, SBOMs, and advisory payloads live in private bucket
-  `vulnops-snapshots` (or your configured `OBJECT_STORAGE_BUCKET`).
+- **SBOM raw bytes** uploaded through the Hub are stored in the configured bucket
+  (default `vulnops-snapshots`). DefectDojo, Wazuh, and advisory payloads still
+  use logical URIs in the database today; they are not copied into this bucket
+  by the current code path.
 - Each SBOM object key is `sbom/<organization_id>/<content_sha256>.json`; the
   object metadata field `content-sha256` duplicates the digest for head-object checks.
-- Enable bucket versioning in production.
+- Enable bucket versioning in production for SBOM objects you back up from this bucket.
 
 Configuration and topology options are documented in
 [object-storage.md](object-storage.md).

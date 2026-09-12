@@ -13,6 +13,30 @@ from vulnops.config import Settings, get_settings
 CONTENT_SHA256_METADATA_KEY = "content-sha256"
 
 
+class ObjectStorageConfigurationError(RuntimeError):
+    """Raised when OBJECT_STORAGE_* is only partially set."""
+
+
+def object_storage_config_state(settings: Settings | None = None) -> str:
+    """Return ``disabled``, ``enabled``, or ``partial`` for object storage env."""
+    cfg = settings or get_settings()
+    has_endpoint = bool(cfg.object_storage_endpoint and str(cfg.object_storage_endpoint).strip())
+    has_keys = bool(cfg.object_storage_access_key and cfg.object_storage_secret_key)
+    if has_endpoint and has_keys:
+        return "enabled"
+    if has_endpoint or has_keys:
+        return "partial"
+    return "disabled"
+
+
+def require_complete_object_storage_config(settings: Settings | None = None) -> None:
+    if object_storage_config_state(settings) == "partial":
+        raise ObjectStorageConfigurationError(
+            "OBJECT_STORAGE_ENDPOINT, ACCESS_KEY, and SECRET_KEY must all be set "
+            "together or left unset; partial configuration is not allowed"
+        )
+
+
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -26,12 +50,7 @@ def object_uri(bucket: str, key: str) -> str:
 
 
 def is_object_storage_configured(settings: Settings | None = None) -> bool:
-    cfg = settings or get_settings()
-    return bool(
-        cfg.object_storage_endpoint
-        and cfg.object_storage_access_key
-        and cfg.object_storage_secret_key
-    )
+    return object_storage_config_state(settings) == "enabled"
 
 
 def _local_sbom_path(organization_id: str, digest: str) -> str:
@@ -85,14 +104,33 @@ def get_s3_client(settings: Settings | None = None) -> Any:
     )
 
 
-def ensure_bucket(client: Any, bucket: str) -> None:
+def _head_bucket_indicates_missing(exc: ClientError) -> bool:
+    code = str(exc.response.get("Error", {}).get("Code", ""))
+    status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    if code in ("404", "NoSuchBucket", "NotFound"):
+        return True
+    return status == 404
+
+
+def ensure_bucket(client: Any, bucket: str, region: str) -> None:
+    """Ensure ``bucket`` exists; never create on HeadBucket denial (e.g. IAM 403)."""
     try:
         client.head_bucket(Bucket=bucket)
+        return
     except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code")
-        if code not in ("404", "NoSuchBucket", "403"):
+        if not _head_bucket_indicates_missing(exc):
             raise
-        client.create_bucket(Bucket=bucket)
+
+    create_params: dict[str, Any] = {"Bucket": bucket}
+    if region != "us-east-1":
+        create_params["CreateBucketConfiguration"] = {"LocationConstraint": region}
+    try:
+        client.create_bucket(**create_params)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+            return
+        raise
 
 
 def put_sbom_object(
@@ -104,12 +142,13 @@ def put_sbom_object(
 ) -> str:
     """Store SBOM bytes in S3/MinIO when configured; always mirror locally if enabled."""
     cfg = settings or get_settings()
+    require_complete_object_storage_config(cfg)
     key = sbom_object_key(organization_id, digest)
     uri = object_uri(bucket, key)
 
     if is_object_storage_configured(cfg):
         client = get_s3_client(cfg)
-        ensure_bucket(client, bucket)
+        ensure_bucket(client, bucket, cfg.object_storage_region)
         client.put_object(
             Bucket=bucket,
             Key=key,
@@ -151,6 +190,7 @@ def get_object_bytes(
 ) -> bytes:
     cfg = settings or get_settings()
     bucket, key = parse_object_uri(object_uri_value)
+    require_complete_object_storage_config(cfg)
     if is_object_storage_configured(cfg):
         client = get_s3_client(cfg)
         response = client.get_object(Bucket=bucket, Key=key)
