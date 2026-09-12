@@ -45,6 +45,11 @@ env:
   REDIS_URL: "redis://valkey:6379/0"
   OBJECT_STORAGE_ENDPOINT: "http://minio:9000"
   OBJECT_STORAGE_BUCKET: "vulnops-snapshots"
+  # OIDC placeholders — replace before production; see values-production-idp.example.yaml
+  OIDC_ISSUER_URL: "https://idp.example/realms/vulnops"
+  OIDC_AUDIENCE: "vulnops-api"
+  OIDC_ALLOW_INSECURE_LOOPBACK: "false"
+  AUTH_TEST_BYPASS_ENABLED: "false"
 
 secrets:
   # Managed externally via secret manager; chart creates placeholder for external-secrets

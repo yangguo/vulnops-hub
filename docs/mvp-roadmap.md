@@ -7,14 +7,15 @@
 > in an **M2 operational pilot** phase: polling adapters, source-health
 > API/console, CSV/CMDB import, candidate review, Jira link-back via
 > DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
-> `main`. Greenbone-via-DefectDojo provenance and its tested
-> fixture/orchestration path are implemented; live poller `related_fields`
-> verification remains pending. Remaining pilot work includes ServiceNow and
-> case-level projection, production IdP
-> integration, shared adopter staging, certified backup/restore on MinIO/S3,
-> and EPSS bulk persistence. Intel-table upserts and KEV periodic refresh are
-> shipped on `main` (see [intel persistence plan](plans/2026-09-12-m2-intel-persistence.md)).
-> See [the acceptance matrix](acceptance-matrix.md)
+> `main`. Live Greenbone-via-DefectDojo ingress/replay and the authenticated
+> exposure/case/Jira contract are verified separately in local staging; a live
+> authenticated operator run remains pending. Production-shaped IdP scaffolding,
+> fail-closed configuration checks, intel-table upserts, and periodic KEV refresh
+> are shipped. Remaining pilot work includes live adopter IdP certification,
+> shared adopter staging, certified backup/restore on MinIO/S3, and EPSS bulk
+> persistence. ServiceNow and case-level projection remain explicitly deferred.
+> See [the intel persistence plan](plans/2026-09-12-m2-intel-persistence.md),
+> [the acceptance matrix](acceptance-matrix.md)
 > and [integrated staging evidence](operations/integrated-staging.md).
 
 ## 1. Product thesis
@@ -149,6 +150,11 @@ and one non-production integrated environment.
   aliases / assertions) at OSV and KEV enrichment boundaries; KEV catalog
   refresh without process restart (orchestrator interval + `intel_refresh`
   worker).
+- **(shipped, scaffolding only)** Production IdP integration templates and
+  documentation (`docs/operations/production-idp-integration.md`,
+  `deploy/.env.production.example`, Helm overlay). Startup rejects production
+  misconfiguration (HTTP issuer, test bypass, loopback opt-in). Live login and
+  role-mapping evidence against an adopter IdP remains open.
 
 **Exit gate:** a pilot team runs its normal remediation cycle with measurable
 case ownership, SLA, verification, and replay evidence.

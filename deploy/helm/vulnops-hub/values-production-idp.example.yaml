@@ -1,0 +1,32 @@
+# Example Helm value overlay for a production-shaped IdP configuration.
+# Merge with values.yaml: helm upgrade ... -f values.yaml -f values-production-idp.example.yaml
+# Replace hostnames and register clients at your IdP before go-live.
+
+env:
+  ENVIRONMENT: production
+  PUBLIC_URL: https://hub.example
+  OIDC_ISSUER_URL: https://idp.example/realms/vulnops
+  OIDC_AUDIENCE: vulnops-api
+  OIDC_ALLOWED_ALGORITHMS: '["RS256"]'
+  OIDC_ORGANIZATION_CLAIM: organizations
+  OIDC_ROLE_CLAIM: roles
+  OIDC_SERVICE_SCOPE_CLAIM: scope
+  OIDC_PRINCIPAL_TYPE_CLAIM: principal_type
+  OIDC_ALLOW_INSECURE_LOOPBACK: "false"
+  AUTH_TEST_BYPASS_ENABLED: "false"
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: hub.example
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: vulnops-hub-tls
+      hosts:
+        - hub.example
+
+# Build the SPA separately with frontend/.env.production.example values so
+# VITE_OIDC_AUTHORITY matches OIDC_ISSUER_URL and redirect URIs match ingress TLS.
