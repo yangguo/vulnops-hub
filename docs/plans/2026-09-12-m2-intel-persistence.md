@@ -23,6 +23,10 @@ Persist normalized intelligence at enrichment boundaries:
 Matching still uses live OSV responses from `lookup_batch`; persistence is for
 reuse, audit, and KEV fallback when the in-memory catalog is empty.
 
+Orchestrator cache writes use a dedicated session from `session_factory` with an
+explicit `flush()` so deferred integrity errors are contained; handler matching
+is unaffected.
+
 KEV escalation checks the in-memory catalog first, then `AdvisoryAssertion`
 rows with `source=kev` and `kev=true`.
 
