@@ -93,6 +93,20 @@
           }
         },
         {
+          "name": "permissions",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "permissions",
+            "claim.name": "permissions",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
           "name": "principal_type",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-attribute-mapper",
@@ -220,6 +234,27 @@
         {
           "type": "password",
           "value": "sandbox-admin-user-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "raw-evidence-demo",
+      "enabled": true,
+      "email": "raw-evidence-demo@sandbox.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Raw Evidence Reader",
+      "attributes": {
+        "organizations": ["org-demo"],
+        "roles": ["auditor"],
+        "permissions": ["evidence:raw:read"],
+        "principal_type": "human"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "sandbox-raw-evidence-password",
           "temporary": false
         }
       ]
