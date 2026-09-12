@@ -258,7 +258,7 @@ def test_greenbone_defectdojo_ingest_orchestrates_confirmed_case_with_provenance
 
     raw = json.loads(DOJO_FIXTURE.read_text())
     raw["asset_hints"] = [{"namespace": "hostname", "value": "payments-api-3"}]
-    raw["jira_key"] = "VULN-GREENBONE"
+    raw["jira_key"] = "VULN-12345"
     bridge = DefectDojoBridge(session)
     result = bridge.ingest_finding(raw, organization_id="org1")
 
@@ -280,7 +280,7 @@ def test_greenbone_defectdojo_ingest_orchestrates_confirmed_case_with_provenance
     exposure = session.query(Exposure).one()
     assert exposure.match_class == "confirmed"
     case = session.query(RemediationCase).one()
-    assert case.external_ticket_id == "VULN-GREENBONE"
+    assert case.external_ticket_id == "VULN-12345"
     link = session.query(AuditEvent).filter_by(action="case.external_ticket.linked").one()
     assert link.reason == "jira via defectdojo finding 123456"
 
