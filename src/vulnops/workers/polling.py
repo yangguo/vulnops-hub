@@ -33,15 +33,32 @@ class DefectDojoClient:
         self.http_client = http_client or _make_client()
 
     def fetch(self, cursor: str | None) -> tuple[list[dict], str | None]:
-        query = "/api/v2/findings/?ordering=id&limit=100&related_fields=true"
-        if cursor:
-            query += f"&id__gt={cursor}"
-        resp = self.http_client.get(
-            f"{self.base_url}{query}", headers={"authorization": f"Token {self.token}"}
-        )
-        resp.raise_for_status()
-        records = resp.json().get("results", [])
-        next_cursor = str(max((int(r["id"]) for r in records), default=0)) or cursor
+        # Some DefectDojo deployments accept ``id__gt`` but silently ignore it.
+        # Page explicitly, then apply the cursor locally so an ignored upstream
+        # filter cannot make every completed finding re-enter the queue.
+        page_size = 100
+        offset = 0
+        cursor_id = int(cursor) if cursor else None
+        records: list[dict] = []
+        while True:
+            query = (
+                "/api/v2/findings/"
+                f"?ordering=id&limit={page_size}&related_fields=true&offset={offset}"
+            )
+            resp = self.http_client.get(
+                f"{self.base_url}{query}", headers={"authorization": f"Token {self.token}"}
+            )
+            resp.raise_for_status()
+            page = resp.json().get("results", [])
+            records.extend(
+                record
+                for record in page
+                if cursor_id is None or int(record["id"]) > cursor_id
+            )
+            if len(page) < page_size:
+                break
+            offset += page_size
+        next_cursor = str(max(int(record["id"]) for record in records)) if records else cursor
         return records, next_cursor
 
 

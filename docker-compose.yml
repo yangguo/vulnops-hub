@@ -26,7 +26,7 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -41,6 +41,18 @@ services:
       interval: 10s
       timeout: 2s
       retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://vulnops:vulnops@postgres:5432/vulnops
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: alembic -c /app/alembic.ini upgrade head
+    restart: "no"
 
   api:
     build:
@@ -66,6 +78,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: uvicorn vulnops.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
@@ -92,6 +106,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: python -m vulnops.workers.ingestion
     restart: unless-stopped
 
@@ -119,6 +135,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: python -m vulnops.workers.orchestration
     restart: unless-stopped
 
@@ -143,6 +161,8 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: python -m vulnops.workers.polling
     restart: unless-stopped
 

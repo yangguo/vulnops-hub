@@ -168,9 +168,74 @@ def test_defectdojo_client_requests_related_fields():
     assert records == [{"id": 11, "related_fields": {}}]
     assert cursor == "11"
     assert transport.url == (
-        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true"
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0"
     )
     assert transport.headers == {"authorization": "Token token"}
+
+
+def test_defectdojo_client_filters_a_cursor_ignored_by_the_upstream():
+    """A DefectDojo server may accept, but ignore, ``id__gt`` filters."""
+    from vulnops.workers.polling import DefectDojoClient
+
+    class _IgnoringFilterTransport:
+        def __init__(self):
+            self.urls: list[str] = []
+
+        def get(self, url, **kwargs):
+            self.urls.append(url)
+            return _Resp({"results": [{"id": 1}, {"id": 2}, {"id": 3}]})
+
+    transport = _IgnoringFilterTransport()
+    client = DefectDojoClient("https://dojo", "token", http_client=transport)
+
+    records, cursor = client.fetch("2")
+
+    assert records == [{"id": 3}]
+    assert cursor == "3"
+    assert transport.urls == [
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0"
+    ]
+
+
+def test_defectdojo_client_keeps_cursor_when_the_filtered_page_has_no_new_records():
+    from vulnops.workers.polling import DefectDojoClient
+
+    class _IgnoringFilterTransport:
+        def get(self, url, **kwargs):
+            return _Resp({"results": [{"id": 1}, {"id": 2}]})
+
+    client = DefectDojoClient("https://dojo", "token", http_client=_IgnoringFilterTransport())
+
+    records, cursor = client.fetch("2")
+
+    assert records == []
+    assert cursor == "2"
+
+
+def test_defectdojo_client_pages_past_the_saved_cursor():
+    from vulnops.workers.polling import DefectDojoClient
+
+    class _PagedTransport:
+        def __init__(self):
+            self.urls: list[str] = []
+
+        def get(self, url, **kwargs):
+            self.urls.append(url)
+            if "offset=0" in url:
+                return _Resp({"results": [{"id": item} for item in range(1, 101)]})
+            return _Resp({"results": [{"id": 101}]})
+
+    transport = _PagedTransport()
+    client = DefectDojoClient("https://dojo", "token", http_client=transport)
+
+    records, cursor = client.fetch("100")
+
+    assert records == [{"id": 101}]
+    assert cursor == "101"
+    assert transport.urls == [
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=0",
+        "https://dojo/api/v2/findings/?ordering=id&limit=100&related_fields=true&offset=100",
+    ]
 
 
 def test_checkpoint_only_after_enqueue(db):
