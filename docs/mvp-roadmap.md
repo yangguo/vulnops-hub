@@ -7,9 +7,8 @@
 > in an **M2 operational pilot** phase: polling adapters, source-health
 > API/console, CSV/CMDB import, candidate review, Jira link-back via
 > DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
-> `main`. Greenbone-via-DefectDojo provenance and its tested
-> fixture/orchestration path are implemented; live poller `related_fields`
-> verification remains pending. Remaining pilot work includes ServiceNow and
+> `main`. Greenbone-via-DefectDojo ingress, replay, authenticated case creation,
+> and Jira-key linkage are verified in local staging. Remaining pilot work includes ServiceNow and
 > case-level projection, **live production IdP certification** (production-shaped
 > scaffolding and fail-closed config checks are shipped), shared adopter staging, certified backup/restore on MinIO/S3,
 > and intel-table persistence. See [the acceptance matrix](acceptance-matrix.md)

@@ -1,7 +1,7 @@
 # MVP Acceptance Matrix
 
-> **Status date:** 2026-09-10
-> **Baseline:** `main` at `0de66ef` (post-`v0.1.0-m1`)
+> **Status date:** 2026-09-12
+> **Baseline:** `main` at `d6187a9e` (post-PR #8 authenticated OpenVAS evidence)
 > **Purpose:** Separate fixture-level verification from integrated-environment
 > and production evidence. The M1 exit gate closed on 2026-09-09 with local
 > staging evidence (tag `v0.1.0-m1`); remaining Partial/Open rows track M2 pilot

@@ -90,10 +90,9 @@ intentional contract changes.
   evidence remain open; scaffolding docs/templates ship without claiming a
   certified enterprise IdP integration.
 - Raw-evidence authorization remains open (see open PRs on `main`).
-- The complete authenticated OpenVAS → exposure/case flow still needs a live
-  operator run on Docker Desktop. The checked-in Keycloak profile requires the
-  API to run on the host; a containerized API needs a TLS-published issuer and
-  trusted CA.
+- The authenticated OpenVAS → exposure/case flow is verified in local staging.
+  A shared adopter environment still requires a TLS-published issuer and trusted
+  CA before the containerized API can repeat that evidence.
 - External-ticket and notification delivery are delegated to DefectDojo's
   Jira integration for scanner-confirmed cases (ADR 0002); ServiceNow,
   case-level projection, and broader notification channels remain open.
