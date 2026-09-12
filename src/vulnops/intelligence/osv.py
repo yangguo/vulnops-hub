@@ -64,9 +64,9 @@ class OSVAdapter(IntelligenceAdapter):
         raise NotImplementedError("Use lookup_batch for OSV")
 
     def apply(self, records: list[AdvisoryRecord], session):
-        # Persist to DB - for now just count; real implementation would upsert Vulnerability etc.
-        # Must not delete existing assertions on failure; caller handles health
-        return len(records)
+        from vulnops.intelligence.persistence import upsert_advisory_records
+
+        return upsert_advisory_records(session, records)
 
     def checkpoint(self, result):
         return None, self._status

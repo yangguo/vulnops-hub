@@ -112,6 +112,12 @@ enabled in a deployed environment. The server is the
 authorization authority even when the console hides controls based on token
 claims.
 
+Production-shaped deployments must use an **HTTPS** `OIDC_ISSUER_URL`, keep
+`OIDC_ALLOW_INSECURE_LOOPBACK=false`, and never enable the test bypass. See
+[production IdP integration](operations/production-idp-integration.md) for
+scaffold env/Helm templates and the adopter checklist. That guide is not
+evidence of live production certification.
+
 The frontend receives its non-secret OIDC client settings at build time through
 `frontend/.env` (see `frontend/.env.example`). The redirect URI must be
 registered with the configured provider. Docker Compose passes the API OIDC
