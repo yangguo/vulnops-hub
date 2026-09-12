@@ -96,7 +96,7 @@ deployments:
 
 | Variable | Requirement | Purpose |
 | --- | --- | --- |
-| `OIDC_ISSUER_URL` | required | HTTPS issuer URL used for discovery and JWKS retrieval (HTTP is only for the loopback test fixture) |
+| `OIDC_ISSUER_URL` | required | HTTPS issuer URL used for discovery and JWKS retrieval; local staging may explicitly opt into an IP-loopback HTTP issuer with `OIDC_ALLOW_INSECURE_LOOPBACK=true` |
 | `OIDC_AUDIENCE` | required | Audience accepted on API access tokens |
 | `OIDC_ALLOWED_ALGORITHMS` | default `RS256` | Allowed asymmetric signing algorithms |
 | `OIDC_ORGANIZATION_CLAIM` | default `organizations` | Claim containing organization IDs |
