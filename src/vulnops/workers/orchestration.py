@@ -315,20 +315,29 @@ class OutboxOrchestrator:
         finally:
             session.close()
 
-    def _persist_advisories(self, session: Session, records: list[Any]) -> None:
+    def _persist_advisories(self, handler_session: Session, records: list[Any]) -> None:
+        """Best-effort intel cache write on an isolated session (never poisons handler txn)."""
+
         if not records:
             return
+        cache_session = self.session_factory()
+        owns_cache_session = cache_session is not handler_session
         try:
             from vulnops.intelligence.persistence import upsert_advisory_records
 
-            upsert_advisory_records(session, records)
+            upsert_advisory_records(cache_session, records)
+            cache_session.flush()
+            cache_session.commit()
         except Exception as exc:
-            session.rollback()
+            cache_session.rollback()
             logger.warning(
                 "intel cache persist failed for %d record(s); matching continues: %s",
                 len(records),
                 exc,
             )
+        finally:
+            if owns_cache_session:
+                cache_session.close()
 
     def run_forever(self, max_iterations: int | None = None) -> None:
         iterations = 0

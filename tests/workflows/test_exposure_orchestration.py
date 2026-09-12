@@ -460,9 +460,64 @@ def _orch(db, settings=None, osv=None):
     )
 
 
-def test_sbom_intel_persist_failure_still_creates_exposure(db, monkeypatch):
+def test_sbom_intel_deferred_integrity_still_creates_exposure(db, monkeypatch):
+    """Flush-time IntegrityError on cache session must not fail the outbox handler."""
+
+    from sqlalchemy.orm import sessionmaker
+
+    import vulnops.intelligence.persistence as intel_persistence
+    from vulnops.intelligence.models import VulnerabilityAlias
     from vulnops.matching.models import Exposure
-    from vulnops.workers.orchestration import claim_events
+    from vulnops.workers.orchestration import OutboxOrchestrator, claim_events
+
+    eng = db.get_bind()
+    factory = sessionmaker(bind=eng, expire_on_commit=False, autoflush=False)
+
+    def _deferred_alias_conflict(cache_session, _records):
+        cache_session.add(
+            VulnerabilityAlias(
+                id="alias_dup_a",
+                vulnerability_id="CVE-2026-1234",
+                alias="GHSA-deferred-dup",
+                source="osv",
+            )
+        )
+        cache_session.add(
+            VulnerabilityAlias(
+                id="alias_dup_b",
+                vulnerability_id="CVE-2026-1234",
+                alias="GHSA-deferred-dup",
+                source="osv",
+            )
+        )
+
+    monkeypatch.setattr(intel_persistence, "upsert_advisory_records", _deferred_alias_conflict)
+
+    work = factory()
+    work.add(_occurrence())
+    work.add(_sbom_event("sbom_1"))
+    work.commit()
+
+    orch = OutboxOrchestrator(
+        session_factory=factory,
+        osv=_FixtureOSV(),
+        settings=_settings(),
+    )
+    event = claim_events(work, batch_size=10, max_attempts=8)[0]
+    orch.process_event(work, event)
+
+    exposures = work.query(Exposure).all()
+    assert len(exposures) == 1
+    assert exposures[0].match_class == "deterministic"
+    assert event.delivered_at is not None
+    assert event.attempts == 0
+
+
+def test_sbom_intel_persist_failure_still_creates_exposure(db, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+
+    from vulnops.matching.models import Exposure
+    from vulnops.workers.orchestration import OutboxOrchestrator, claim_events
 
     def _fail_upsert(*_args, **_kwargs):
         raise RuntimeError("intel cache unavailable")
@@ -472,15 +527,22 @@ def test_sbom_intel_persist_failure_still_creates_exposure(db, monkeypatch):
         _fail_upsert,
     )
 
-    db.add(_occurrence())
-    db.add(_sbom_event("sbom_1"))
-    db.commit()
+    eng = db.get_bind()
+    factory = sessionmaker(bind=eng, expire_on_commit=False, autoflush=False)
+    work = factory()
+    work.add(_occurrence())
+    work.add(_sbom_event("sbom_1"))
+    work.commit()
 
-    orch = _orch(db)
-    event = claim_events(db, batch_size=10, max_attempts=8)[0]
-    orch.process_event(db, event)
+    orch = OutboxOrchestrator(
+        session_factory=factory,
+        osv=_FixtureOSV(),
+        settings=_settings(),
+    )
+    event = claim_events(work, batch_size=10, max_attempts=8)[0]
+    orch.process_event(work, event)
 
-    exposures = db.query(Exposure).all()
+    exposures = work.query(Exposure).all()
     assert len(exposures) == 1
     assert exposures[0].match_class == "deterministic"
     assert event.delivered_at is not None
