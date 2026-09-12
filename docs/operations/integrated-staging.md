@@ -121,12 +121,14 @@ To import a report into the DefectDojo sandbox:
    include the related test object, fetch `/api/v2/tests/{test_id}/` and
    inspect its `test_type.name`. A verified finding can carry a Jira key from
    DefectDojo's native Jira integration.
-3. Prepare the authenticated Hub-side join before enqueueing the finding. The
-   asset alias must match the finding's `host` or `service` value (the fixture
-   uses `payments-api-3`), and the finding must have `verified=true`, a CVE,
-   and a `purl`/`component_purl` plus component version. The purl is the
-   deterministic join to the SBOM component; without it the bridge retains
-   evidence but deliberately does not auto-create a case.
+3. Complete the [Keycloak token setup](#keycloak) below and return with
+   `ACCESS_TOKEN` exported. Prepare the authenticated Hub-side join before
+   enqueueing the finding. The asset alias must match the finding's `host` or
+   `service` value (the fixture uses `payments-api-3`), and the finding must
+   have `verified=true`, a CVE, and a `purl`/`component_purl` plus component
+   version. Keep the same purl/version in the SBOM and finding for comparable
+   evidence; without the finding purl the bridge retains evidence but
+   deliberately does not auto-create a case.
 
    ```bash
    export HUB_API=http://127.0.0.1:8000
