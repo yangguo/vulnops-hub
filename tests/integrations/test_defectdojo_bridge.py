@@ -160,6 +160,48 @@ def test_defectdojo_nested_jira_projection_is_retained():
     session.close()
 
 
+def test_extract_jira_key_accepts_valid_issue_key_shapes():
+    assert DefectDojoBridge._extract_jira_key({"jira_key": "VULN-123"}) == "VULN-123"
+    assert DefectDojoBridge._extract_jira_key({"jira_issue": {"key": "PROJ-1"}}) == "PROJ-1"
+
+
+def test_extract_jira_key_rejects_urls_and_invalid_strings():
+    assert DefectDojoBridge._extract_jira_key({"jira_key": "https://jira.example/VULN-1"}) is None
+    assert DefectDojoBridge._extract_jira_key({"jira": "<script>alert(1)</script>"}) is None
+    assert DefectDojoBridge._extract_jira_key({"jira_key": "   "}) is None
+    assert DefectDojoBridge._extract_jira_key({"jira_key": "not-a-key"}) is None
+
+
+def test_extract_jira_key_prefers_nested_over_top_level_garbage():
+    raw = {
+        "jira_key": "https://evil.example/browse/FAKE-1",
+        "jira": "javascript:alert(1)",
+        "related_fields": {"jira": {"key": "VULN-77"}},
+    }
+    assert DefectDojoBridge._extract_jira_key(raw) == "VULN-77"
+
+
+def test_extract_jira_key_missing_or_empty_returns_none():
+    assert DefectDojoBridge._extract_jira_key({}) is None
+    assert DefectDojoBridge._extract_jira_key({"related_fields": {}}) is None
+    assert DefectDojoBridge._extract_jira_key({"jira_key": ""}) is None
+
+
+def test_defectdojo_rejects_poisoned_top_level_jira_on_ingest():
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+    bridge = DefectDojoBridge(session)
+
+    raw = json.loads(POLLER_FIXTURE.read_text())
+    raw["jira_key"] = "https://jira.example/browse/VULN-999"
+    bridge.ingest_finding(raw, organization_id="org1")
+
+    outbox = session.query(OutboxEvent).one()
+    assert "jira_key" not in outbox.payload or outbox.payload.get("jira_key") is None
+    session.close()
+
+
 def test_defectdojo_conflicting_asset_hints_creates_reconciliation_work():
     eng = _engine()
     Session = sessionmaker(bind=eng)

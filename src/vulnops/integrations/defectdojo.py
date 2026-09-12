@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,10 @@ from vulnops.db.models.source_snapshot import SourceSnapshot
 from vulnops.integrations.mapping import AssetMapper, MappingResult
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
+
+# Atlassian issue keys: project key (uppercase letter + alphanumerics) + "-" + number.
+_JIRA_ISSUE_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
+_JIRA_ISSUE_KEY_MAX_LEN = 50
 
 
 @dataclass
@@ -319,18 +324,32 @@ class DefectDojoBridge:
         related_fields = raw.get("related_fields")
         related = related_fields if isinstance(related_fields, dict) else {}
         candidates = (
-            raw.get("jira_key"),
-            raw.get("jira_issue"),
-            raw.get("jira"),
             related.get("jira"),
             related.get("jira_issue"),
             related.get("jira_key"),
+            raw.get("jira_key"),
+            raw.get("jira_issue"),
+            raw.get("jira"),
         )
         for candidate in candidates:
             key = cls._dd_label(candidate, "key", "issue_key", "jira_key")
-            if key:
-                return key
+            normalized = cls._normalize_jira_issue_key(key)
+            if normalized:
+                return normalized
         return None
+
+    @classmethod
+    def _normalize_jira_issue_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not candidate or len(candidate) > _JIRA_ISSUE_KEY_MAX_LEN:
+            return None
+        if "://" in candidate or "<" in candidate or ">" in candidate:
+            return None
+        if not _JIRA_ISSUE_KEY_RE.fullmatch(candidate):
+            return None
+        return candidate
 
     @staticmethod
     def _dd_label(value: Any, *keys: str) -> str | None:
