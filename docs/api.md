@@ -14,6 +14,9 @@ The preview exposes health probes and these organization-scoped resources:
 | `GET /health/live`, `GET /health/ready` | Implemented |
 | `POST /api/v1/organizations/{org_id}/sboms` | Implemented |
 | `GET /api/v1/organizations/{org_id}/sboms/{sbom_id}` | Implemented |
+| `GET /api/v1/organizations/{org_id}/sboms/{sbom_id}/raw` | Implemented |
+| `GET /api/v1/organizations/{org_id}/source-snapshots/{snapshot_id}` | Implemented |
+| `GET /api/v1/organizations/{org_id}/source-snapshots/{snapshot_id}/raw` | Implemented |
 | `GET`, `POST /api/v1/organizations/{org_id}/cases` | Implemented |
 | `GET /api/v1/organizations/{org_id}/cases/{case_id}` | Implemented |
 | `GET /api/v1/organizations/{org_id}/cases/{case_id}/allowed-transitions` | Implemented |
@@ -55,6 +58,8 @@ Current route capabilities are enforced server-side:
 | Approve a risk decision | `risk:approve` | `404 resource_not_found` |
 | Submit verification | `verification:write` | `404 resource_not_found` |
 | Submit/read SBOM metadata | `sbom:write` / `sbom:read` | `404 resource_not_found` |
+| Download SBOM or snapshot raw bytes | `evidence:raw:read` | `404 resource_not_found` |
+| Read source-snapshot provenance metadata | `provenance:read` | `404 resource_not_found` |
 
 An authenticated principal without the required capability receives
 `403 insufficient_permission`. Workflow actor, requester, and approver fields

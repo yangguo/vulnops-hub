@@ -60,7 +60,7 @@ Initial route capabilities are explicit:
 | Approve or reject an existing risk decision | `risk:approve` |
 | Submit verification | `verification:write` |
 | Submit/read SBOM metadata | `sbom:write` / `sbom:read` |
-| Retrieve future raw evidence | `evidence:raw:read` |
+| Retrieve raw SBOM/snapshot bytes | `evidence:raw:read` |
 
 Risk approval is a separate action on an existing decision; the request
 endpoint cannot both request and approve a decision. This keeps separation of

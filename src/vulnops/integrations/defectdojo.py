@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
 from vulnops.db.models.source_snapshot import SourceSnapshot
+from vulnops.evidence.raw_store import persist_evidence_bytes
 from vulnops.integrations.mapping import AssetMapper, MappingResult
 from vulnops.matching.service import MatchingService
 from vulnops.sbom.parser import ParsedComponent
@@ -197,6 +198,8 @@ class DefectDojoBridge:
         else:
             should_create_case = False
             case_id = None
+
+        persist_evidence_bytes(raw_bytes, organization_id, digest)
 
         # Persist snapshot + outbox + audit
         try:

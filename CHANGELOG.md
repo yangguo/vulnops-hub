@@ -52,6 +52,9 @@ intentional contract changes.
 - BusinessService create/list/get API, CSV asset owner/service linkage,
   asset/service-aware case owner resolution, and audited P0/P1 escalation for
   cases that remain unassigned.
+- Raw-evidence API authorization: SBOM and source-snapshot metadata no longer
+  expose storage URIs without `evidence:raw:read`; authorized `/raw` downloads
+  are org-scoped with `404`/`403` behavior aligned to existing OIDC/RBAC.
 
 ### Changed
 
@@ -82,8 +85,8 @@ intentional contract changes.
 
 ### Known limitations
 
-- Production IdP integration, production certification, shared adopter
-  integrated-staging evidence, and raw-evidence authorization remain open.
+- Production IdP integration, production certification, and shared adopter
+  integrated-staging evidence remain open.
 - The complete authenticated OpenVAS → exposure/case flow still needs a live
   operator run on Docker Desktop. The checked-in Keycloak profile requires the
   API to run on the host; a containerized API needs a TLS-published issuer and

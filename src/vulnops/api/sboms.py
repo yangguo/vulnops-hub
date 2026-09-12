@@ -80,6 +80,7 @@ async def submit_sbom(
 @router.get(
     "/organizations/{org_id}/sboms/{sbom_id}",
     response_model=SbomResponse,
+    response_model_exclude_none=True,
     dependencies=[Depends(require_organization)],
 )
 async def get_sbom(
@@ -105,12 +106,14 @@ async def get_sbom(
     if not doc:
         raise AuthorizationError("resource_not_found")
     authorize_capability(request, principal, "sbom:read")
-    return {
+    payload = {
         "id": doc.id,
         "organization_id": doc.organization_id,
         "format": doc.format,
         "spec_version": doc.spec_version,
         "content_sha256": doc.content_sha256,
-        "object_uri": doc.object_uri,
         "created_at": doc.created_at.isoformat(),
     }
+    if principal.has_capability("evidence:raw:read"):
+        payload["object_uri"] = doc.object_uri
+    return payload
