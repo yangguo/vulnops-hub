@@ -364,6 +364,46 @@ active `confirmed` exposure, and one linked remediation case carrying
 drill to certify a scanner parser, external Jira connectivity, an enterprise
 IdP, or the asynchronous OSV projection of the preparatory SBOM.
 
+### M2-E2E-MATCH-001: real OSV PURL version-range drill
+
+This drill executes the supplied public jQuery case through the authenticated
+host API, the normal ingestion queue, and the real OSV `POST /v1/query`
+endpoint. The CycloneDX inputs contain only the host-binding property and the
+component identity; they contain no CVE, GHSA, fixed-version, or
+`affected=true` field. Import both hosts first through the CSV inventory API:
+
+```text
+hostname,ip
+m2-vulnerable-web-01,10.20.30.41
+m2-fixed-web-01,10.20.30.42
+```
+
+Submit separate CycloneDX documents with
+`metadata.properties[{"name":"vulnops:asset.hostname", ...}]` and exactly
+one component: `pkg:npm/jquery@3.3.9` for the vulnerable host and
+`pkg:npm/jquery@3.4.0` for the fixed control. Repeat the byte-identical
+vulnerable document and confirm its content-addressed `sbom_id` is unchanged.
+
+The 2026-09-13 local staging run at `830505d0` recorded two assets, two SBOM
+documents, and two source snapshots. Both occurrences resolved to their
+declared asset and retained their hostname/IP aliases. Real OSV returned
+`GHSA-6c3j-c64m-qhgq` with alias `CVE-2019-11358`, base PURL
+`pkg:npm/jquery`, and the persisted `1.1.4` introduced / `3.4.0` fixed range.
+The vulnerable occurrence produced exactly one active deterministic exposure
+and one linked case for that GHSA; the fixed occurrence produced zero
+exposures for that GHSA. Its `MatchEvidence` record retains the versioned PURL.
+
+The case's literal requirement of one *total* finding and no finding at all on
+the fixed host is not stable against a live public source: OSV currently also
+returns `GHSA-gxr4-xjj5-5px2` and `GHSA-jpcq-cgw6-v4j6`. Consequently this run
+has three active exposures on `jquery@3.3.9` and two on `jquery@3.4.0`, while
+the target GHSA/CVE is present only on the vulnerable host. The product must
+not suppress those unrelated current advisories to force a historical count.
+Treat target-specific AC-01–AC-05, AC-07, and AC-08 as passed; treat the
+unqualified total-count wording in AC-06 and the negative-control "Finding:
+NONE" wording as **PARTIAL**, pending a case revision that scopes counts to
+`GHSA-6c3j-c64m-qhgq` / `CVE-2019-11358`.
+
 ## Evidence log
 
 | Date | Commit | Scenario | Sandbox | Outcome | Notes |
@@ -391,3 +431,4 @@ IdP, or the asynchronous OSV projection of the preparatory SBOM.
 | 2026-09-12 | b56d86b | Authenticated host-run OIDC → asset/SBOM → verified OpenVAS finding → exposure/case contract | Isolated pytest database + OIDC boundary fixtures | PASS (automated; live operator run pending) | With the test bypass disabled, an authenticated admin principal prepared the asset/SBOM, a verified DefectDojo/OpenVAS finding produced a `confirmed` exposure and case, and a nested DefectDojo Jira key was retained. The security tests reject Docker-internal and production HTTP issuer configurations. |
 | 2026-09-12 | 24ef9b9c | Local M2 acceptance: host OIDC, MinIO raw SBOM, DefectDojo replay, and raw-evidence authorization | Keycloak 26.3 + MinIO + DefectDojo 2.51 + host API/worker/orchestrator/poller | PASS (bounded) | `admin-demo` API access was 200 and anonymous access 401. A raw SBOM round trip had matching SHA-256. DefectDojo returned 24 verified findings; re-enqueueing all 24 through Valkey was drained by the worker with 48 existing `defectdojo` snapshots and 0 pending evidence events. Raw bytes were 401 anonymous, 403 for `admin-demo` (no implied privilege), 200 for `raw-evidence-demo` with explicit `evidence:raw:read`, and 404 cross-organization. The public report's findings carry no host/component purl, so asset/SBOM match → exposure/case/Jira remains open; the orchestrator also logged a transient KEV TLS timeout at startup. |
 | 2026-09-12 | e5875663 | Simulated upstream closure: authenticated asset/SBOM preparation → DefectDojo-shaped finding → Valkey → worker → outbox/orchestrator → confirmed exposure/case/Jira projection → replay | Keycloak + MinIO + host API/worker/orchestrator | PASS (simulated upstream) | The checked-in fixture is marked `[SIMULATED ACCEPTANCE]`; it is not a scanner report. `admin-demo` created the `payments-api-3` asset and SBOM through the host API. One stable run ID produced exactly 1 snapshot, 1 active confirmed exposure, and 1 linked remediation case with simulated Jira key `VULN-77`; unchanged replay kept all counts at 1 and queue depth at 0. The preparatory OpenSSL SBOM's high-fanout OSV projection was excluded from this scenario after it demonstrated external-intelligence fanout; its outbox event was marked delivered only in the local staging database. Warm-start KEV/OSV cache persistence also logged a foreign-key warning for missing vulnerability rows; this did not block the scanner-confirmed path and remains a follow-up defect. |
+| 2026-09-13 | 830505d0 | `M2-E2E-MATCH-001`: authenticated Host Inventory → host-bound CycloneDX PURL → live OSV range match → exposure/case → content-addressed replay | Keycloak 26.3 + Postgres + Valkey + MinIO + host API/worker/orchestrator | PARTIAL (target PASS) | The inputs contained no vulnerability identifiers. `jquery@3.3.9` produced one active `GHSA-6c3j-c64m-qhgq` exposure, one linked case, `CVE-2019-11358` alias, and persisted `pkg:npm/jquery` range `1.1.4`–`3.4.0`; `jquery@3.4.0` produced zero target-GHSA exposures. Two hosts, two source snapshots, IP aliases, component→asset bindings, versioned PURL evidence, and queue drain were verified. Live OSV now returns two additional applicable jQuery GHSA records, so total active counts are 3 vulnerable / 2 fixed rather than the case's unqualified 1 / 0. |

@@ -27,7 +27,9 @@ def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _declared_asset_id(raw_data: dict[str, Any], organization_id: str, session: Session) -> str | None:
+def _declared_asset_id(
+    raw_data: dict[str, Any], organization_id: str, session: Session
+) -> str | None:
     """Resolve an explicit CycloneDX asset-hostname declaration within one org.
 
     SBOMs never create assets implicitly. A missing or ambiguous hostname is

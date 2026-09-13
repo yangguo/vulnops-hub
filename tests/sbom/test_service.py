@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import vulnops.assets.models  # noqa: F401
+import vulnops.assets.models
 import vulnops.sbom.models  # noqa: F401
 from vulnops.assets.models import Asset, AssetAlias
 from vulnops.db import Base
@@ -21,9 +21,7 @@ def _bom(hostname: str) -> dict:
     return {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "metadata": {
-            "properties": [{"name": "vulnops:asset.hostname", "value": hostname}]
-        },
+        "metadata": {"properties": [{"name": "vulnops:asset.hostname", "value": hostname}]},
         "components": [
             {
                 "type": "library",

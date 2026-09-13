@@ -11,9 +11,8 @@ import pytest
 from sqlalchemy import create_engine, func, text
 from sqlalchemy.orm import sessionmaker
 
-import vulnops.intelligence.models  # noqa: F401
-import vulnops.db.models.source_snapshot  # noqa: F401
 from vulnops.db import Base
+from vulnops.db.models.source_snapshot import SourceSnapshot  # noqa: F401
 from vulnops.intelligence.contracts import AdvisoryRecord
 from vulnops.intelligence.kev import KEVAdapter
 from vulnops.intelligence.models import (

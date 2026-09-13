@@ -869,7 +869,7 @@ paths:
       description: 'Import a CSV asset inventory (CMDB export).
 
 
-        Header row required; recognized columns: hostname (required identity),
+        Header row required; recognized columns: hostname (required identity), ip,
 
         name, criticality, environment, owner, internet_exposure, type,
 
