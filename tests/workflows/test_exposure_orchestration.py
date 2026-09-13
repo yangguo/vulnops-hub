@@ -744,9 +744,7 @@ def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cle
         orch.process_event(db, event)
 
     target_active = (
-        db.query(Exposure)
-        .filter_by(state="active", vulnerability_id=_M2_TARGET_GHSA)
-        .all()
+        db.query(Exposure).filter_by(state="active", vulnerability_id=_M2_TARGET_GHSA).all()
     )
     assert len(target_active) == 1
     assert target_active[0].asset_id == "ast_m2_vulnerable"
@@ -755,11 +753,7 @@ def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cle
     assert target_active[0].matched_rules == ["osv.purl-range", "asset.service-context"]
     # Live OSV can return additional jQuery GHSA records; acceptance is target-scoped.
     assert db.query(Exposure).filter_by(state="active").count() >= 1
-    target_case_links = (
-        db.query(CaseExposure)
-        .filter_by(exposure_id=target_active[0].id)
-        .all()
-    )
+    target_case_links = db.query(CaseExposure).filter_by(exposure_id=target_active[0].id).all()
     assert len(target_case_links) == 1
     # The replay has a distinct import-event ID, so both evidence observations
     # remain auditable; it must not create another logical exposure or case.
