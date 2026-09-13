@@ -27,11 +27,20 @@ def _stable_id(prefix: str, *parts: str) -> str:
 def upsert_advisory_records(session: Session, records: list[AdvisoryRecord]) -> int:
     """Persist normalized advisory observations; safe to replay."""
 
-    applied = 0
-    for rec in records:
-        if not rec.vulnerability_id or rec.vulnerability_id == "unknown":
-            continue
+    valid_records = [
+        rec for rec in records if rec.vulnerability_id and rec.vulnerability_id != "unknown"
+    ]
+    for rec in valid_records:
         _upsert_vulnerability(session, rec)
+
+    # The mapped child tables use scalar foreign-key columns without ORM
+    # relationships, so PostgreSQL cannot infer their insert ordering from a
+    # single unit-of-work flush. Materialize parents before aliases, ranges,
+    # and assertions are added.
+    if valid_records:
+        session.flush()
+
+    for rec in valid_records:
         seen_aliases = {rec.vulnerability_id}
         for alias in rec.aliases or []:
             if alias and alias not in seen_aliases:
@@ -40,8 +49,7 @@ def upsert_advisory_records(session: Session, records: list[AdvisoryRecord]) -> 
         for rng in rec.affected_ranges or []:
             _upsert_affected_range(session, rec.vulnerability_id, rec.source, rng)
         _upsert_advisory_assertion(session, rec)
-        applied += 1
-    return applied
+    return len(valid_records)
 
 
 def is_kev_persisted(session: Session, cve_id: str) -> bool:

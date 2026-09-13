@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, text
 from sqlalchemy.orm import sessionmaker
 
 import vulnops.intelligence.models  # noqa: F401
+import vulnops.db.models.source_snapshot  # noqa: F401
 from vulnops.db import Base
 from vulnops.intelligence.contracts import AdvisoryRecord
 from vulnops.intelligence.kev import KEVAdapter
@@ -79,6 +81,19 @@ def test_upsert_advisory_records_idempotent(db):
     assert db.query(AffectedRange).count() == 1
     assert db.query(AdvisoryAssertion).count() == 1
     assert db.get(Vulnerability, "CVE-2026-9999").description == "Updated description"
+
+
+def test_upsert_advisory_records_flushes_vulnerability_before_foreign_key_rows(db):
+    """PostgreSQL requires the new vulnerability before its related records."""
+
+    db.execute(text("PRAGMA foreign_keys = ON"))
+    db.autoflush = False
+    with patch.object(db, "flush", wraps=db.flush) as flush:
+        assert upsert_advisory_records(db, [_osv_record()]) == 1
+        assert flush.call_count == 1
+    db.commit()
+
+    assert db.query(AdvisoryAssertion).count() == 1
 
 
 def test_kev_refresh_persists_catalog_and_health(db):
