@@ -635,11 +635,17 @@ def test_sbom_event_replay_does_not_duplicate_case(db):
     assert db.query(CaseExposure).count() == 1
 
 
+_M2_TARGET_GHSA = "GHSA-6c3j-c64m-qhgq"
+_M2_TARGET_CVE = "CVE-2019-11358"
+# Stand-in for unrelated jQuery advisories returned by live OSV fan-out.
+_M2_OSV_FANOUT_GHSA = "GHSA-gxr4-xjj5-5px2"
+
+
 def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cleanly(db):
     """M2-E2E-MATCH-001: OSV discovers jquery's advisory from PURL + version."""
 
     from vulnops.assets.models import Asset
-    from vulnops.cases.models import CaseExposure, RemediationCase
+    from vulnops.cases.models import CaseExposure
     from vulnops.intelligence.models import AffectedRange, VulnerabilityAlias
     from vulnops.matching.models import Exposure, MatchEvidence
     from vulnops.workers.orchestration import claim_events
@@ -655,8 +661,8 @@ def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cle
                         {
                             "vulns": [
                                 {
-                                    "id": "GHSA-6c3j-c64m-qhgq",
-                                    "aliases": ["CVE-2019-11358"],
+                                    "id": _M2_TARGET_GHSA,
+                                    "aliases": [_M2_TARGET_CVE],
                                     "affected": [
                                         {
                                             "package": {
@@ -674,7 +680,26 @@ def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cle
                                             ],
                                         }
                                     ],
-                                }
+                                },
+                                {
+                                    "id": _M2_OSV_FANOUT_GHSA,
+                                    "affected": [
+                                        {
+                                            "package": {
+                                                "ecosystem": "npm",
+                                                "purl": "pkg:npm/jquery",
+                                            },
+                                            "ranges": [
+                                                {
+                                                    "type": "ECOSYSTEM",
+                                                    "events": [
+                                                        {"introduced": "0"},
+                                                    ],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
                             ]
                         }
                     ]
@@ -718,29 +743,57 @@ def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cle
     for event in claim_events(db, batch_size=10, max_attempts=8):
         orch.process_event(db, event)
 
-    active = db.query(Exposure).filter_by(state="active").all()
-    assert len(active) == 1
-    assert active[0].asset_id == "ast_m2_vulnerable"
-    assert active[0].component_occurrence_id == vulnerable.id
-    assert active[0].vulnerability_id == "GHSA-6c3j-c64m-qhgq"
-    assert active[0].match_class == "deterministic"
-    assert active[0].matched_rules == ["osv.purl-range", "asset.service-context"]
-    assert db.query(RemediationCase).count() == 1
-    assert db.query(CaseExposure).count() == 1
+    target_active = (
+        db.query(Exposure)
+        .filter_by(state="active", vulnerability_id=_M2_TARGET_GHSA)
+        .all()
+    )
+    assert len(target_active) == 1
+    assert target_active[0].asset_id == "ast_m2_vulnerable"
+    assert target_active[0].component_occurrence_id == vulnerable.id
+    assert target_active[0].match_class == "deterministic"
+    assert target_active[0].matched_rules == ["osv.purl-range", "asset.service-context"]
+    # Live OSV can return additional jQuery GHSA records; acceptance is target-scoped.
+    assert db.query(Exposure).filter_by(state="active").count() >= 1
+    target_case_links = (
+        db.query(CaseExposure)
+        .filter_by(exposure_id=target_active[0].id)
+        .all()
+    )
+    assert len(target_case_links) == 1
     # The replay has a distinct import-event ID, so both evidence observations
     # remain auditable; it must not create another logical exposure or case.
-    assert db.query(MatchEvidence).filter_by(component_purl="pkg:npm/jquery@3.3.9").count() == 2
-    assert db.query(VulnerabilityAlias).filter_by(alias="CVE-2019-11358").count() == 1
-    affected = db.query(AffectedRange).one()
-    assert (affected.purl, affected.introduced, affected.fixed) == (
-        "pkg:npm/jquery",
-        "1.1.4",
-        "3.4.0",
+    assert (
+        db.query(MatchEvidence)
+        .filter_by(component_purl="pkg:npm/jquery@3.3.9", vulnerability_id=_M2_TARGET_GHSA)
+        .count()
+        == 2
     )
+    assert db.query(VulnerabilityAlias).filter_by(alias=_M2_TARGET_CVE).count() == 1
+    affected = (
+        db.query(AffectedRange)
+        .filter_by(vulnerability_id=_M2_TARGET_GHSA, purl="pkg:npm/jquery")
+        .one()
+    )
+    assert (affected.introduced, affected.fixed) == ("1.1.4", "3.4.0")
 
-    fixed_exposure = db.query(Exposure).filter_by(component_occurrence_id=fixed.id).one()
-    assert fixed_exposure.match_class == "not_affected"
-    assert fixed_exposure.state == "not_affected"
+    fixed_target = (
+        db.query(Exposure)
+        .filter_by(component_occurrence_id=fixed.id, vulnerability_id=_M2_TARGET_GHSA)
+        .one()
+    )
+    assert fixed_target.match_class == "not_affected"
+    assert fixed_target.state == "not_affected"
+    assert (
+        db.query(Exposure)
+        .filter_by(
+            component_occurrence_id=fixed.id,
+            vulnerability_id=_M2_TARGET_GHSA,
+            state="active",
+        )
+        .count()
+        == 0
+    )
 
 
 def test_sbom_event_out_of_range_creates_not_affected_without_case(db):
