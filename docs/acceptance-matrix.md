@@ -1,7 +1,7 @@
 # MVP Acceptance Matrix
 
 > **Status date:** 2026-09-13
-> **Baseline:** `main` at `4235abf`, with M2 PURL acceptance work on `830505d0`
+> **Baseline:** `main` at `d730a10d`, with M2 PURL acceptance work on `830505d0`
 > **Purpose:** Separate fixture-level verification from integrated-environment
 > and production evidence. The M1 exit gate closed on 2026-09-09 with local
 > staging evidence (tag `v0.1.0-m1`); remaining Partial/Open rows track M2 pilot
