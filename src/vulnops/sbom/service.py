@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from vulnops.assets.reconciliation import AssetService
 from vulnops.config import get_settings
 from vulnops.db.models.audit_event import AuditEvent
 from vulnops.db.models.outbox_event import OutboxEvent
@@ -24,6 +25,38 @@ def _utcnow():
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _declared_asset_id(raw_data: dict[str, Any], organization_id: str, session: Session) -> str | None:
+    """Resolve an explicit CycloneDX asset-hostname declaration within one org.
+
+    SBOMs never create assets implicitly. A missing or ambiguous hostname is
+    deliberately left unbound so the import cannot guess an asset identity.
+    """
+
+    metadata = raw_data.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    properties = metadata.get("properties")
+    if not isinstance(properties, list):
+        return None
+    hostname = next(
+        (
+            property_.get("value")
+            for property_ in properties
+            if isinstance(property_, dict)
+            and property_.get("name") == "vulnops:asset.hostname"
+            and isinstance(property_.get("value"), str)
+            and property_["value"].strip()
+        ),
+        None,
+    )
+    if hostname is None:
+        return None
+    result = AssetService(session).reconcile_alias(
+        "hostname", hostname.strip(), organization_id=organization_id
+    )
+    return result.asset_id if result.status == "resolved" else None
 
 
 class SBOMService:
@@ -75,6 +108,7 @@ class SBOMService:
 
         # Parse and validate - raises ValueError on malformed
         parsed = self.parser.parse(raw_data)
+        declared_asset_id = _declared_asset_id(raw_data, organization_id, self.session)
 
         # Determine format and metadata
         sbom_id = f"sbom_{uuid.uuid4().hex[:12]}"
@@ -212,6 +246,7 @@ class SBOMService:
                         id=f"occ_{uuid.uuid4().hex[:12]}",
                         sbom_id=sbom_id,
                         component_id=comp_id,
+                        asset_id=declared_asset_id,
                         purl=pc.purl,
                         ecosystem=pc.ecosystem,
                         normalized_name=pc.normalized_name,
