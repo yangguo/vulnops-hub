@@ -1,7 +1,7 @@
 # MVP Acceptance Matrix
 
 > **Status date:** 2026-09-13
-> **Baseline:** `main` at `d2958482`, with M2 PURL acceptance work on `830505d0`
+> **Baseline:** `main` at `4235abf`, with M2 PURL acceptance work on `830505d0`
 > **Purpose:** Separate fixture-level verification from integrated-environment
 > and production evidence. The M1 exit gate closed on 2026-09-09 with local
 > staging evidence (tag `v0.1.0-m1`); remaining Partial/Open rows track M2 pilot
@@ -15,11 +15,20 @@
 | Partial | Core behavior is tested, but one or more required integrations or outcomes are absent |
 | Open | The required product capability or evidence does not exist yet |
 
+## M2 closure tracker
+
+| Case | Status as of 2026-09-13 | Closure artifact still required |
+| --- | --- | --- |
+| OpenVAS/DD → matched case (`M2-OPENVAS-MATCH-001`) | **PASS for the target path** | Optional Jira delivery evidence is still separate; see the dated live-operator row in [integrated staging](operations/integrated-staging.md) |
+| Production-shaped IdP login and role mapping | **OPEN** | One dated login plus organization/role-claim walkthrough against an adopter or enterprise IdP; local Keycloak is not sufficient |
+| Shared adopter staging evidence | **OPEN** | Same authenticated ingest → match → case → replay run in a non-local shared environment, with commit/date and operator sign-off |
+| MinIO/S3 + PostgreSQL PITR drill | **OPEN** | Versioned bucket sync, restore-to-point-in-time, and scale digest audit in the production-shaped topology |
+
 ## Acceptance criteria
 
 | Roadmap scenario | Status | Current evidence | Remaining evidence |
 | --- | --- | --- | --- |
-| Repeated scanner import | Partial | `tests/integrations/test_defectdojo_bridge.py::test_defectdojo_replay_is_idempotent`; `tests/e2e/test_defectdojo_to_closed_case.py`; *2026-09-12: 24 real verified DefectDojo findings were re-enqueued and drained with no new snapshots or pending evidence outbox events; an explicitly simulated finding then exercised one confirmed exposure, one case, and one Jira projection under replay (see [staging evidence](operations/integrated-staging.md))* | Demonstrate a real report reimport that also exercises an externally delivered ticket projection |
+| Repeated scanner import | Partial (live target PASS) | `tests/integrations/test_defectdojo_bridge.py::test_defectdojo_replay_is_idempotent`; `tests/e2e/test_defectdojo_to_closed_case.py`; *2026-09-13: a public OpenVAS report was imported into DefectDojo, finding `43` was enriched with CVE/PURL/host, and the live poller → worker → orchestrator path produced one confirmed exposure and one case; replay remained `1/1/1/1` (see [staging evidence](operations/integrated-staging.md))* | Demonstrate a real report reimport that also exercises an externally delivered ticket projection; the local run had no Jira integration |
 | KEV escalation | Verified | `tests/risk/test_kev_escalation.py::test_kev_critical_internet_asset_selects_p0_policy`; explainability tests in `test_policy_simulation.py` | Repeat against a configured KEV source in integrated staging |
 | SBOM match | Partial (target verified in staging) | CycloneDX/SPDX parser tests; `tests/matching/test_purl_range_match.py::test_purl_in_osv_range_creates_deterministic_exposure`; `tests/workflows/test_exposure_orchestration.py::test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cleanly`; *2026-09-13: authenticated host inventory plus host-bound `pkg:npm/jquery@3.3.9` made a real OSV request and persisted the GHSA/CVE alias, PURL range, active exposure, case, and replay-safe SBOM identity — see [staging evidence](operations/integrated-staging.md)* | Revise `M2-E2E-MATCH-001` total-count assertions to target `GHSA-6c3j-c64m-qhgq`: the current live OSV response also returns two other jQuery advisories, including on `3.4.0`; no target-CVE false positive occurred |
 | Ambiguous mapping | Verified | `tests/matching/test_candidate_cpe_match.py::test_cpe_name_only_is_candidate_not_case`; asset reconciliation tests; *2026-09-09: candidate review API and console shipped (`tests/api/test_exposure_review.py`, `CandidateReviewView.vue`)* | Demonstrate operator review decisions through the candidate review API/console in integrated staging |
@@ -40,7 +49,7 @@
 | CSV/CMDB and Wazuh observations | Partial | Wazuh bridge exists; *2026-09-09: CSV/CMDB asset import API shipped (`tests/api/test_asset_import.py`)*; team/service ownership APIs remain open |
 | CycloneDX/SPDX ingestion | Verified in sandbox | API, parser, hashing, and idempotency tests exist. *2026-09-13: real authenticated M2 inputs bound each component occurrence to its declared existing hostname; duplicate byte-identical upload returned the same SBOM ID — see [the staging evidence log](operations/integrated-staging.md)* |
 | Intelligence adapters | Partial (OSV verified in staging) | KEV, EPSS, OSV, and Vulnerability-Lookup contract tests exist. *2026-09-13: live OSV lookup persisted the GHSA, CVE alias, and PURL range needed by M2; PostgreSQL foreign-key ordering is regression-tested* | Demonstrate the remaining adapter set against their intended integrated sources |
-| DefectDojo bridge | Verified in fixtures | Mapping, replay, conflict, and missing-evidence behavior are tested |
+| DefectDojo bridge | Verified (live target path) | Mapping, replay, conflict, and missing-evidence behavior are tested; *2026-09-13: current DD v2 `vulnerability_ids`/`finding_meta` response shape was normalized and exercised with finding `43`, retaining OpenVAS provenance and versioned PURL evidence* |
 | Exposure generation/candidate queue | Partial (OSV deterministic path verified) | Matching behavior and orchestration exist; *2026-09-13: live `POST /v1/query` for the M2 jQuery PURL created deterministic exposures and cases with asset/component/PURL/range evidence, and replay kept the logical target exposure/case single.* Candidate review API and console remain shipped. | Demonstrate this through a shared adopter staging environment and resolve the case's stale unqualified total-finding assertions |
 | Transparent risk policy | Verified in fixtures | Version, simulation, KEV escalation, and factors are tested |
 | Case/SLA/audit/notifications | Partial | Workflow, SLA, audit, and outbox writes exist; *2026-09-12: an explicitly simulated DefectDojo Jira key was retained on a case created by the live queue/orchestrator path and remained single under replay.* Notification and real external-ticket delivery are open |

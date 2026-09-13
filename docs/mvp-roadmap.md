@@ -8,8 +8,8 @@
 > API/console, CSV/CMDB import, candidate review, Jira link-back via
 > DefectDojo, and VEX via Vulnerability-Lookup are largely implemented on
 > `main`. Live Greenbone-via-DefectDojo ingress/replay and the authenticated
-> exposure/case/Jira contract are verified separately in local staging; a live
-> authenticated operator run remains pending. Production-shaped IdP scaffolding,
+> exposure/case contract are now verified in local staging with a real public
+> OpenVAS report; Jira delivery is not configured in that run. Production-shaped IdP scaffolding,
 > fail-closed configuration checks, intel-table upserts, periodic KEV refresh,
 > and MinIO/S3 client wiring are shipped. Remaining pilot work includes live
 > adopter IdP certification, shared adopter staging, a certified production
@@ -125,8 +125,8 @@ and one non-production integrated environment.
 - **(shipped)** Scanner-confirmed cases link to Jira via DefectDojo's native
   integration, recording the issue key as the case's external-ticket
   reference (per [ADR 0002](decisions/0002-projection-and-connector-leverage.md)).
-- **(live ingress/replay verified; authenticated local workflow implemented and
-  tested)** Greenbone/OpenVAS evidence enters through DefectDojo: a public
+- **(live ingress/replay and target case verified)** Greenbone/OpenVAS evidence
+  enters through DefectDojo: a public
   report was imported into the local DefectDojo sandbox and the product
   poller consumed the real `related_fields=true` response, retaining
   cursor/source-health and outbox evidence without re-enqueueing already-seen
@@ -135,7 +135,8 @@ and one non-production integrated environment.
   `ENVIRONMENT=staging` loopback opt-in and no test bypass. It documents and
   tests an authenticated asset/SBOM setup followed by a verified finding to
   `scanner_confirmed` exposure/case, including DefectDojo Jira-key
-  recording. A live operator run of this complete path remains pending, and a
+  recording when present. The 2026-09-13 live operator run is recorded in the
+  staging evidence log; it used a public report and no Jira integration. A
   containerized API still requires a TLS-published Keycloak issuer. No
   Hub-native Greenbone bridge is present; ServiceNow and case-level projection
   remain deferred until pilot feedback.

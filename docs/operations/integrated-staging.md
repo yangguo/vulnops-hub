@@ -130,6 +130,32 @@ To import a report into the DefectDojo sandbox:
    evidence; without the finding purl the bridge retains evidence but
    deliberately does not auto-create a case.
 
+   DefectDojo 2.x does not guarantee that these values are flattened onto the
+   finding serializer. In the current v2 API, a CVE may be returned in
+   `vulnerability_ids` (for example,
+   `[{"vulnerability_id":"CVE-2019-11358"}]`), while arbitrary scanner values
+   are returned in `finding_meta` as `{name, value}` pairs. A host is commonly
+   represented by `service` or a `host` metadata pair. The bridge accepts both
+   the flattened fixture shape and this live API shape. When preparing a live
+   finding, use the metadata endpoint if the UI does not expose editable
+   component fields:
+
+   ```bash
+   # Finding id is the id returned by /api/v2/findings/.
+   curl -fsS -X PATCH "http://localhost:8081/api/v2/findings/<finding-id>/" \
+     -H "Authorization: Token <dojo-api-key>" \
+     -H "Content-Type: application/json" \
+     --data '{"vulnerability_ids":[{"vulnerability_id":"CVE-2019-11358"}],"verified":true,"active":true,"component_name":"jquery","component_version":"3.3.9","service":"m2-vulnerable-web-01"}'
+   curl -fsS -X POST http://localhost:8081/api/v2/metadata/ \
+     -H "Authorization: Token <dojo-api-key>" \
+     -H "Content-Type: application/json" \
+     --data '{"finding":<finding-id>,"name":"component_purl","value":"pkg:npm/jquery@3.3.9"}'
+   curl -fsS -X POST http://localhost:8081/api/v2/metadata/ \
+     -H "Authorization: Token <dojo-api-key>" \
+     -H "Content-Type: application/json" \
+     --data '{"finding":<finding-id>,"name":"host","value":"m2-vulnerable-web-01"}'
+   ```
+
    ```bash
    export HUB_API=http://127.0.0.1:8000
    curl -fsS -X POST "$HUB_API/api/v1/organizations/org-demo/assets/import" \
@@ -404,6 +430,39 @@ unqualified total-count wording in AC-06 and the negative-control "Finding:
 NONE" wording as **PARTIAL**, pending a case revision that scopes counts to
 `GHSA-6c3j-c64m-qhgq` / `CVE-2019-11358`.
 
+### M2 OpenVAS live operator: verified finding → confirmed case
+
+This is the live operator evidence for the OpenVAS/DD acceptance case. It
+uses the public legacy report published in
+[`nstarke/d94e71adfac22f5a28fa`](https://gist.github.com/nstarke/d94e71adfac22f5a28fa)
+and the normal DefectDojo parser; it does not use
+`simulated_defectdojo_acceptance.py`. DefectDojo 2.51 rejects empty
+`steps_to_reproduce` values in this older report, so the run's temporary input
+only filled those empty XML descriptions. The input contained 31 `<result>`
+elements; DefectDojo imported 30 findings and retained their OpenVAS
+provenance.
+
+The run used `AUTH_TEST_BYPASS_ENABLED=false`, a signed Keycloak token, the
+host-run API/ingestion/orchestrator/poller path, and the following join data:
+
+| Item | Live value |
+| --- | --- |
+| DefectDojo import | `OpenVAS Parser v2`, test `6`, finding `43` |
+| Finding identity | `verified=true`, `CVE-2019-11358`, `jquery` `3.3.9`, `pkg:npm/jquery@3.3.9` |
+| Finding host | `m2-vulnerable-web-01` (DD `service` plus `host` metadata) |
+| Hub inventory | asset `ast_405f2c8c`; matching CycloneDX SBOM `sbom_6c3a4e9ed53f` |
+| Scanner provenance | `scan_metadata.scanner=Greenbone/OpenVAS`, `scan_type=OpenVAS Parser v2` |
+| Result | exposure `exp_1586f14156bc`, `match_class=confirmed`, confidence `0.99`, `state=active`; case `case_c0903e4c3cbe` (`CASE-DB3719EA`) |
+| Match evidence | `pkg:npm/jquery@3.3.9` + `CVE-2019-11358`, linked to the exposure |
+
+The anonymous case request returned `401`; the authenticated request returned
+the active confirmed exposure and linked case. After restoring the
+DefectDojo cursor and replaying the same finding IDs `43–54`, fresh database
+counts remained exactly one target snapshot, one target evidence event, one
+target exposure, and one linked case (`1/1/1/1`); the source cursor was `54`
+and fresh. No Jira integration was configured for this local run, so external
+ticket delivery remains a separate open acceptance item.
+
 ## Evidence log
 
 | Date | Commit | Scenario | Sandbox | Outcome | Notes |
@@ -432,3 +491,4 @@ NONE" wording as **PARTIAL**, pending a case revision that scopes counts to
 | 2026-09-12 | 24ef9b9c | Local M2 acceptance: host OIDC, MinIO raw SBOM, DefectDojo replay, and raw-evidence authorization | Keycloak 26.3 + MinIO + DefectDojo 2.51 + host API/worker/orchestrator/poller | PASS (bounded) | `admin-demo` API access was 200 and anonymous access 401. A raw SBOM round trip had matching SHA-256. DefectDojo returned 24 verified findings; re-enqueueing all 24 through Valkey was drained by the worker with 48 existing `defectdojo` snapshots and 0 pending evidence events. Raw bytes were 401 anonymous, 403 for `admin-demo` (no implied privilege), 200 for `raw-evidence-demo` with explicit `evidence:raw:read`, and 404 cross-organization. The public report's findings carry no host/component purl, so asset/SBOM match → exposure/case/Jira remains open; the orchestrator also logged a transient KEV TLS timeout at startup. |
 | 2026-09-12 | e5875663 | Simulated upstream closure: authenticated asset/SBOM preparation → DefectDojo-shaped finding → Valkey → worker → outbox/orchestrator → confirmed exposure/case/Jira projection → replay | Keycloak + MinIO + host API/worker/orchestrator | PASS (simulated upstream) | The checked-in fixture is marked `[SIMULATED ACCEPTANCE]`; it is not a scanner report. `admin-demo` created the `payments-api-3` asset and SBOM through the host API. One stable run ID produced exactly 1 snapshot, 1 active confirmed exposure, and 1 linked remediation case with simulated Jira key `VULN-77`; unchanged replay kept all counts at 1 and queue depth at 0. The preparatory OpenSSL SBOM's high-fanout OSV projection was excluded from this scenario after it demonstrated external-intelligence fanout; its outbox event was marked delivered only in the local staging database. Warm-start KEV/OSV cache persistence also logged a foreign-key warning for missing vulnerability rows; this did not block the scanner-confirmed path and remains a follow-up defect. |
 | 2026-09-13 | 830505d0 | `M2-E2E-MATCH-001`: authenticated Host Inventory → host-bound CycloneDX PURL → live OSV range match → exposure/case → content-addressed replay | Keycloak 26.3 + Postgres + Valkey + MinIO + host API/worker/orchestrator | PARTIAL (target PASS) | The inputs contained no vulnerability identifiers. `jquery@3.3.9` produced one active `GHSA-6c3j-c64m-qhgq` exposure, one linked case, `CVE-2019-11358` alias, and persisted `pkg:npm/jquery` range `1.1.4`–`3.4.0`; `jquery@3.4.0` produced zero target-GHSA exposures. Two hosts, two source snapshots, IP aliases, component→asset bindings, versioned PURL evidence, and queue drain were verified. Live OSV now returns two additional applicable jQuery GHSA records, so total active counts are 3 vulnerable / 2 fixed rather than the case's unqualified 1 / 0. |
+| 2026-09-13 | 4235abf | OpenVAS/DD live operator: verified finding → OIDC-authenticated asset/SBOM match → confirmed exposure/case → replay | Keycloak 26.3 + DefectDojo 2.51 + Postgres + Valkey + MinIO + host API/ingestion/orchestrator/poller | PASS (target path) | Public OpenVAS XML imported as test `6`; finding `43` was verified and enriched with `CVE-2019-11358`, `pkg:npm/jquery@3.3.9`, version `3.3.9`, and host `m2-vulnerable-web-01`. The bridge normalized DD `vulnerability_ids`/`finding_meta`, persisted Greenbone/OpenVAS provenance, and created exposure `exp_1586f14156bc` plus case `case_c0903e4c3cbe` (`CASE-DB3719EA`). Anonymous API access was `401`; replay left target snapshot/event/exposure/case at `1/1/1/1`. Jira delivery, enterprise IdP, shared adopter staging, and versioned S3/PITR remain open. |
