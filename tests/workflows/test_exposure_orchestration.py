@@ -635,6 +635,114 @@ def test_sbom_event_replay_does_not_duplicate_case(db):
     assert db.query(CaseExposure).count() == 1
 
 
+def test_m2_e2e_purl_match_creates_one_host_bound_active_finding_and_replays_cleanly(db):
+    """M2-E2E-MATCH-001: OSV discovers jquery's advisory from PURL + version."""
+
+    from vulnops.assets.models import Asset
+    from vulnops.cases.models import CaseExposure, RemediationCase
+    from vulnops.intelligence.models import AffectedRange, VulnerabilityAlias
+    from vulnops.matching.models import Exposure, MatchEvidence
+    from vulnops.workers.orchestration import claim_events
+
+    class _M2OSV:
+        def lookup_batch(self, components, **kwargs):
+            from vulnops.intelligence.osv import OSVAdapter
+
+            return OSVAdapter().lookup_batch(
+                components,
+                raw_fixture={
+                    "results": [
+                        {
+                            "vulns": [
+                                {
+                                    "id": "GHSA-6c3j-c64m-qhgq",
+                                    "aliases": ["CVE-2019-11358"],
+                                    "affected": [
+                                        {
+                                            "package": {
+                                                "ecosystem": "npm",
+                                                "purl": "pkg:npm/jquery",
+                                            },
+                                            "ranges": [
+                                                {
+                                                    "type": "ECOSYSTEM",
+                                                    "events": [
+                                                        {"introduced": "1.1.4"},
+                                                        {"fixed": "3.4.0"},
+                                                    ],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    ]
+                },
+            )
+
+    db.add_all(
+        [
+            Asset(
+                id="ast_m2_vulnerable",
+                organization_id="org-demo",
+                name="m2-vulnerable-web-01",
+                type="host",
+            ),
+            Asset(
+                id="ast_m2_fixed",
+                organization_id="org-demo",
+                name="m2-fixed-web-01",
+                type="host",
+            ),
+        ]
+    )
+    vulnerable = _occurrence("sbom_m2_vulnerable", "pkg:npm/jquery@3.3.9")
+    vulnerable.asset_id = "ast_m2_vulnerable"
+    vulnerable.ecosystem = "npm"
+    fixed = _occurrence("sbom_m2_fixed", "pkg:npm/jquery@3.4.0")
+    fixed.asset_id = "ast_m2_fixed"
+    fixed.ecosystem = "npm"
+    db.add_all(
+        [
+            vulnerable,
+            fixed,
+            _sbom_event("sbom_m2_vulnerable"),
+            _sbom_event("sbom_m2_vulnerable"),
+            _sbom_event("sbom_m2_fixed"),
+        ]
+    )
+    db.commit()
+
+    orch = _orch(db, osv=_M2OSV())
+    for event in claim_events(db, batch_size=10, max_attempts=8):
+        orch.process_event(db, event)
+
+    active = db.query(Exposure).filter_by(state="active").all()
+    assert len(active) == 1
+    assert active[0].asset_id == "ast_m2_vulnerable"
+    assert active[0].component_occurrence_id == vulnerable.id
+    assert active[0].vulnerability_id == "GHSA-6c3j-c64m-qhgq"
+    assert active[0].match_class == "deterministic"
+    assert active[0].matched_rules == ["osv.purl-range", "asset.service-context"]
+    assert db.query(RemediationCase).count() == 1
+    assert db.query(CaseExposure).count() == 1
+    # The replay has a distinct import-event ID, so both evidence observations
+    # remain auditable; it must not create another logical exposure or case.
+    assert db.query(MatchEvidence).filter_by(component_purl="pkg:npm/jquery@3.3.9").count() == 2
+    assert db.query(VulnerabilityAlias).filter_by(alias="CVE-2019-11358").count() == 1
+    affected = db.query(AffectedRange).one()
+    assert (affected.purl, affected.introduced, affected.fixed) == (
+        "pkg:npm/jquery",
+        "1.1.4",
+        "3.4.0",
+    )
+
+    fixed_exposure = db.query(Exposure).filter_by(component_occurrence_id=fixed.id).one()
+    assert fixed_exposure.match_class == "not_affected"
+    assert fixed_exposure.state == "not_affected"
+
+
 def test_sbom_event_out_of_range_creates_not_affected_without_case(db):
     from vulnops.cases.models import RemediationCase
     from vulnops.matching.models import Exposure

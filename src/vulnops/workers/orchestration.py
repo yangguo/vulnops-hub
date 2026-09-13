@@ -145,6 +145,7 @@ def upsert_exposure(session: Session, **kwargs: Any) -> tuple[Exposure, bool]:
                 MatchEvidence(
                     id=f"mev_{uuid.uuid4().hex[:12]}",
                     exposure_id=exposure.id,
+                    component_purl=kwargs.get("component_purl"),
                     vulnerability_id=vulnerability_id,
                     evidence_ref=evidence_ref,
                     matcher_version=kwargs.get("matcher_version"),
@@ -537,6 +538,7 @@ class OutboxOrchestrator:
                     priority=priority,
                     policy_version=policy_version,
                     evidence_ref=event.id,
+                    component_purl=occurrence.purl,
                 )
                 session.commit()
                 self._maybe_create_case(
@@ -606,6 +608,7 @@ class OutboxOrchestrator:
             priority=priority,
             policy_version=policy_version,
             evidence_ref=event.id,
+            component_purl=purl,
         )
         session.commit()
         if purl:

@@ -1,0 +1,21 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:m2-e2e-match-001-vulnerable",
+  "metadata": {
+    "properties": [
+      {
+        "name": "vulnops:asset.hostname",
+        "value": "m2-vulnerable-web-01"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "jquery",
+      "version": "3.3.9",
+      "purl": "pkg:npm/jquery@3.3.9"
+    }
+  ]
+}
