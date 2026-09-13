@@ -110,6 +110,21 @@ def test_import_creates_assets_with_hostname_alias(env):
     session.close()
 
 
+def test_import_retains_ip_as_an_observation_alias_without_duplicate_replay(env):
+    csv_text = "hostname,ip\nm2-vulnerable-web-01,10.20.30.41\n"
+
+    assert env["post"](csv_text).json()["created"] == 1
+    assert env["post"](csv_text).json()["updated"] == 1
+
+    from vulnops.assets.models import AssetAlias
+
+    session = env["factory"]()
+    aliases = session.query(AssetAlias).filter_by(value="10.20.30.41").all()
+    assert len(aliases) == 1
+    assert aliases[0].namespace == "ip"
+    session.close()
+
+
 def test_reimport_updates_existing_without_duplicates(env):
     env["post"](CSV_SIMPLE)
     resp = env["post"](CSV_UPDATE)

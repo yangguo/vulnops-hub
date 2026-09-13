@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from vulnops.api.deps import get_db
 from vulnops.api.schemas import ProblemDetails
-from vulnops.assets.models import Asset
+from vulnops.assets.models import Asset, AssetAlias
 from vulnops.assets.reconciliation import AssetService
 from vulnops.auth.dependencies import require_capability
 from vulnops.services.models import BusinessService
@@ -69,7 +69,7 @@ def _resolve_business_service_id(
 async def import_assets(org_id: str, request: Request, db: Session = Depends(get_db)) -> dict:
     """Import a CSV asset inventory (CMDB export).
 
-    Header row required; recognized columns: hostname (required identity),
+    Header row required; recognized columns: hostname (required identity), ip,
     name, criticality, environment, owner, internet_exposure, type,
     business_service_id, service, service_name.
     Existing assets are matched by hostname alias and updated in place;
@@ -155,6 +155,19 @@ async def import_assets(org_id: str, request: Request, db: Session = Depends(get
             asset.internet_exposure = internet_exposure
             service.add_alias(asset.id, "hostname", hostname, org_id)
             created += 1
+        ip = (row.get("ip") or "").strip()
+        if ip and not db.scalar(
+            select(AssetAlias.id).where(
+                AssetAlias.asset_id == asset.id,
+                AssetAlias.namespace == "ip",
+                AssetAlias.value == ip,
+                AssetAlias.organization_id == org_id,
+            )
+        ):
+            # IP is retained as a point-in-time observation, not used as the
+            # identity lookup key for this import, so shared/reused addresses
+            # cannot merge two distinct hosts.
+            service.add_alias(asset.id, "ip", ip, org_id)
     db.commit()
     return {
         "created": created,
