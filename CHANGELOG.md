@@ -119,9 +119,12 @@ intentional contract changes.
 - The production frontend build reports large chunk warnings for Element Plus
   and ECharts bundles.
 - Backup/restore and outbox replay have been rehearsed against the local
-  staging topology (see the integrated-staging evidence log). MinIO/S3 put/get
-  is implemented and CI-tested with moto; a certified production topology drill
-  (versioned bucket sync + PITR + live digest audit at scale) remains open.
+  staging topology (see the integrated-staging evidence log). A 2026-09-13 M2
+  closeout drill C at `9f1ef35` passed logical PostgreSQL dump/restore and
+  versioned MinIO sync+digest on stock compose (`archive_mode=off` — not WAL
+  PITR). MinIO/S3 put/get is implemented and CI-tested with moto; operator
+  certification of production WAL archive + restore-to-timestamp (and digest
+  audit at scale) remains open.
 - EPSS bulk persistence and automatic clearing of CVEs removed from the CISA
   KEV catalog remain open; OSV matching still uses live API queries (intel
   tables are a cache/fallback, not the sole source of truth).
