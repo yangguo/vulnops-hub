@@ -50,6 +50,66 @@ class DefectDojoBridge:
     def _sha256(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
 
+    @staticmethod
+    def _metadata_map(raw: object) -> dict[str, str]:
+        """Normalize DefectDojo's read-only ``finding_meta`` projection."""
+
+        if not isinstance(raw, list):
+            return {}
+        values: dict[str, str] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            value = item.get("value")
+            if isinstance(name, str) and isinstance(value, str) and value.strip():
+                values[name.strip().lower()] = value.strip()
+        return values
+
+    @classmethod
+    def _extract_cve(cls, raw: dict[str, Any]) -> str | None:
+        """Read a CVE from flattened or current DefectDojo API fields."""
+
+        direct = raw.get("cve") or raw.get("vuln_id")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        aliases = raw.get("vulnerability_aliases")
+        if isinstance(aliases, list):
+            for value in aliases:
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        vulnerability_ids = raw.get("vulnerability_ids")
+        if isinstance(vulnerability_ids, list):
+            for item in vulnerability_ids:
+                value = item.get("vulnerability_id") if isinstance(item, dict) else item
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    @classmethod
+    def _extract_component_purl(cls, raw: dict[str, Any]) -> str | None:
+        direct = raw.get("purl") or raw.get("component_purl")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        metadata = cls._metadata_map(raw.get("finding_meta"))
+        for key in ("component_purl", "purl", "package_purl", "package_url"):
+            value = metadata.get(key)
+            if value:
+                return value
+        return None
+
+    @classmethod
+    def _extract_component_version(cls, raw: dict[str, Any]) -> str | None:
+        direct = raw.get("component_version") or raw.get("version")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        metadata = cls._metadata_map(raw.get("finding_meta"))
+        for key in ("component_version", "version", "package_version"):
+            value = metadata.get(key)
+            if value:
+                return value
+        return None
+
     def ingest_finding(self, raw: dict[str, Any], organization_id: str) -> DefectDojoIngestResult:
         finding_id = str(raw.get("id") or raw.get("finding_id") or uuid.uuid4().hex[:8])
         raw_bytes = json.dumps(raw, sort_keys=True, separators=(",", ":")).encode()
@@ -57,11 +117,7 @@ class DefectDojoBridge:
         object_uri = (
             raw.get("url") or raw.get("file_path") or f"https://dojo.example/findings/{finding_id}"
         )
-        cve = (
-            raw.get("cve")
-            or (raw.get("vulnerability_aliases") or [None])[0]
-            or (raw.get("cve") or raw.get("vuln_id"))
-        )
+        cve = self._extract_cve(raw)
 
         # Idempotency: check existing snapshot by natural key
         existing = (
@@ -107,9 +163,15 @@ class DefectDojoBridge:
         evidence_ref = snapshot.id
 
         # Determine matching: use purl + cve
-        purl = raw.get("purl") or raw.get("component_purl")
-        component_name = raw.get("component_name") or raw.get("title") or "unknown"
-        component_version = raw.get("component_version") or raw.get("version")
+        purl = self._extract_component_purl(raw)
+        metadata = self._metadata_map(raw.get("finding_meta"))
+        component_name = (
+            raw.get("component_name")
+            or metadata.get("component_name")
+            or raw.get("title")
+            or "unknown"
+        )
+        component_version = self._extract_component_version(raw)
         # Build ParsedComponent for matching
         # If no purl, treat as candidate
         should_create_case = False

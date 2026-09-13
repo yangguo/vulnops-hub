@@ -49,12 +49,35 @@ class AssetMapper:
 
     def map_defectdojo(self, finding: dict, organization_id: str) -> MappingResult:
         hints = list(finding.get("asset_hints") or [])
+        # DefectDojo v2 exposes scanner-specific metadata through the
+        # read-only ``finding_meta`` list rather than flattening values onto
+        # the finding.  Normalize the host/service aliases here so a real
+        # API response follows the same join contract as Hub fixtures.
+        metadata = self._metadata_map(finding.get("finding_meta"))
+        host = finding.get("host") or metadata.get("host") or metadata.get("hostname")
+        service = finding.get("service") or metadata.get("service")
         # Also synthesize hints from product/service/host fields (without mutating original)
-        if finding.get("host") and not any(h["value"] == finding["host"] for h in hints):
-            hints.append({"namespace": "hostname", "value": finding["host"]})
-        if finding.get("service") and not any(h["value"] == finding["service"] for h in hints):
-            hints.append({"namespace": "service", "value": finding["service"]})
+        if host and not any(h.get("value") == host for h in hints):
+            hints.append({"namespace": "hostname", "value": host})
+        if service and not any(h.get("value") == service for h in hints):
+            hints.append({"namespace": "service", "value": service})
         return self.map_hints(hints, organization_id)
+
+    @staticmethod
+    def _metadata_map(raw: object) -> dict[str, str]:
+        """Return safe, case-insensitive name/value pairs from DD metadata."""
+
+        if not isinstance(raw, list):
+            return {}
+        values: dict[str, str] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            value = item.get("value")
+            if isinstance(name, str) and isinstance(value, str) and value.strip():
+                values[name.strip().lower()] = value.strip()
+        return values
 
     def map_wazuh(self, event: dict, organization_id: str) -> MappingResult:
         hints = list(event.get("asset_hints") or [])

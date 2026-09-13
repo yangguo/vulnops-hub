@@ -279,3 +279,66 @@ def test_defectdojo_does_not_create_case_directly_from_missing_evidence():
     assert result.should_create_case is False
     assert result.case_id is None
     session.close()
+
+
+def test_defectdojo_actual_api_fields_normalize_cve_purl_and_host():
+    """Normalize the fields emitted by a current DefectDojo v2 response.
+
+    DefectDojo stores CVEs in ``vulnerability_ids`` and arbitrary scanner
+    metadata in the separate ``metadata`` endpoint.  The finding serializer
+    exposes those values as ``vulnerability_ids`` and ``finding_meta`` rather
+    than the flattened fields used by our internal event contract.
+    """
+
+    from vulnops.assets.models import Asset, AssetAlias
+
+    eng = _engine()
+    Session = sessionmaker(bind=eng)
+    session = Session()
+    asset = Asset(
+        id="ast_dd_api_shape",
+        name="m2-vulnerable-web-01",
+        type="host",
+        status="active",
+        criticality="critical",
+        organization_id="org1",
+    )
+    session.add(asset)
+    session.commit()
+    session.add(
+        AssetAlias(
+            asset_id=asset.id,
+            namespace="hostname",
+            value="m2-vulnerable-web-01",
+            organization_id="org1",
+        )
+    )
+    session.commit()
+
+    raw = {
+        "id": 990001,
+        "title": "jQuery Prototype Pollution (OpenVAS verified)",
+        "vulnerability_ids": [{"vulnerability_id": "CVE-2019-11358"}],
+        "component_name": "jquery",
+        "component_version": "3.3.9",
+        "finding_meta": [
+            {"name": "component_purl", "value": "pkg:npm/jquery@3.3.9"},
+            {"name": "host", "value": "m2-vulnerable-web-01"},
+        ],
+        "verified": True,
+        "active": True,
+        "found_by": [85],
+        "related_fields": {
+            "test": {"id": 6, "test_type": {"name": "OpenVAS Parser v2"}},
+        },
+    }
+
+    result = DefectDojoBridge(session).ingest_finding(raw, organization_id="org1")
+
+    assert result.mapping.status == "resolved"
+    event = session.query(OutboxEvent).one()
+    assert event.payload["cve"] == "CVE-2019-11358"
+    assert event.payload["purl"] == "pkg:npm/jquery@3.3.9"
+    assert event.payload["component_version"] == "3.3.9"
+    assert event.payload["mapping"]["asset_id"] == asset.id
+    session.close()
