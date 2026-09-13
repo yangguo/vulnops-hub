@@ -1,10 +1,13 @@
 # Backup and Restore
 
-> **Status:** PostgreSQL and local `./storage` drills are rehearsed on the staging
-> topology (see [integrated staging evidence](integrated-staging.md)). MinIO/S3
-> wiring is implemented and covered by moto-backed tests plus an optional live
-> smoke script; a **certified production** bucket sync + PITR drill remains
-> operator-owned.
+> **Status:** PostgreSQL dump/restore and MinIO/S3 digest + versioned bucket sync
+> are rehearsed on the stock compose staging topology (see
+> [integrated staging evidence](integrated-staging.md); latest dated run
+> 2026-09-13 at `9f1ef35`). That topology has `archive_mode=off`, so these runs
+> prove logical backup/restore and object-store consistency — not production WAL
+> point-in-time recovery. MinIO/S3 wiring is also covered by moto-backed tests
+> and `scripts/object_storage_smoke.py`. A **certified production** WAL archive +
+> PITR restore-to-timestamp drill remains operator-owned.
 
 ## PostgreSQL
 

@@ -11,9 +11,12 @@
 > exposure/case contract are now verified in local staging with a real public
 > OpenVAS report; Jira delivery is not configured in that run. Production-shaped IdP scaffolding,
 > fail-closed configuration checks, intel-table upserts, periodic KEV refresh,
-> and MinIO/S3 client wiring are shipped. Remaining pilot work includes live
-> adopter IdP certification, shared adopter staging, a certified production
-> bucket/PITR drill, and EPSS bulk persistence. ServiceNow and case-level
+> and MinIO/S3 client wiring are shipped. A 2026-09-13 staging rehearsal
+> (dump/restore plus versioned MinIO sync and digest at `9f1ef35`) is recorded
+> in [integrated staging](operations/integrated-staging.md); it does not
+> certify production WAL PITR. Remaining pilot work includes live adopter IdP
+> certification, shared adopter staging, operator-certified production WAL
+> PITR, and EPSS bulk persistence. ServiceNow and case-level
 > projection remain explicitly deferred.
 > See [the intel persistence plan](plans/2026-09-12-m2-intel-persistence.md),
 > [the acceptance matrix](acceptance-matrix.md)
@@ -151,9 +154,11 @@ and one non-production integrated environment.
   APK/RPM and unsupported ecosystems often remain candidate review via the
   matcher; ambiguous rows stay in the queue.
 - **(partial)** Backup/restore drill and upgrade/replay procedure — rehearsed
-  on the local staging topology; MinIO/S3 client wiring, host-staging overlay,
-  moto tests, and smoke helper shipped — certified production bucket/PITR drill
-  remains open.
+  on the local staging topology, including the 2026-09-13 M2 closeout drill C
+  (logical `pg_dump`/`pg_restore`, versioned MinIO sync, and digest checks at
+  `9f1ef35`; compose Postgres has `archive_mode=off`). MinIO/S3 client wiring,
+  host-staging overlay, moto tests, and smoke helper shipped — certified
+  production WAL PITR remains operator-owned.
 - **(shipped)** Intel-table persistence (`Vulnerability` / `AffectedRange` /
   aliases / assertions) at OSV and KEV enrichment boundaries; KEV catalog
   refresh without process restart (orchestrator interval + `intel_refresh`

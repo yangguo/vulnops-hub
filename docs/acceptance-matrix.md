@@ -1,7 +1,7 @@
 # MVP Acceptance Matrix
 
 > **Status date:** 2026-09-13
-> **Baseline:** `main` at `ec87eda`, with M2 PURL acceptance work on `830505d0`
+> **Baseline:** `main` at `9f1ef35`, with M2 PURL acceptance work on `830505d0`
 > **Purpose:** Separate fixture-level verification from integrated-environment
 > and production evidence. The M1 exit gate closed on 2026-09-09 with local
 > staging evidence (tag `v0.1.0-m1`); remaining Partial/Open rows track M2 pilot
@@ -22,7 +22,7 @@
 | OpenVAS/DD → matched case (`M2-OPENVAS-MATCH-001`) | **PASS for the target path** | Optional Jira delivery evidence is still separate; see the dated live-operator row in [integrated staging](operations/integrated-staging.md) |
 | Production-shaped IdP login and role mapping | **OPEN** | One dated login plus organization/role-claim walkthrough against an adopter or enterprise IdP; local Keycloak is not sufficient |
 | Shared adopter staging evidence | **OPEN** | Same authenticated ingest → match → case → replay run in a non-local shared environment, with commit/date and operator sign-off |
-| MinIO/S3 + PostgreSQL PITR drill | **OPEN** | Versioned bucket sync, restore-to-point-in-time, and scale digest audit in the production-shaped topology |
+| MinIO/S3 + PostgreSQL PITR drill | **PARTIAL (staging rehearsal PASS)** | *2026-09-13 at `9f1ef35`:* versioned MinIO sync, SBOM digest verification, and `pg_dump`/`pg_restore` into `vulnops_restore_test` on stock compose (`archive_mode=off`) — see [integrated staging](operations/integrated-staging.md). Production WAL archive + restore-to-timestamp and operator certification remain open. |
 
 ## Acceptance criteria
 
@@ -85,8 +85,10 @@
   supported deployment topology. *(2026-09-09: local staging topology —
   pg_dump/restore drill with identical row counts; object-store digest check
   against the local backing store; moto-backed MinIO/S3 put/get/digest tests and
-  host-staging `OBJECT_STORAGE_*` overlay shipped. A certified production
-  topology drill remains open — see CHANGELOG known limitations.)*
+  host-staging `OBJECT_STORAGE_*` overlay shipped. *2026-09-13:* M2 closeout
+  drill C rehearsed MinIO sync+digest and logical DB restore at `9f1ef35`
+  (not WAL PITR). Certified production WAL PITR remains open — see CHANGELOG
+  known limitations.)*
 - [x] The release commit has successful CI and Security workflow links.
   *(2026-09-09: tag `v0.1.0-m1` = commit 8b168df; CI run 34348813538 and
   Security run 34348813517 both successful.)*
