@@ -158,7 +158,7 @@ def test_risk_decision_api_requires_approval():
             "scope": {"exposure_ids": ["exp_01"]},
             "reason": "need window",
             "compensating_controls": ["WAF"],
-            "expires_at": "2026-10-05T00:00:00Z",
+            "expires_at": (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "evidence_ids": ["ev1"],
         },
     )
