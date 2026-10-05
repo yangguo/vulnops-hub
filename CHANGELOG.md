@@ -88,6 +88,8 @@ intentional contract changes.
 
 ### Fixed
 
+- Added `.gitleaksignore` entry for a scheduled full-history false positive on
+  "S3-compatible" documentation text.
 - Upgraded Vitest to 4.1.11 and forced Redocly's pinned `js-yaml` dependency
   to 4.3.2, resolving the active frontend development-tool advisories.
 - Upgraded Security workflow actions to their Node 24-compatible majors.

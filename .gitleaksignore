@@ -1,0 +1,2 @@
+# False positive: generic-api-key matched the phrase "S3-compatible" in docs, not a secret.
+e3e6eb9346fce2505e0d3803c96ea370e7057efd:docs/plans/2026-09-05-vulnops-hub-mvp.md:generic-api-key:16
